@@ -8,6 +8,7 @@ This directory contains simulation scripts to test and verify the "Player-Owned 
 A comprehensive, multi-agent simulation that models the entire economy.
 - **Actors:**
   - **Tournament Organizer:** Starts/Ends tournaments periodically (every 5s).
+  - **Epoch Keeper:** Triggers `ProcessEpoch` every 10s to distribute rewards and reset House PnL.
   - **Whales:** Realistic traders that buy/sell 10k-50k RNG chunks. They track inventory and only sell what they've bought.
   - **Retail Bots:** Active traders (2-5s interval) that trade, lend/borrow vUSDT (leverage), and play games.
   - **Grinders:** Swarm of 100 bots (2s interval) that join tournaments and play aggressively to win fixed prize pools.
@@ -60,14 +61,14 @@ cargo run --release --example simulation_ecosystem -- --identity <IDENTITY_HEX> 
 - `--gamblers`: Number of grinders (default 50).
 
 ### Step 5: Visualize Results
-The simulation generates `economy_log.json` in the root directory. To view the metrics:
+The simulation generates `economy_log.json` in the root directory. To view the metrics on the dashboard:
 
 1. **Copy Data:**
    ```bash
    # From project root
    cp economy_log.json website/public/
    ```
-   *(Note: The `npm run dev` script in `website/` is configured to do this automatically if you restart it).*
+   *(Note: The `npm run dev` script in `website/` tries to copy this automatically on start, but manual copy ensures latest data).*
 
 2. **Start Dashboard:**
    ```bash
@@ -76,8 +77,10 @@ The simulation generates `economy_log.json` in the root directory. To view the m
    npm run dev
    ```
 
-3. **View:** Open **http://localhost:5173/economy** in your browser.
+3. **View:** Open **http://localhost:3000/economy** in your browser.
+   *(Note: The dashboard uses port 3000 by default. Check the terminal output if it differs).*
 
 ## Troubleshooting
 - **Connection Refused:** Ensure `nullspace-simulator` is running on port 8080.
 - **Invalid Identity:** Ensure you copied the full hex string from `get_identity` without newlines.
+- **Missing Data:** Ensure `simulation_ecosystem` ran long enough (at least 15s) to generate transaction history.

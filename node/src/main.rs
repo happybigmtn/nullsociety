@@ -1,6 +1,3 @@
-use nullspace_client::Client;
-use nullspace_node::{engine, Config, Peers};
-use nullspace_types::NAMESPACE;
 use clap::{Arg, Command};
 use commonware_codec::{Decode, DecodeExt};
 use commonware_cryptography::{
@@ -14,6 +11,9 @@ use commonware_runtime::{tokio, Metrics, Runner};
 use commonware_utils::{from_hex_formatted, quorum, union_unique, NZUsize};
 use futures::future::try_join_all;
 use governor::Quota;
+use nullspace_client::Client;
+use nullspace_node::{engine, Config, Peers};
+use nullspace_types::NAMESPACE;
 use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -258,7 +258,8 @@ fn main() {
         let p2p = network.start();
 
         // Create indexer
-        let indexer = Client::new(&config.indexer, identity).expect("Failed to create indexer client");
+        let indexer =
+            Client::new(&config.indexer, identity).expect("Failed to create indexer client");
 
         // Create engine
         let config = engine::Config {

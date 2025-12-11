@@ -3,14 +3,14 @@ use commonware_codec::{EncodeSize, Error, FixedSize, Read, ReadExt, ReadRangeExt
 use commonware_cryptography::ed25519::PublicKey;
 
 /// Helper to write a string as length-prefixed UTF-8 bytes.
-fn write_string(s: &str, writer: &mut impl BufMut) {
+pub fn write_string(s: &str, writer: &mut impl BufMut) {
     let bytes = s.as_bytes();
     (bytes.len() as u32).write(writer);
     writer.put_slice(bytes);
 }
 
 /// Helper to read a string from length-prefixed UTF-8 bytes.
-fn read_string(reader: &mut impl Buf, max_len: usize) -> Result<String, Error> {
+pub fn read_string(reader: &mut impl Buf, max_len: usize) -> Result<String, Error> {
     let len = u32::read(reader)? as usize;
     if len > max_len {
         return Err(Error::Invalid("String", "too long"));
@@ -24,7 +24,7 @@ fn read_string(reader: &mut impl Buf, max_len: usize) -> Result<String, Error> {
 }
 
 /// Helper to get encode size of a string.
-fn string_encode_size(s: &str) -> usize {
+pub fn string_encode_size(s: &str) -> usize {
     4 + s.len()
 }
 
@@ -265,6 +265,7 @@ impl Player {
             active_shield: false,
             active_double: false,
             active_session: None,
+            // Allow an immediate first faucet deposit
             last_deposit_block: 0,
             aura_meter: 0,
             tournaments_played_today: 0,
@@ -285,7 +286,8 @@ impl Player {
             active_shield: false,
             active_double: false,
             active_session: None,
-            last_deposit_block: block,
+            // Seed as if last faucet was sufficiently far in the past so the first deposit is allowed
+            last_deposit_block: block.saturating_sub(FAUCET_RATE_LIMIT + 1),
             aura_meter: 0,
             tournaments_played_today: 0,
             last_tournament_ts: 0,
@@ -490,17 +492,21 @@ impl CasinoLeaderboard {
         // Find insertion point using binary search (entries sorted descending by chips)
         // FIXED: Use chips.cmp(&e.chips) for descending order (higher chips first)
         // This reverses the comparison so higher values come before lower values
-        let insert_pos = self.entries
+        let insert_pos = self
+            .entries
             .binary_search_by(|e| chips.cmp(&e.chips))
             .unwrap_or_else(|pos| pos);
 
         // Insert at correct position
-        self.entries.insert(insert_pos, LeaderboardEntry {
-            player,
-            name,
-            chips,
-            rank: 0,
-        });
+        self.entries.insert(
+            insert_pos,
+            LeaderboardEntry {
+                player,
+                name,
+                chips,
+                rank: 0,
+            },
+        );
 
         // Truncate to 10 and update ranks only for affected entries
         self.entries.truncate(10);
@@ -659,11 +665,12 @@ impl Tournament {
 pub struct HouseState {
     pub current_epoch: u64,
     pub epoch_start_ts: u64,
-    pub net_pnl: i128,          // Net Profit/Loss for current epoch (House Edge - Player Wins)
+    pub net_pnl: i128, // Net Profit/Loss for current epoch (House Edge - Player Wins)
     pub total_staked_amount: u64,
     pub total_voting_power: u128,
-    pub accumulated_fees: u64,  // Fees from AMM or other sources
-    pub total_burned: u64,      // Total RNG burned via Sell Tax
+    pub accumulated_fees: u64, // Fees from AMM or other sources
+    pub total_burned: u64,     // Total RNG burned via Sell Tax
+    pub total_issuance: u64,   // Total RNG minted (Inflation)
 }
 
 impl HouseState {
@@ -676,6 +683,7 @@ impl HouseState {
             total_voting_power: 0,
             accumulated_fees: 0,
             total_burned: 0,
+            total_issuance: 0,
         }
     }
 }
@@ -689,6 +697,7 @@ impl Write for HouseState {
         self.total_voting_power.write(writer);
         self.accumulated_fees.write(writer);
         self.total_burned.write(writer);
+        self.total_issuance.write(writer);
     }
 }
 
@@ -704,6 +713,7 @@ impl Read for HouseState {
             total_voting_power: u128::read(reader)?,
             accumulated_fees: u64::read(reader)?,
             total_burned: u64::read(reader)?,
+            total_issuance: u64::read(reader)?,
         })
     }
 }
@@ -717,6 +727,7 @@ impl EncodeSize for HouseState {
             + self.total_voting_power.encode_size()
             + self.accumulated_fees.encode_size()
             + self.total_burned.encode_size()
+            + self.total_issuance.encode_size()
     }
 }
 
@@ -797,7 +808,7 @@ pub struct AmmPool {
     pub reserve_rng: u64,
     pub reserve_vusdt: u64,
     pub total_shares: u64,
-    pub fee_basis_points: u16, // e.g., 30 = 0.3%
+    pub fee_basis_points: u16,      // e.g., 30 = 0.3%
     pub sell_tax_basis_points: u16, // e.g., 500 = 5%
 }
 

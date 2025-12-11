@@ -17,7 +17,11 @@ use nullspace_types::casino::GameSession;
 /// Get card rank for war (Ace is high = 14).
 fn card_rank(card: u8) -> u8 {
     let rank = (card % 13) + 1;
-    if rank == 1 { 14 } else { rank } // Ace is high
+    if rank == 1 {
+        14
+    } else {
+        rank
+    } // Ace is high
 }
 
 /// Casino War stages.
@@ -164,8 +168,10 @@ impl CasinoGame for CasinoWar {
                             rng.draw_card(&mut deck);
                         }
 
-                        let new_player_card = rng.draw_card(&mut deck).ok_or(GameError::InvalidMove)?;
-                        let new_dealer_card = rng.draw_card(&mut deck).ok_or(GameError::InvalidMove)?;
+                        let new_player_card =
+                            rng.draw_card(&mut deck).ok_or(GameError::InvalidMove)?;
+                        let new_dealer_card =
+                            rng.draw_card(&mut deck).ok_or(GameError::InvalidMove)?;
 
                         let new_player_rank = card_rank(new_player_card);
                         let new_dealer_rank = card_rank(new_dealer_card);
@@ -237,11 +243,11 @@ mod tests {
     #[test]
     fn test_card_rank() {
         // Ace is high (14)
-        assert_eq!(card_rank(0), 14);  // Ace of spades
+        assert_eq!(card_rank(0), 14); // Ace of spades
         assert_eq!(card_rank(13), 14); // Ace of hearts
 
         // Regular ranks
-        assert_eq!(card_rank(1), 2);   // 2 of spades
+        assert_eq!(card_rank(1), 2); // 2 of spades
         assert_eq!(card_rank(12), 13); // King of spades
     }
 
@@ -369,7 +375,8 @@ mod tests {
         CasinoWar::init(&mut session, &mut rng);
 
         assert_eq!(session.state_blob.len(), 3);
-        let (player_card, dealer_card, stage) = parse_state(&session.state_blob).expect("Failed to parse state");
+        let (player_card, dealer_card, stage) =
+            parse_state(&session.state_blob).expect("Failed to parse state");
 
         assert!(player_card < 52);
         assert!(dealer_card < 52);

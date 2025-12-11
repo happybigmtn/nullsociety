@@ -1,12 +1,12 @@
 use crate::{events::Stream, Error, Result};
+use commonware_codec::{DecodeExt, Encode};
+use commonware_cryptography::{Hasher, Sha256};
+use commonware_utils::hex;
 use nullspace_types::{
     api::{Lookup, Pending, Submission, Summary, Update, UpdatesFilter},
     execution::{Key, Seed, Transaction},
     Identity,
 };
-use commonware_codec::{DecodeExt, Encode};
-use commonware_cryptography::{Hasher, Sha256};
-use commonware_utils::hex;
 use reqwest::Client as HttpClient;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -43,14 +43,15 @@ impl Client {
         };
 
         let mut ws_url = base_url.clone();
-        ws_url.set_scheme(ws_scheme)
+        ws_url
+            .set_scheme(ws_scheme)
             .map_err(|_| Error::InvalidScheme(ws_scheme.to_string()))?;
 
         let http_client = HttpClient::builder()
             .timeout(TIMEOUT)
-            .pool_max_idle_per_host(100)  // More connections per host
-            .pool_idle_timeout(Duration::from_secs(60))  // Keep connections alive
-            .tcp_keepalive(Duration::from_secs(30))  // TCP keepalive
+            .pool_max_idle_per_host(100) // More connections per host
+            .pool_idle_timeout(Duration::from_secs(60)) // Keep connections alive
+            .tcp_keepalive(Duration::from_secs(30)) // TCP keepalive
             .build()?;
 
         Ok(Self {

@@ -249,13 +249,20 @@ impl Write for Instruction {
                 11u8.write(writer);
                 amount.write(writer);
             }
-            Self::CasinoStartGame { game_type, bet, session_id } => {
+            Self::CasinoStartGame {
+                game_type,
+                bet,
+                session_id,
+            } => {
                 12u8.write(writer);
                 game_type.write(writer);
                 bet.write(writer);
                 session_id.write(writer);
             }
-            Self::CasinoGameMove { session_id, payload } => {
+            Self::CasinoGameMove {
+                session_id,
+                payload,
+            } => {
                 13u8.write(writer);
                 session_id.write(writer);
                 (payload.len() as u32).write(writer);
@@ -267,7 +274,11 @@ impl Write for Instruction {
                 16u8.write(writer);
                 tournament_id.write(writer);
             }
-            Self::CasinoStartTournament { tournament_id, start_time_ms, end_time_ms } => {
+            Self::CasinoStartTournament {
+                tournament_id,
+                start_time_ms,
+                end_time_ms,
+            } => {
                 17u8.write(writer);
                 tournament_id.write(writer);
                 start_time_ms.write(writer);
@@ -356,7 +367,9 @@ impl Read for Instruction {
                     .map_err(|_| Error::Invalid("Instruction", "invalid UTF-8 in casino name"))?;
                 Self::CasinoRegister { name }
             }
-            11 => Self::CasinoDeposit { amount: u64::read(reader)? },
+            11 => Self::CasinoDeposit {
+                amount: u64::read(reader)?,
+            },
             12 => Self::CasinoStartGame {
                 game_type: crate::casino::GameType::read(reader)?,
                 bet: u64::read(reader)?,
@@ -373,11 +386,16 @@ impl Read for Instruction {
                 }
                 let mut payload = vec![0u8; payload_len];
                 reader.copy_to_slice(&mut payload);
-                Self::CasinoGameMove { session_id, payload }
+                Self::CasinoGameMove {
+                    session_id,
+                    payload,
+                }
             }
             14 => Self::CasinoToggleShield,
             15 => Self::CasinoToggleDouble,
-            16 => Self::CasinoJoinTournament { tournament_id: u64::read(reader)? },
+            16 => Self::CasinoJoinTournament {
+                tournament_id: u64::read(reader)?,
+            },
             17 => Self::CasinoStartTournament {
                 tournament_id: u64::read(reader)?,
                 start_time_ms: u64::read(reader)?,
@@ -395,9 +413,15 @@ impl Read for Instruction {
 
             // Vaults (22-25)
             22 => Self::CreateVault,
-            23 => Self::DepositCollateral { amount: u64::read(reader)? },
-            24 => Self::BorrowUSDT { amount: u64::read(reader)? },
-            25 => Self::RepayUSDT { amount: u64::read(reader)? },
+            23 => Self::DepositCollateral {
+                amount: u64::read(reader)?,
+            },
+            24 => Self::BorrowUSDT {
+                amount: u64::read(reader)?,
+            },
+            25 => Self::RepayUSDT {
+                amount: u64::read(reader)?,
+            },
 
             // AMM (26-28)
             26 => Self::Swap {
@@ -409,8 +433,12 @@ impl Read for Instruction {
                 rng_amount: u64::read(reader)?,
                 usdt_amount: u64::read(reader)?,
             },
-            28 => Self::RemoveLiquidity { shares: u64::read(reader)? },
-            29 => Self::CasinoEndTournament { tournament_id: u64::read(reader)? },
+            28 => Self::RemoveLiquidity {
+                shares: u64::read(reader)?,
+            },
+            29 => Self::CasinoEndTournament {
+                tournament_id: u64::read(reader)?,
+            },
 
             i => return Err(Error::InvalidEnum(i)),
         };
@@ -718,7 +746,7 @@ pub enum Key {
     // Virtual Liquidity keys (tags 16-17)
     Vault(PublicKey),
     AmmPool,
-    
+
     // LP Balance (Tag 18)
     LpBalance(PublicKey),
 }
@@ -848,7 +876,7 @@ pub enum Value {
     // Virtual Liquidity values (tags 16-17)
     Vault(crate::casino::Vault),
     AmmPool(crate::casino::AmmPool),
-    
+
     // LP Balance (Tag 18)
     LpBalance(u64),
 }
@@ -1114,7 +1142,10 @@ impl Write for Event {
                 id.write(writer);
                 start_block.write(writer);
             }
-            Self::PlayerJoined { tournament_id, player } => {
+            Self::PlayerJoined {
+                tournament_id,
+                player,
+            } => {
                 26u8.write(writer);
                 tournament_id.write(writer);
                 player.write(writer);
@@ -1252,9 +1283,7 @@ impl EncodeSize for Event {
                     session_id,
                     move_number,
                     new_state,
-                } => {
-                    session_id.encode_size() + move_number.encode_size() + new_state.encode_size()
-                }
+                } => session_id.encode_size() + move_number.encode_size() + new_state.encode_size(),
                 Self::CasinoGameCompleted {
                     session_id,
                     player,
@@ -1290,15 +1319,14 @@ impl EncodeSize for Event {
                 Self::TournamentStarted { id, start_block } => {
                     id.encode_size() + start_block.encode_size()
                 }
-                Self::PlayerJoined { tournament_id, player } => {
-                    tournament_id.encode_size() + player.encode_size()
-                }
+                Self::PlayerJoined {
+                    tournament_id,
+                    player,
+                } => tournament_id.encode_size() + player.encode_size(),
                 Self::TournamentPhaseChanged { id, phase } => {
                     id.encode_size() + phase.encode_size()
                 }
-                Self::TournamentEnded { id, rankings } => {
-                    id.encode_size() + rankings.encode_size()
-                }
+                Self::TournamentEnded { id, rankings } => id.encode_size() + rankings.encode_size(),
             }
     }
 }
@@ -1448,4 +1476,3 @@ impl Digestible for Progress {
         Sha256::hash(&self.encode())
     }
 }
-

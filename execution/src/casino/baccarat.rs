@@ -18,8 +18,8 @@
 //! 3 = Player Pair (11:1)
 //! 4 = Banker Pair (11:1)
 
-use super::{CasinoGame, GameError, GameResult, GameRng};
 use super::super_mode::apply_super_multiplier_cards;
+use super::{CasinoGame, GameError, GameResult, GameRng};
 use nullspace_types::casino::GameSession;
 
 /// Maximum cards in a Baccarat hand (2-3 cards per hand).
@@ -58,9 +58,9 @@ impl TryFrom<u8> for BetType {
 fn card_value(card: u8) -> u8 {
     let rank = (card % 13) + 1; // 1-13
     match rank {
-        1 => 1,         // Ace
-        2..=9 => rank,  // 2-9
-        _ => 0,         // 10, J, Q, K
+        1 => 1,        // Ace
+        2..=9 => rank, // 2-9
+        _ => 0,        // 10, J, Q, K
     }
 }
 
@@ -125,7 +125,8 @@ impl BaccaratState {
     /// Serialize state to blob
     fn to_blob(&self) -> Vec<u8> {
         // Capacity: 1 (bet count) + bets (9 bytes each) + 1 (player len) + player cards + 1 (banker len) + banker cards
-        let capacity = 1 + (self.bets.len() * 9) + 1 + self.player_cards.len() + 1 + self.banker_cards.len();
+        let capacity =
+            1 + (self.bets.len() * 9) + 1 + self.player_cards.len() + 1 + self.banker_cards.len();
         let mut blob = Vec::with_capacity(capacity);
         blob.push(self.bets.len() as u8);
         for bet in &self.bets {
@@ -332,8 +333,8 @@ impl CasinoGame for Baccarat {
         }
 
         // Parse current state
-        let mut state = BaccaratState::from_blob(&session.state_blob)
-            .ok_or(GameError::InvalidPayload)?;
+        let mut state =
+            BaccaratState::from_blob(&session.state_blob).ok_or(GameError::InvalidPayload)?;
 
         match payload[0] {
             // [0, bet_type, amount_bytes...] - Place bet
@@ -349,7 +350,9 @@ impl CasinoGame for Baccarat {
 
                 let bet_type = BetType::try_from(payload[1])?;
                 let amount = u64::from_be_bytes(
-                    payload[2..10].try_into().map_err(|_| GameError::InvalidPayload)?
+                    payload[2..10]
+                        .try_into()
+                        .map_err(|_| GameError::InvalidPayload)?,
                 );
 
                 if amount == 0 {
@@ -368,7 +371,9 @@ impl CasinoGame for Baccarat {
                 }
 
                 session.state_blob = state.to_blob();
-                Ok(GameResult::ContinueWithUpdate { payout: -(amount as i64) })
+                Ok(GameResult::ContinueWithUpdate {
+                    payout: -(amount as i64),
+                })
             }
 
             // [1] - Deal cards and resolve all bets
@@ -461,7 +466,8 @@ impl CasinoGame for Baccarat {
                 } else if net_payout < 0 {
                     // Net loss
                     // Use checked_neg to safely convert negative i64 to positive value
-                    let loss_amount = net_payout.checked_neg()
+                    let loss_amount = net_payout
+                        .checked_neg()
                         .and_then(|v| u64::try_from(v).ok())
                         .unwrap_or(0);
                     if loss_amount == 0 {
@@ -485,7 +491,9 @@ impl CasinoGame for Baccarat {
                 if session.super_mode.is_active {
                     if let GameResult::Win(base_payout) = base_result {
                         // Aura Cards: combine player and banker cards for multiplier check
-                        let all_cards: Vec<u8> = state.player_cards.iter()
+                        let all_cards: Vec<u8> = state
+                            .player_cards
+                            .iter()
                             .chain(state.banker_cards.iter())
                             .cloned()
                             .collect();
@@ -554,7 +562,7 @@ mod tests {
         assert_eq!(card_value(8), 9);
 
         // 10, J, Q, K = 0
-        assert_eq!(card_value(9), 0);  // 10
+        assert_eq!(card_value(9), 0); // 10
         assert_eq!(card_value(10), 0); // J
         assert_eq!(card_value(11), 0); // Q
         assert_eq!(card_value(12), 0); // K
@@ -608,8 +616,14 @@ mod tests {
     fn test_state_serialize_parse_roundtrip() {
         let state = BaccaratState {
             bets: vec![
-                BaccaratBet { bet_type: BetType::Player, amount: 100 },
-                BaccaratBet { bet_type: BetType::Tie, amount: 50 },
+                BaccaratBet {
+                    bet_type: BetType::Player,
+                    amount: 100,
+                },
+                BaccaratBet {
+                    bet_type: BetType::Tie,
+                    amount: 50,
+                },
             ],
             player_cards: vec![1, 2, 3],
             banker_cards: vec![4, 5],
@@ -799,7 +813,10 @@ mod tests {
     #[test]
     fn test_banker_commission() {
         // If banker wins, payout should be 95% of bet
-        let bet = BaccaratBet { bet_type: BetType::Banker, amount: 100 };
+        let bet = BaccaratBet {
+            bet_type: BetType::Banker,
+            amount: 100,
+        };
         // Banker wins with 9 vs 4
         let (payout, is_push) = calculate_bet_payout(&bet, 4, 9, false, false);
         assert!(!is_push);
@@ -809,7 +826,10 @@ mod tests {
     #[test]
     fn test_tie_payout() {
         // Tie bet should pay 8:1
-        let bet = BaccaratBet { bet_type: BetType::Tie, amount: 100 };
+        let bet = BaccaratBet {
+            bet_type: BetType::Tie,
+            amount: 100,
+        };
         let (payout, is_push) = calculate_bet_payout(&bet, 5, 5, false, false);
         assert!(!is_push);
         assert_eq!(payout, 800); // 8x winnings
@@ -818,7 +838,10 @@ mod tests {
     #[test]
     fn test_player_pair_payout() {
         // Player pair pays 11:1
-        let bet = BaccaratBet { bet_type: BetType::PlayerPair, amount: 100 };
+        let bet = BaccaratBet {
+            bet_type: BetType::PlayerPair,
+            amount: 100,
+        };
         let (payout, _) = calculate_bet_payout(&bet, 5, 7, true, false);
         assert_eq!(payout, 1100); // 11x winnings
     }
@@ -838,7 +861,8 @@ mod tests {
             // Place bet
             let mut rng = GameRng::new(&seed, session_id, 1);
             let payload = place_bet_payload(BetType::Player, 100);
-            Baccarat::process_move(&mut session, &payload, &mut rng).expect("Failed to process move");
+            Baccarat::process_move(&mut session, &payload, &mut rng)
+                .expect("Failed to process move");
 
             // Deal
             let mut rng = GameRng::new(&seed, session_id, 2);

@@ -18,8 +18,8 @@
 //! [2] = Double Down
 //! [3] = Split
 
-use super::{CasinoGame, GameError, GameResult, GameRng};
 use super::super_mode::apply_super_multiplier_cards;
+use super::{CasinoGame, GameError, GameResult, GameRng};
 use nullspace_types::casino::GameSession;
 
 /// Maximum cards in a blackjack hand.
@@ -175,44 +175,64 @@ fn parse_state(blob: &[u8]) -> Option<BlackjackState> {
     if blob[0] != 1 {
         // Fallback for old state format (legacy support if needed, or just fail)
         // For this task, we assume new format or fail.
-        return None; 
+        return None;
     }
 
     let mut idx = 1;
-    if idx >= blob.len() { return None; }
+    if idx >= blob.len() {
+        return None;
+    }
     let active_hand_idx = blob[idx] as usize;
     idx += 1;
 
-    if idx >= blob.len() { return None; }
+    if idx >= blob.len() {
+        return None;
+    }
     let hand_count = blob[idx] as usize;
     idx += 1;
 
-    if hand_count > MAX_HANDS { return None; }
+    if hand_count > MAX_HANDS {
+        return None;
+    }
 
     let mut hands = Vec::with_capacity(hand_count);
     for _ in 0..hand_count {
-        if idx + 3 > blob.len() { return None; }
+        if idx + 3 > blob.len() {
+            return None;
+        }
         let bet_mult = blob[idx];
-        let status = HandStatus::try_from(blob[idx+1]).ok()?;
-        let c_len = blob[idx+2] as usize;
+        let status = HandStatus::try_from(blob[idx + 1]).ok()?;
+        let c_len = blob[idx + 2] as usize;
         idx += 3;
 
-        if c_len > MAX_HAND_SIZE || idx + c_len > blob.len() { return None; }
-        let cards = blob[idx..idx+c_len].to_vec();
+        if c_len > MAX_HAND_SIZE || idx + c_len > blob.len() {
+            return None;
+        }
+        let cards = blob[idx..idx + c_len].to_vec();
         idx += c_len;
 
-        hands.push(HandState { cards, bet_mult, status });
+        hands.push(HandState {
+            cards,
+            bet_mult,
+            status,
+        });
     }
 
-    if idx >= blob.len() { return None; }
+    if idx >= blob.len() {
+        return None;
+    }
     let d_len = blob[idx] as usize;
     idx += 1;
 
-    if d_len > MAX_HAND_SIZE || idx + d_len > blob.len() { return None; }
-    let dealer_cards = blob[idx..idx+d_len].to_vec();
+    if d_len > MAX_HAND_SIZE || idx + d_len > blob.len() {
+        return None;
+    }
+    let dealer_cards = blob[idx..idx + d_len].to_vec();
     idx += d_len;
 
-    if idx >= blob.len() { return None; }
+    if idx >= blob.len() {
+        return None;
+    }
     let stage = Stage::try_from(blob[idx]).ok()?;
 
     Some(BlackjackState {
@@ -244,7 +264,11 @@ impl CasinoGame for Blackjack {
         let mut hands = vec![HandState {
             cards: player_cards,
             bet_mult: 1,
-            status: if player_bj { HandStatus::Blackjack } else { HandStatus::Playing },
+            status: if player_bj {
+                HandStatus::Blackjack
+            } else {
+                HandStatus::Playing
+            },
         }];
 
         let mut stage = Stage::PlayerTurn;
@@ -316,9 +340,11 @@ impl CasinoGame for Blackjack {
 
         match mv {
             Move::Hit => {
-                if state.active_hand_idx >= state.hands.len() { return Err(GameError::InvalidState); }
+                if state.active_hand_idx >= state.hands.len() {
+                    return Err(GameError::InvalidState);
+                }
                 let hand = &mut state.hands[state.active_hand_idx];
-                
+
                 let card = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
                 hand.cards.push(card);
                 session.move_count += 1;
@@ -337,12 +363,14 @@ impl CasinoGame for Blackjack {
                         return Self::dealer_play(session, state, deck, rng);
                     }
                 }
-                
+
                 session.state_blob = serialize_state(&state);
                 Ok(GameResult::Continue)
             }
             Move::Stand => {
-                if state.active_hand_idx >= state.hands.len() { return Err(GameError::InvalidState); }
+                if state.active_hand_idx >= state.hands.len() {
+                    return Err(GameError::InvalidState);
+                }
                 state.hands[state.active_hand_idx].status = HandStatus::Standing;
                 session.move_count += 1;
 
@@ -353,10 +381,14 @@ impl CasinoGame for Blackjack {
                 Ok(GameResult::Continue)
             }
             Move::Double => {
-                if state.active_hand_idx >= state.hands.len() { return Err(GameError::InvalidState); }
+                if state.active_hand_idx >= state.hands.len() {
+                    return Err(GameError::InvalidState);
+                }
                 let hand = &mut state.hands[state.active_hand_idx];
 
-                if hand.cards.len() != 2 { return Err(GameError::InvalidMove); }
+                if hand.cards.len() != 2 {
+                    return Err(GameError::InvalidMove);
+                }
 
                 // Calculate extra bet to deduct
                 let extra_bet = session.bet; // Doubles base bet for this hand
@@ -374,7 +406,7 @@ impl CasinoGame for Blackjack {
                 }
 
                 let all_done = !advance_turn(&mut state);
-                
+
                 if all_done {
                     // All hands done, dealer plays.
                     // Dealer play will return result. We need to handle the extra deduction.
@@ -383,27 +415,27 @@ impl CasinoGame for Blackjack {
                     // BUT process_move needs to signal the deduction NOW.
                     // Actually, simpler: Return ContinueWithUpdate to deduct, then if game over,
                     // return result? No, dealer_play finishes game.
-                    
+
                     // Dealer play returns result based on FINAL state.
                     // We need to return LossWithExtraDeduction if total result is loss.
                     // Or if win, reduce win amount?
                     // Better: We return ContinueWithUpdate to deduct, AND calculate result? No can't do both.
-                    
+
                     // If we double on last hand, we need to resolve immediately.
                     // We should treat Double as: Deduct chips -> Deal card -> Check if done.
                     // If done -> Dealer play -> Result.
-                    
+
                     // ISSUE: GameResult doesn't support "Deduct X AND return Winnings Y".
                     // It supports "Win Y" or "LossWithExtraDeduction X".
-                    
+
                     // If we use ContinueWithUpdate, game isn't over.
                     // So we must handle Double specially.
-                    
+
                     // If game ends:
                     // We calculate total return (gross winnings).
                     // The extra bet is ALREADY deducted if we used LossWithExtraDeduction?
                     // No, LossWithExtraDeduction is for when we lose.
-                    
+
                     // Let's calculate the NET change needed.
                     // We need to deduct `extra_bet`.
                     // And we need to award `winnings`.
@@ -411,12 +443,12 @@ impl CasinoGame for Blackjack {
                     // If Net > 0: Win(Net).
                     // If Net < 0: LossWithExtraDeduction(-Net).
                     // If Net == 0: Push.
-                    
+
                     let result = Self::dealer_play_internal(session, &mut state, deck, rng)?;
-                    
+
                     // Serialize state as dealer_play updates it
-                    session.state_blob = serialize_state(&state); 
-                    
+                    session.state_blob = serialize_state(&state);
+
                     match result {
                         GameResult::Win(winnings) => {
                             if winnings >= extra_bet {
@@ -436,67 +468,77 @@ impl CasinoGame for Blackjack {
                             // Net = Total Bet - Extra Bet = Original Bet.
                             // So return Win(Original Bet).
                             Ok(GameResult::Win(session.bet)) // Assuming 1 hand doubled
-                            // Wait, what if other hands?
-                            // This logic is getting complex with multiple hands.
+                                                             // Wait, what if other hands?
+                                                             // This logic is getting complex with multiple hands.
                         }
-                        GameResult::Loss => {
-                            Ok(GameResult::LossWithExtraDeduction(extra_bet))
-                        }
-                        GameResult::LossWithExtraDeduction(existing_deduction) => {
-                            Ok(GameResult::LossWithExtraDeduction(existing_deduction + extra_bet))
-                        }
+                        GameResult::Loss => Ok(GameResult::LossWithExtraDeduction(extra_bet)),
+                        GameResult::LossWithExtraDeduction(existing_deduction) => Ok(
+                            GameResult::LossWithExtraDeduction(existing_deduction + extra_bet),
+                        ),
                         _ => Ok(result),
                     }
                 } else {
                     // Not done, just deduct and continue
                     session.state_blob = serialize_state(&state);
-                    Ok(GameResult::ContinueWithUpdate { payout: -(extra_bet as i64) })
+                    Ok(GameResult::ContinueWithUpdate {
+                        payout: -(extra_bet as i64),
+                    })
                 }
             }
             Move::Split => {
-                if state.active_hand_idx >= state.hands.len() { return Err(GameError::InvalidState); }
-                if state.hands.len() >= MAX_HANDS { return Err(GameError::InvalidMove); }
-                
+                if state.active_hand_idx >= state.hands.len() {
+                    return Err(GameError::InvalidState);
+                }
+                if state.hands.len() >= MAX_HANDS {
+                    return Err(GameError::InvalidMove);
+                }
+
                 let current_hand = &mut state.hands[state.active_hand_idx];
-                if current_hand.cards.len() != 2 { return Err(GameError::InvalidMove); }
-                
+                if current_hand.cards.len() != 2 {
+                    return Err(GameError::InvalidMove);
+                }
+
                 // Check ranks match
                 let r1 = card_rank(current_hand.cards[0]);
                 let r2 = card_rank(current_hand.cards[1]);
-                if r1 != r2 { return Err(GameError::InvalidMove); }
-                
+                if r1 != r2 {
+                    return Err(GameError::InvalidMove);
+                }
+
                 // Deduct split bet (equal to original session bet)
                 let split_bet = session.bet;
-                
+
                 // Perform split
                 let split_card = current_hand.cards.pop().unwrap();
-                
+
                 // Deal card to first hand
                 let c1 = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
                 current_hand.cards.push(c1);
-                
+
                 // Create second hand
                 let mut new_hand_cards = vec![split_card];
                 let c2 = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
                 new_hand_cards.push(c2);
-                
+
                 let new_hand = HandState {
                     cards: new_hand_cards,
                     bet_mult: 1,
                     status: HandStatus::Playing,
                 };
-                
+
                 // Insert new hand after current
                 state.hands.insert(state.active_hand_idx + 1, new_hand);
-                
+
                 // Check blackjack for current hand (if Ace split)
                 // Simplify: Standard blackjack check logic if we want
                 // For now, let them play it.
-                
+
                 session.move_count += 1;
                 session.state_blob = serialize_state(&state);
-                
-                Ok(GameResult::ContinueWithUpdate { payout: -(split_bet as i64) })
+
+                Ok(GameResult::ContinueWithUpdate {
+                    payout: -(split_bet as i64),
+                })
             }
         }
     }
@@ -535,11 +577,12 @@ impl Blackjack {
         rng: &mut GameRng,
     ) -> Result<GameResult, GameError> {
         state.stage = Stage::DealerTurn;
-        
+
         // Check if any player hand is not busted/blackjack
-        let any_live = state.hands.iter().any(|h| 
-            h.status == HandStatus::Standing || h.status == HandStatus::Playing
-        );
+        let any_live = state
+            .hands
+            .iter()
+            .any(|h| h.status == HandStatus::Standing || h.status == HandStatus::Playing);
 
         if any_live {
             // Dealer draws
@@ -599,7 +642,7 @@ impl Blackjack {
         if total_payout > 0 {
             // Apply super mode if active (just on first hand for simplicity/safety)
             if session.super_mode.is_active && !state.hands.is_empty() {
-                 total_payout = apply_super_multiplier_cards(
+                total_payout = apply_super_multiplier_cards(
                     &state.hands[0].cards,
                     &session.super_mode.multipliers,
                     total_payout,

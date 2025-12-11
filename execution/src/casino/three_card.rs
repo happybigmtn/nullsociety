@@ -70,7 +70,11 @@ pub enum HandRank {
 /// Get card rank (1-13, Ace = 14 for comparison).
 fn card_rank(card: u8) -> u8 {
     let r = (card % 13) + 1;
-    if r == 1 { 14 } else { r } // Ace high
+    if r == 1 {
+        14
+    } else {
+        r
+    } // Ace high
 }
 
 /// Get card suit.
@@ -152,8 +156,12 @@ fn parse_state(state: &[u8]) -> Option<([u8; 3], [u8; 3], Stage)> {
 
 fn serialize_state(player: &[u8; 3], dealer: &[u8; 3], stage: Stage) -> Vec<u8> {
     vec![
-        player[0], player[1], player[2],
-        dealer[0], dealer[1], dealer[2],
+        player[0],
+        player[1],
+        player[2],
+        dealer[0],
+        dealer[1],
+        dealer[2],
         stage as u8,
     ]
 }
@@ -214,8 +222,7 @@ impl CasinoGame for ThreeCardPoker {
                 let dealer_hand = evaluate_hand(&dealer_cards);
 
                 // Dealer needs Queen high to qualify
-                let dealer_qualifies = dealer_hand.0 >= HandRank::Pair ||
-                    dealer_hand.1[0] >= 12; // Queen or higher
+                let dealer_qualifies = dealer_hand.0 >= HandRank::Pair || dealer_hand.1[0] >= 12; // Queen or higher
 
                 // Calculate ante bonus (paid regardless of dealer) with overflow protection
                 let bonus = session.bet.saturating_mul(ante_bonus(player_hand.0));
@@ -273,7 +280,9 @@ impl CasinoGame for ThreeCardPoker {
                                     Ok(GameResult::Win(bonus.saturating_sub(play_bet)))
                                 } else {
                                     // Play_bet loss exceeds bonus
-                                    Ok(GameResult::LossWithExtraDeduction(play_bet.saturating_sub(bonus)))
+                                    Ok(GameResult::LossWithExtraDeduction(
+                                        play_bet.saturating_sub(bonus),
+                                    ))
                                 }
                             } else {
                                 Ok(GameResult::LossWithExtraDeduction(play_bet))
@@ -423,7 +432,8 @@ mod tests {
 
         ThreeCardPoker::init(&mut session, &mut rng);
 
-        let (player, dealer, stage) = parse_state(&session.state_blob).expect("Failed to parse state");
+        let (player, dealer, stage) =
+            parse_state(&session.state_blob).expect("Failed to parse state");
         assert_eq!(stage, Stage::Ante);
 
         for card in player.iter().chain(dealer.iter()) {

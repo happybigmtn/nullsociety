@@ -337,7 +337,11 @@ mod tests {
             let mut rng = GameRng::new(&seed, session.id, 1);
             let result = process_game_move(&mut session, &place_bet_payload, &mut rng);
             assert!(result.is_ok(), "Place bet failed for {}", name);
-            assert!(!session.is_complete, "Game should not complete after placing bet for {}", name);
+            assert!(
+                !session.is_complete,
+                "Game should not complete after placing bet for {}",
+                name
+            );
 
             // Roll dice: [1]
             let mut rng = GameRng::new(&seed, session.id, 2);

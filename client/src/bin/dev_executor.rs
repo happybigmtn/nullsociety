@@ -6,13 +6,13 @@
 //! 3. Executes blocks periodically
 //! 4. Submits block summaries back to the simulator
 
-use nullspace_client::Client;
-use nullspace_execution::mocks::{create_adbs, create_network_keypair, execute_block};
-use nullspace_types::{api, execution::Transaction, Identity};
 use clap::Parser;
 use commonware_codec::DecodeExt;
 use commonware_runtime::{tokio as cw_tokio, Runner};
 use futures_util::StreamExt;
+use nullspace_client::Client;
+use nullspace_execution::mocks::{create_adbs, create_network_keypair, execute_block};
+use nullspace_types::{api, execution::Transaction, Identity};
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{info, warn};
@@ -45,8 +45,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse identity
     let identity_bytes =
         commonware_utils::from_hex(&args.identity).ok_or("Invalid identity hex format")?;
-    let identity: Identity =
-        Identity::decode(&mut identity_bytes.as_slice()).map_err(|_| "Failed to decode identity")?;
+    let identity: Identity = Identity::decode(&mut identity_bytes.as_slice())
+        .map_err(|_| "Failed to decode identity")?;
 
     // Get network secret from the same seed used to create identity
     let (network_secret, network_identity) = create_network_keypair();
@@ -64,8 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let block_interval_ms = args.block_interval_ms;
 
     // Run executor using commonware runtime with panic catching
-    let cfg = cw_tokio::Config::default()
-        .with_catch_panics(true);
+    let cfg = cw_tokio::Config::default().with_catch_panics(true);
     let executor = cw_tokio::Runner::new(cfg);
     executor.start(|context| async move {
         // Create state and events databases (persistent across reconnections)

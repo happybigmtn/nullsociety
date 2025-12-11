@@ -93,7 +93,11 @@ pub enum HandRank {
 /// Get card rank (1-13, but Ace = 14 for comparison).
 fn card_rank(card: u8) -> u8 {
     let r = (card % 13) + 1;
-    if r == 1 { 14 } else { r }
+    if r == 1 {
+        14
+    } else {
+        r
+    }
 }
 
 /// Get card suit.
@@ -150,16 +154,20 @@ fn evaluate_5_card_fast(cards: &[u8; 5]) -> (HandRank, [u8; 5]) {
     ranks.sort_unstable_by(|a, b| b.cmp(a));
 
     // Check flush
-    let is_flush = suits[0] == suits[1] && suits[1] == suits[2]
-                && suits[2] == suits[3] && suits[3] == suits[4];
+    let is_flush = suits[0] == suits[1]
+        && suits[1] == suits[2]
+        && suits[2] == suits[3]
+        && suits[3] == suits[4];
 
     // Check straight - need sorted ascending with no duplicates
     let mut sorted = ranks;
     sorted.sort_unstable();
 
     // Check for duplicates
-    let has_duplicates = sorted[0] == sorted[1] || sorted[1] == sorted[2]
-                      || sorted[2] == sorted[3] || sorted[3] == sorted[4];
+    let has_duplicates = sorted[0] == sorted[1]
+        || sorted[1] == sorted[2]
+        || sorted[2] == sorted[3]
+        || sorted[3] == sorted[4];
 
     let is_straight = if has_duplicates {
         false
@@ -239,9 +247,15 @@ fn serialize_state(
 ) -> Vec<u8> {
     vec![
         stage as u8,
-        player[0], player[1],
-        community[0], community[1], community[2], community[3], community[4],
-        dealer[0], dealer[1],
+        player[0],
+        player[1],
+        community[0],
+        community[1],
+        community[2],
+        community[3],
+        community[4],
+        dealer[0],
+        dealer[1],
         play_bet,
     ]
 }
@@ -274,10 +288,12 @@ impl CasinoGame for UltimateHoldem {
         ];
 
         session.state_blob = serialize_state(Stage::Preflop, &player, &community, &dealer, 0);
-        
+
         // Deduct the Blind bet immediately (equal to Ante)
         // Ante was deducted by CasinoStartGame, but Blind wasn't.
-        GameResult::ContinueWithUpdate { payout: -(session.bet as i64) }
+        GameResult::ContinueWithUpdate {
+            payout: -(session.bet as i64),
+        }
     }
 
     fn process_move(
@@ -367,13 +383,23 @@ fn resolve_showdown(
 
     // Build 7-card hands (stack allocated)
     let player_cards: [u8; 7] = [
-        player_hole[0], player_hole[1],
-        community[0], community[1], community[2], community[3], community[4],
+        player_hole[0],
+        player_hole[1],
+        community[0],
+        community[1],
+        community[2],
+        community[3],
+        community[4],
     ];
 
     let dealer_cards: [u8; 7] = [
-        dealer_hole[0], dealer_hole[1],
-        community[0], community[1], community[2], community[3], community[4],
+        dealer_hole[0],
+        dealer_hole[1],
+        community[0],
+        community[1],
+        community[2],
+        community[3],
+        community[4],
     ];
 
     let player_hand = evaluate_best_hand(&player_cards);
@@ -411,11 +437,7 @@ fn resolve_showdown(
     // Helper to apply super mode multiplier
     let apply_multiplier = |base: u64| -> u64 {
         if session.super_mode.is_active {
-            apply_super_multiplier_cards(
-                &player_cards,
-                &session.super_mode.multipliers,
-                base,
-            )
+            apply_super_multiplier_cards(&player_cards, &session.super_mode.multipliers, base)
         } else {
             base
         }
@@ -434,7 +456,8 @@ fn resolve_showdown(
             // Calculated return: 2*Ante + 2*Play + (Blind + BlindBonus)
             // Actual return: subtract play_bet since it wasn't charged
             let blind_return = ante.saturating_add(blind_pay);
-            let base_return = ante.saturating_mul(2)
+            let base_return = ante
+                .saturating_mul(2)
                 .saturating_add(play_bet) // Only 1x play_bet since 1x was "returned" but never charged
                 .saturating_add(blind_return);
             Ok(GameResult::Win(apply_multiplier(base_return)))
@@ -542,7 +565,8 @@ mod tests {
         // Check to river
         for i in 1..=2 {
             let mut rng = GameRng::new(&seed, session.id, i);
-            UltimateHoldem::process_move(&mut session, &[0], &mut rng).expect("Failed to process move");
+            UltimateHoldem::process_move(&mut session, &[0], &mut rng)
+                .expect("Failed to process move");
         }
 
         // Fold at river

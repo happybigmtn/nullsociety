@@ -1,4 +1,3 @@
-use nullspace_types::{leader_index, Evaluation, Identity, Signature};
 use commonware_codec::Encode;
 use commonware_consensus::{
     aggregation::types::Epoch, threshold_simplex::types::View, Monitor, Supervisor as Su,
@@ -18,6 +17,7 @@ use commonware_cryptography::{
 use commonware_resolver::p2p;
 use commonware_runtime::RwLock;
 use futures::{channel::mpsc, SinkExt};
+use nullspace_types::{leader_index, Evaluation, Identity, Signature};
 use std::{collections::HashMap, sync::Arc};
 
 /// Manages epoch state and subscribers.

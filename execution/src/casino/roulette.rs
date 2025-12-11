@@ -30,7 +30,9 @@ use nullspace_types::casino::GameSession;
 const MAX_BETS: usize = 20;
 
 /// Red numbers on a roulette wheel.
-const RED_NUMBERS: [u8; 18] = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+const RED_NUMBERS: [u8; 18] = [
+    1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36,
+];
 
 /// Roulette bet types.
 #[repr(u8)]
@@ -104,7 +106,12 @@ fn bet_wins(bet_type: BetType, bet_number: u8, result: u8) -> bool {
 fn payout_multiplier(bet_type: BetType) -> u64 {
     match bet_type {
         BetType::Straight => 35,
-        BetType::Red | BetType::Black | BetType::Even | BetType::Odd | BetType::Low | BetType::High => 1,
+        BetType::Red
+        | BetType::Black
+        | BetType::Even
+        | BetType::Odd
+        | BetType::Low
+        | BetType::High => 1,
         BetType::Dozen | BetType::Column => 2,
     }
 }
@@ -135,7 +142,11 @@ impl RouletteBet {
         let bet_type = BetType::try_from(bytes[0]).ok()?;
         let number = bytes[1];
         let amount = u64::from_be_bytes(bytes[2..10].try_into().ok()?);
-        Some(RouletteBet { bet_type, number, amount })
+        Some(RouletteBet {
+            bet_type,
+            number,
+            amount,
+        })
     }
 }
 
@@ -240,8 +251,8 @@ impl CasinoGame for Roulette {
         }
 
         // Parse current state
-        let mut state = RouletteState::from_blob(&session.state_blob)
-            .ok_or(GameError::InvalidPayload)?;
+        let mut state =
+            RouletteState::from_blob(&session.state_blob).ok_or(GameError::InvalidPayload)?;
 
         match payload[0] {
             // [0, bet_type, number, amount_bytes...] - Place bet
@@ -258,7 +269,9 @@ impl CasinoGame for Roulette {
                 let bet_type = BetType::try_from(payload[1])?;
                 let number = payload[2];
                 let amount = u64::from_be_bytes(
-                    payload[3..11].try_into().map_err(|_| GameError::InvalidPayload)?
+                    payload[3..11]
+                        .try_into()
+                        .map_err(|_| GameError::InvalidPayload)?,
                 );
 
                 if amount == 0 {
@@ -286,10 +299,16 @@ impl CasinoGame for Roulette {
                 }
 
                 // Add bet (allow duplicates for roulette - bet on same spot multiple times)
-                state.bets.push(RouletteBet { bet_type, number, amount });
+                state.bets.push(RouletteBet {
+                    bet_type,
+                    number,
+                    amount,
+                });
 
                 session.state_blob = state.to_blob();
-                Ok(GameResult::ContinueWithUpdate { payout: -(amount as i64) })
+                Ok(GameResult::ContinueWithUpdate {
+                    payout: -(amount as i64),
+                })
             }
 
             // [1] - Spin wheel and resolve all bets
@@ -317,7 +336,8 @@ impl CasinoGame for Roulette {
                     if bet_wins(bet.bet_type, bet.number, result) {
                         // Win: return stake + winnings
                         let multiplier = payout_multiplier(bet.bet_type).saturating_add(1);
-                        total_winnings = total_winnings.saturating_add(bet.amount.saturating_mul(multiplier));
+                        total_winnings =
+                            total_winnings.saturating_add(bet.amount.saturating_mul(multiplier));
                     }
                     // Loss: nothing added to winnings
                 }
@@ -656,7 +676,8 @@ mod tests {
             // Place bet on number 0
             let mut rng = GameRng::new(&seed, session_id, 1);
             let payload = place_bet_payload(BetType::Straight, 0, 100);
-            Roulette::process_move(&mut test_session, &payload, &mut rng).expect("Failed to process move");
+            Roulette::process_move(&mut test_session, &payload, &mut rng)
+                .expect("Failed to process move");
 
             // Spin
             let mut rng = GameRng::new(&seed, session_id, 2);

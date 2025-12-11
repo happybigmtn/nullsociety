@@ -1,15 +1,3 @@
-#[cfg(feature = "testing")]
-use nullspace_execution::mocks;
-#[cfg(feature = "testing")]
-use nullspace_types::api::Summary;
-use nullspace_types::{
-    api::{Lookup, Submission, Update, UpdatesFilter},
-    execution::{
-        transaction_namespace, Event, Instruction, Key, Output,
-        Seed, Transaction as ExecutionTransaction, Value, NAMESPACE,
-    },
-    Identity, Query,
-};
 use commonware_codec::{Encode, ReadExt};
 #[cfg(feature = "testing")]
 use commonware_consensus::threshold_simplex::types::{seed_namespace, view_message};
@@ -22,6 +10,18 @@ use commonware_cryptography::{ed25519, Hasher, PrivateKeyExt, Sha256, Signer as 
 use commonware_runtime::{deterministic::Runner, Runner as _};
 use commonware_storage::store::operation::{Keyless, Variable};
 use commonware_utils::hex;
+#[cfg(feature = "testing")]
+use nullspace_execution::mocks;
+#[cfg(feature = "testing")]
+use nullspace_types::api::Summary;
+use nullspace_types::{
+    api::{Lookup, Submission, Update, UpdatesFilter},
+    execution::{
+        transaction_namespace, Event, Instruction, Key, Output, Seed,
+        Transaction as ExecutionTransaction, Value, NAMESPACE,
+    },
+    Identity, Query,
+};
 use rand::rngs::OsRng;
 #[cfg(feature = "testing")]
 use rand::SeedableRng;
@@ -141,9 +141,18 @@ impl Transaction {
             7 => GameType::SicBo,
             8 => GameType::ThreeCard,
             9 => GameType::UltimateHoldem,
-            _ => return Err(JsValue::from_str(&format!("Invalid game type: {}", game_type))),
+            _ => {
+                return Err(JsValue::from_str(&format!(
+                    "Invalid game type: {}",
+                    game_type
+                )))
+            }
         };
-        let instruction = Instruction::CasinoStartGame { game_type, bet, session_id };
+        let instruction = Instruction::CasinoStartGame {
+            game_type,
+            bet,
+            session_id,
+        };
         let tx = ExecutionTransaction::sign(&signer.private_key, nonce, instruction);
         Ok(Transaction { inner: tx })
     }
@@ -182,15 +191,25 @@ impl Transaction {
 
     /// Sign a new casino register transaction.
     #[wasm_bindgen]
-    pub fn casino_register(signer: &Signer, nonce: u64, name: &str) -> Result<Transaction, JsValue> {
-        let instruction = Instruction::CasinoRegister { name: name.to_string() };
+    pub fn casino_register(
+        signer: &Signer,
+        nonce: u64,
+        name: &str,
+    ) -> Result<Transaction, JsValue> {
+        let instruction = Instruction::CasinoRegister {
+            name: name.to_string(),
+        };
         let tx = ExecutionTransaction::sign(&signer.private_key, nonce, instruction);
         Ok(Transaction { inner: tx })
     }
 
     /// Sign a new casino join tournament transaction.
     #[wasm_bindgen]
-    pub fn casino_join_tournament(signer: &Signer, nonce: u64, tournament_id: u64) -> Result<Transaction, JsValue> {
+    pub fn casino_join_tournament(
+        signer: &Signer,
+        nonce: u64,
+        tournament_id: u64,
+    ) -> Result<Transaction, JsValue> {
         let instruction = Instruction::CasinoJoinTournament { tournament_id };
         let tx = ExecutionTransaction::sign(&signer.private_key, nonce, instruction);
         Ok(Transaction { inner: tx })
@@ -527,7 +546,10 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                 "start_block": start_block
             })
         }
-        Event::PlayerJoined { tournament_id, player } => {
+        Event::PlayerJoined {
+            tournament_id,
+            player,
+        } => {
             serde_json::json!({
                 "type": "PlayerJoined",
                 "tournament_id": tournament_id,

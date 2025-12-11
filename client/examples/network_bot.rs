@@ -55,10 +55,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // In a real bot, you'd load the Node's public key (to verify responses)
     // and your own Account private key (to sign transactions).
     // For this example, we generate random ones.
-    
+
     // Node Identity (BLS) - In a real scenario, this must match the node you connect to.
     let (_, node_public_key) = create_network_keypair();
-    
+
     // Bot Identity (Ed25519)
     let (private_key, public_key) = create_account_keypair(0);
     println!("Bot Public Key: {:?}", public_key);
@@ -95,7 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4. Start HiLo Game
     let session_id = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos() as u64;
     println!("Starting HiLo Game (Session ID: {})...", session_id);
-    
+
     submit_tx(
         &client,
         &private_key,
@@ -118,7 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Listening for game events...");
     while let Some(update) = stream.next().await {
         let update = update?;
-        
+
         if let Update::FilteredEvents(events) = update {
             for (_, keyless_output) in events.events_proof_ops {
                 // Keyless is an enum
@@ -132,7 +132,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             } if sid == session_id => {
                                 if let Some(rank) = get_hilo_card_rank(&initial_state) {
                                     println!("Game Started! Card Rank: {}", rank);
-                                    make_hilo_move(&client, &private_key, nonce, session_id, rank).await?;
+                                    make_hilo_move(&client, &private_key, nonce, session_id, rank)
+                                        .await?;
                                     nonce += 1;
                                 }
                             }
@@ -143,8 +144,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 ..
                             } if sid == session_id => {
                                 if let Some(rank) = get_hilo_card_rank(&new_state) {
-                                    println!("Move {} processed. New Card Rank: {}", move_number, rank);
-                                    
+                                    println!(
+                                        "Move {} processed. New Card Rank: {}",
+                                        move_number, rank
+                                    );
+
                                     // Cashout strategy after 3 moves
                                     if move_number >= 3 {
                                         println!("Cashing out...");
@@ -156,9 +160,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 session_id,
                                                 payload: vec![2], // Cashout
                                             },
-                                        ).await?;
+                                        )
+                                        .await?;
                                     } else {
-                                        make_hilo_move(&client, &private_key, nonce, session_id, rank).await?;
+                                        make_hilo_move(
+                                            &client,
+                                            &private_key,
+                                            nonce,
+                                            session_id,
+                                            rank,
+                                        )
+                                        .await?;
                                     }
                                     nonce += 1;
                                 }
@@ -171,10 +183,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 println!("Game Completed! Payout: {}", payout);
                                 return Ok(());
                             }
-                            Event::CasinoError { 
-                                session_id: Some(sid), 
-                                message, 
-                                .. 
+                            Event::CasinoError {
+                                session_id: Some(sid),
+                                message,
+                                ..
                             } if sid == session_id => {
                                 println!("Game Error: {}", message);
                                 return Ok(());
@@ -208,7 +220,7 @@ async fn make_hilo_move(
     } else {
         vec![1] // Lower
     };
-    
+
     let move_name = if payload[0] == 0 { "Higher" } else { "Lower" };
     println!("Guessing {}...", move_name);
 

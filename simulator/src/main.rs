@@ -1,7 +1,7 @@
-use nullspace_simulator::{Api, Simulator};
-use nullspace_types::Identity;
 use clap::Parser;
 use commonware_codec::DecodeExt;
+use nullspace_simulator::{Api, Simulator};
+use nullspace_types::Identity;
 use std::sync::Arc;
 use tracing::info;
 

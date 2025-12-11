@@ -1,11 +1,11 @@
 use std::num::NonZero;
 
 use crate::indexer::Indexer;
-use nullspace_types::Evaluation;
 use commonware_cryptography::{
     bls12381::primitives::{group, poly::Poly},
     ed25519::PublicKey,
 };
+use nullspace_types::Evaluation;
 
 mod actor;
 pub use actor::Actor;

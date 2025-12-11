@@ -294,9 +294,9 @@ fn calculate_yes_payout(target: u8, amount: u64, hit: bool) -> i64 {
     }
 
     let true_odds = match target {
-        4 | 10 => amount.saturating_mul(2),                   // 6:3 = 2:1
-        5 | 9 => amount.saturating_mul(3).saturating_div(2),  // 6:4 = 3:2
-        6 | 8 => amount.saturating_mul(6).saturating_div(5),  // 6:5
+        4 | 10 => amount.saturating_mul(2),                  // 6:3 = 2:1
+        5 | 9 => amount.saturating_mul(3).saturating_div(2), // 6:4 = 3:2
+        6 | 8 => amount.saturating_mul(6).saturating_div(5), // 6:5
         _ => amount,
     };
 
@@ -313,9 +313,9 @@ fn calculate_no_payout(target: u8, amount: u64, seven_hit: bool) -> i64 {
     }
 
     let true_odds = match target {
-        4 | 10 => amount.saturating_div(2),                   // 3:6 = 1:2
-        5 | 9 => amount.saturating_mul(2).saturating_div(3),  // 4:6 = 2:3
-        6 | 8 => amount.saturating_mul(5).saturating_div(6),  // 5:6
+        4 | 10 => amount.saturating_div(2),                  // 3:6 = 1:2
+        5 | 9 => amount.saturating_mul(2).saturating_div(3), // 4:6 = 2:3
+        6 | 8 => amount.saturating_mul(5).saturating_div(6), // 5:6
         _ => amount,
     };
 
@@ -494,7 +494,10 @@ fn process_roll(state: &mut CrapsState, d1: u8, d2: u8) -> Vec<BetResult> {
                 if total == bet.target {
                     // Win!
                     let odds_payout = calculate_odds_payout(bet.target, bet.odds_amount, true);
-                    let total_payout = (bet.amount.saturating_add(bet.odds_amount).saturating_add(odds_payout)) as i64;
+                    let total_payout = (bet
+                        .amount
+                        .saturating_add(bet.odds_amount)
+                        .saturating_add(odds_payout)) as i64;
                     results.push(BetResult {
                         bet_idx: idx,
                         payout: total_payout,
@@ -543,7 +546,10 @@ fn process_roll(state: &mut CrapsState, d1: u8, d2: u8) -> Vec<BetResult> {
                 if total == 7 {
                     // Win!
                     let odds_payout = calculate_odds_payout(bet.target, bet.odds_amount, false);
-                    let total_payout = (bet.amount.saturating_add(bet.odds_amount).saturating_add(odds_payout)) as i64;
+                    let total_payout = (bet
+                        .amount
+                        .saturating_add(bet.odds_amount)
+                        .saturating_add(odds_payout)) as i64;
                     results.push(BetResult {
                         bet_idx: idx,
                         payout: total_payout,
@@ -735,10 +741,13 @@ impl CasinoGame for Craps {
                 if payload.len() < 11 {
                     return Err(GameError::InvalidPayload);
                 }
-                let bet_type = BetType::try_from(payload[1]).map_err(|_| GameError::InvalidPayload)?;
+                let bet_type =
+                    BetType::try_from(payload[1]).map_err(|_| GameError::InvalidPayload)?;
                 let target = payload[2];
                 let amount = u64::from_be_bytes(
-                    payload[3..11].try_into().map_err(|_| GameError::InvalidPayload)?
+                    payload[3..11]
+                        .try_into()
+                        .map_err(|_| GameError::InvalidPayload)?,
                 );
 
                 // Validate bet
@@ -761,7 +770,9 @@ impl CasinoGame for Craps {
                 });
 
                 session.state_blob = state.to_blob();
-                Ok(GameResult::ContinueWithUpdate { payout: -(amount as i64) })
+                Ok(GameResult::ContinueWithUpdate {
+                    payout: -(amount as i64),
+                })
             }
 
             // [1, amount_bytes...] - Add odds to last contract bet
@@ -770,7 +781,9 @@ impl CasinoGame for Craps {
                     return Err(GameError::InvalidPayload);
                 }
                 let odds_amount = u64::from_be_bytes(
-                    payload[1..9].try_into().map_err(|_| GameError::InvalidPayload)?
+                    payload[1..9]
+                        .try_into()
+                        .map_err(|_| GameError::InvalidPayload)?,
                 );
 
                 // Find last contract bet (PASS, DONT_PASS, COME, DONT_COME with status ON)
@@ -792,7 +805,9 @@ impl CasinoGame for Craps {
                 }
 
                 session.state_blob = state.to_blob();
-                Ok(GameResult::ContinueWithUpdate { payout: -(odds_amount as i64) })
+                Ok(GameResult::ContinueWithUpdate {
+                    payout: -(odds_amount as i64),
+                })
             }
 
             // [2] - Roll dice
@@ -854,7 +869,9 @@ impl CasinoGame for Craps {
                     // Game continues with active bets
                     // Use ContinueWithUpdate if there are intermediate payouts/losses
                     if total_payout != 0 {
-                        Ok(GameResult::ContinueWithUpdate { payout: total_payout })
+                        Ok(GameResult::ContinueWithUpdate {
+                            payout: total_payout,
+                        })
                     } else {
                         Ok(GameResult::Continue)
                     }
@@ -958,9 +975,9 @@ mod tests {
     #[test]
     fn test_field_payout() {
         // Payouts are TOTAL RETURN (stake + winnings)
-        assert_eq!(calculate_field_payout(2, 100), 300);  // 2:1 -> 3x total
+        assert_eq!(calculate_field_payout(2, 100), 300); // 2:1 -> 3x total
         assert_eq!(calculate_field_payout(12, 100), 300); // 2:1 -> 3x total
-        assert_eq!(calculate_field_payout(3, 100), 200);  // 1:1 -> 2x total
+        assert_eq!(calculate_field_payout(3, 100), 200); // 1:1 -> 2x total
         assert_eq!(calculate_field_payout(11, 100), 200); // 1:1 -> 2x total
         assert_eq!(calculate_field_payout(7, 100), -100); // lose
     }
@@ -1126,7 +1143,8 @@ mod tests {
         // Roll a point (e.g., force a 6 by checking what we get)
         let mut move_num = 2;
         while move_num < 50 {
-            let state_before = CrapsState::from_blob(&session.state_blob).expect("Failed to parse state");
+            let state_before =
+                CrapsState::from_blob(&session.state_blob).expect("Failed to parse state");
             if state_before.bets.is_empty() {
                 break; // Bet resolved
             }
@@ -1134,7 +1152,8 @@ mod tests {
             let mut rng = GameRng::new(&seed, session.id, move_num);
             Craps::process_move(&mut session, &[2], &mut rng).expect("Failed to process move");
 
-            let state_after = CrapsState::from_blob(&session.state_blob).expect("Failed to parse state");
+            let state_after =
+                CrapsState::from_blob(&session.state_blob).expect("Failed to parse state");
             if !state_after.bets.is_empty() && state_after.bets[0].status == BetStatus::On {
                 // Come bet traveled
                 assert!(state_after.bets[0].target > 0);
@@ -1194,10 +1213,7 @@ mod tests {
         Craps::init(&mut session, &mut rng);
 
         // Place multiple bets
-        let bets = vec![
-            (BetType::Pass, 0, 100u64),
-            (BetType::Field, 0, 50u64),
-        ];
+        let bets = vec![(BetType::Pass, 0, 100u64), (BetType::Field, 0, 50u64)];
 
         for (idx, (bet_type, target, amount)) in bets.iter().enumerate() {
             let mut payload = vec![0, *bet_type as u8, *target];
@@ -1224,7 +1240,10 @@ mod tests {
         let state = CrapsState::from_blob(&session.state_blob).expect("Failed to parse state");
         // Field bet always resolves on first roll, so at least that bet is gone
         // Remaining bets depend on actual dice roll (Pass may resolve on 7/11/2/3/12)
-        assert!(state.bets.len() < initial_bet_count, "At least field bet should resolve");
+        assert!(
+            state.bets.len() < initial_bet_count,
+            "At least field bet should resolve"
+        );
         // No field bet should remain (it's always a single-roll bet)
         assert!(!state.bets.iter().any(|b| b.bet_type == BetType::Field));
     }

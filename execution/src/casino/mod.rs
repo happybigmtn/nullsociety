@@ -26,11 +26,11 @@ pub mod three_card;
 pub mod ultimate_holdem;
 pub mod video_poker;
 
-use nullspace_types::casino::{GameSession, GameType, Player};
-use nullspace_types::Seed;
 use commonware_codec::Encode;
 use commonware_cryptography::sha256::Sha256;
 use commonware_cryptography::Hasher;
+use nullspace_types::casino::{GameSession, GameType, Player};
+use nullspace_types::Seed;
 
 /// Deterministic random number generator seeded from consensus.
 ///
@@ -153,9 +153,7 @@ impl GameRng {
         }
 
         // Collect remaining cards
-        let mut deck: Vec<u8> = (0..52)
-            .filter(|&c| used & (1u64 << c) == 0)
-            .collect();
+        let mut deck: Vec<u8> = (0..52).filter(|&c| used & (1u64 << c) == 0).collect();
 
         self.shuffle(&mut deck);
         deck
@@ -248,7 +246,9 @@ pub fn process_game_move(
         GameType::Roulette => roulette::Roulette::process_move(session, payload, rng),
         GameType::SicBo => sic_bo::SicBo::process_move(session, payload, rng),
         GameType::ThreeCard => three_card::ThreeCardPoker::process_move(session, payload, rng),
-        GameType::UltimateHoldem => ultimate_holdem::UltimateHoldem::process_move(session, payload, rng),
+        GameType::UltimateHoldem => {
+            ultimate_holdem::UltimateHoldem::process_move(session, payload, rng)
+        }
         GameType::VideoPoker => video_poker::VideoPoker::process_move(session, payload, rng),
     }
 }
@@ -284,11 +284,14 @@ pub fn apply_modifiers(player: &mut Player, payout: i64) -> (i64, bool, bool) {
 
 /// Calculate super mode fee (20% of bet)
 pub fn get_super_mode_fee(bet: u64) -> u64 {
-    bet / 5  // 20%
+    bet / 5 // 20%
 }
 
 /// Generate super mode multipliers for a game type
-pub fn generate_super_multipliers(game_type: GameType, rng: &mut GameRng) -> Vec<nullspace_types::casino::SuperMultiplier> {
+pub fn generate_super_multipliers(
+    game_type: GameType,
+    rng: &mut GameRng,
+) -> Vec<nullspace_types::casino::SuperMultiplier> {
     match game_type {
         GameType::Baccarat => super_mode::generate_baccarat_multipliers(rng),
         GameType::Roulette => super_mode::generate_roulette_multipliers(rng),
@@ -299,7 +302,7 @@ pub fn generate_super_multipliers(game_type: GameType, rng: &mut GameRng) -> Vec
         GameType::ThreeCard => super_mode::generate_three_card_multipliers(rng),
         GameType::UltimateHoldem => super_mode::generate_uth_multipliers(rng),
         GameType::CasinoWar => super_mode::generate_casino_war_multipliers(rng),
-        GameType::HiLo => Vec::new(),  // HiLo uses streak-based system
+        GameType::HiLo => Vec::new(), // HiLo uses streak-based system
     }
 }
 
@@ -377,7 +380,9 @@ mod tests {
         let mut deck = rng.create_deck();
         let initial_len = deck.len();
 
-        let card = rng.draw_card(&mut deck).expect("Failed to draw card from deck");
+        let card = rng
+            .draw_card(&mut deck)
+            .expect("Failed to draw card from deck");
         assert!(card < 52);
         assert_eq!(deck.len(), initial_len - 1);
         assert!(!deck.contains(&card));

@@ -1,7 +1,7 @@
 use crate::{Client, Error, Result};
-use nullspace_types::{api::Query, Seed, NAMESPACE};
 use commonware_codec::{DecodeExt, Encode};
 use commonware_consensus::Viewable;
+use nullspace_types::{api::Query, Seed, NAMESPACE};
 use url::Url;
 
 fn query_seed_path(base: &Url, query: &Query) -> String {

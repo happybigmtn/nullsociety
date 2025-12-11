@@ -1,5 +1,3 @@
-use nullspace_execution::state_transition::StateTransitionResult;
-use nullspace_types::execution::{Output, Value};
 use bytes::Bytes;
 use commonware_consensus::{
     aggregation::types::{Activity, Certificate, Index},
@@ -17,6 +15,8 @@ use futures::{
     channel::{mpsc, oneshot},
     SinkExt,
 };
+use nullspace_execution::state_transition::StateTransitionResult;
+use nullspace_types::execution::{Output, Value};
 
 pub enum Message {
     Executed {
