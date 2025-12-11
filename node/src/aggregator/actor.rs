@@ -2,11 +2,6 @@ use crate::{
     aggregator::{ingress::Mailbox, Config, Message},
     indexer::Indexer,
 };
-use nullspace_types::{
-    api::Summary,
-    execution::{Output, Progress, Value},
-    genesis_digest,
-};
 use bytes::{Buf, BufMut};
 use commonware_codec::{
     DecodeExt, Encode, EncodeSize, FixedSize, Read, ReadExt, ReadRangeExt, Write,
@@ -35,6 +30,11 @@ use futures::{
     join, StreamExt,
 };
 use governor::clock::Clock as GClock;
+use nullspace_types::{
+    api::Summary,
+    execution::{Output, Progress, Value},
+    genesis_digest,
+};
 use prometheus_client::metrics::gauge::Gauge;
 use rand::RngCore;
 use std::{

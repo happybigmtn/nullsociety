@@ -4,7 +4,6 @@ use crate::{
     seeder,
     supervisor::{EpochSupervisor, ViewSupervisor},
 };
-use nullspace_types::{Activity, Block, Evaluation, NAMESPACE};
 use commonware_broadcast::buffered;
 use commonware_consensus::{
     aggregation, marshal,
@@ -27,6 +26,7 @@ use commonware_utils::{NZDuration, NZUsize, NZU64};
 use futures::future::try_join_all;
 use governor::clock::Clock as GClock;
 use governor::Quota;
+use nullspace_types::{Activity, Block, Evaluation, NAMESPACE};
 use rand::{CryptoRng, Rng};
 use std::{
     num::{NonZero, NonZeroUsize},

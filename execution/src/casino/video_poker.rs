@@ -71,12 +71,16 @@ pub fn evaluate_hand(cards: &[u8; 5]) -> Hand {
     ranks.sort_unstable();
 
     // Check flush
-    let is_flush = suits[0] == suits[1] && suits[1] == suits[2]
-                && suits[2] == suits[3] && suits[3] == suits[4];
+    let is_flush = suits[0] == suits[1]
+        && suits[1] == suits[2]
+        && suits[2] == suits[3]
+        && suits[3] == suits[4];
 
     // Check for duplicates (to determine if straight is possible)
-    let has_duplicates = ranks[0] == ranks[1] || ranks[1] == ranks[2]
-                      || ranks[2] == ranks[3] || ranks[3] == ranks[4];
+    let has_duplicates = ranks[0] == ranks[1]
+        || ranks[1] == ranks[2]
+        || ranks[2] == ranks[3]
+        || ranks[3] == ranks[4];
 
     // Check for straight (including A-2-3-4-5 and 10-J-Q-K-A)
     let is_straight = if has_duplicates {
@@ -169,7 +173,14 @@ fn parse_state(state: &[u8]) -> Option<(Stage, [u8; 5])> {
 }
 
 fn serialize_state(stage: Stage, cards: &[u8; 5]) -> Vec<u8> {
-    vec![stage as u8, cards[0], cards[1], cards[2], cards[3], cards[4]]
+    vec![
+        stage as u8,
+        cards[0],
+        cards[1],
+        cards[2],
+        cards[3],
+        cards[4],
+    ]
 }
 
 pub struct VideoPoker;
@@ -239,11 +250,7 @@ impl CasinoGame for VideoPoker {
             let base_winnings = session.bet.saturating_mul(multiplier);
             // Apply super mode multipliers if active
             let final_winnings = if session.super_mode.is_active {
-                apply_super_multiplier_cards(
-                    &cards,
-                    &session.super_mode.multipliers,
-                    base_winnings,
-                )
+                apply_super_multiplier_cards(&cards, &session.super_mode.multipliers, base_winnings)
             } else {
                 base_winnings
             };
@@ -282,14 +289,14 @@ mod tests {
 
     #[test]
     fn test_card_rank() {
-        assert_eq!(card_rank(0), 1);  // Ace
-        assert_eq!(card_rank(1), 2);  // 2
+        assert_eq!(card_rank(0), 1); // Ace
+        assert_eq!(card_rank(1), 2); // 2
         assert_eq!(card_rank(12), 13); // King
     }
 
     #[test]
     fn test_card_suit() {
-        assert_eq!(card_suit(0), 0);  // Spades
+        assert_eq!(card_suit(0), 0); // Spades
         assert_eq!(card_suit(13), 1); // Hearts
         assert_eq!(card_suit(26), 2); // Diamonds
         assert_eq!(card_suit(39), 3); // Clubs
@@ -411,7 +418,10 @@ mod tests {
 
         // All cards should be different (with high probability)
         // At least some should be different
-        let same_count = original_cards.iter().filter(|c| new_cards.contains(c)).count();
+        let same_count = original_cards
+            .iter()
+            .filter(|c| new_cards.contains(c))
+            .count();
         // It's possible but very unlikely all 5 are the same
         assert!(same_count < 5 || original_cards == new_cards);
     }

@@ -1,6 +1,6 @@
-use nullspace_types::execution::Transaction;
 use commonware_cryptography::{ed25519::PublicKey, sha256::Digest, Digestible};
 use commonware_runtime::Metrics;
+use nullspace_types::execution::Transaction;
 use prometheus_client::metrics::gauge::Gauge;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
@@ -165,9 +165,9 @@ impl Mempool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nullspace_types::execution::Instruction;
     use commonware_cryptography::{ed25519::PrivateKey, PrivateKeyExt, Signer};
     use commonware_runtime::{deterministic, Runner};
+    use nullspace_types::execution::Instruction;
 
     #[test]
     fn test_add_single_transaction() {
@@ -239,7 +239,8 @@ mod tests {
             let private = PrivateKey::from_seed(1);
 
             for nonce in 0..5 {
-                let tx = Transaction::sign(&private, nonce, Instruction::CasinoDeposit { amount: 100 });
+                let tx =
+                    Transaction::sign(&private, nonce, Instruction::CasinoDeposit { amount: 100 });
                 mempool.add(tx);
             }
 
@@ -258,7 +259,11 @@ mod tests {
             let private = PrivateKey::from_seed(1);
 
             for nonce in 0..=MAX_BACKLOG {
-                let tx = Transaction::sign(&private, nonce as u64, Instruction::CasinoDeposit { amount: 100 });
+                let tx = Transaction::sign(
+                    &private,
+                    nonce as u64,
+                    Instruction::CasinoDeposit { amount: 100 },
+                );
                 mempool.add(tx);
             }
 
@@ -300,7 +305,8 @@ mod tests {
             let public = private.public_key();
 
             for nonce in 0..5 {
-                let tx = Transaction::sign(&private, nonce, Instruction::CasinoDeposit { amount: 100 });
+                let tx =
+                    Transaction::sign(&private, nonce, Instruction::CasinoDeposit { amount: 100 });
                 mempool.add(tx);
             }
 
@@ -326,7 +332,8 @@ mod tests {
             let public = private.public_key();
 
             for nonce in 0..3 {
-                let tx = Transaction::sign(&private, nonce, Instruction::CasinoDeposit { amount: 100 });
+                let tx =
+                    Transaction::sign(&private, nonce, Instruction::CasinoDeposit { amount: 100 });
                 mempool.add(tx);
             }
 
@@ -384,7 +391,8 @@ mod tests {
             let private = PrivateKey::from_seed(1);
 
             for nonce in 0..3 {
-                let tx = Transaction::sign(&private, nonce, Instruction::CasinoDeposit { amount: 100 });
+                let tx =
+                    Transaction::sign(&private, nonce, Instruction::CasinoDeposit { amount: 100 });
                 mempool.add(tx);
             }
 
@@ -412,7 +420,11 @@ mod tests {
                 privates.push(private.clone());
 
                 for nonce in 0..2 {
-                    let tx = Transaction::sign(&private, nonce, Instruction::CasinoDeposit { amount: 100 });
+                    let tx = Transaction::sign(
+                        &private,
+                        nonce,
+                        Instruction::CasinoDeposit { amount: 100 },
+                    );
                     mempool.add(tx);
                 }
             }

@@ -10,17 +10,17 @@
 //!   -d, --duration       Duration in seconds (default: 300 = 5 minutes)
 //!   -r, --rate           Bets per second per bot (default: 3.0)
 
-use nullspace_client::Client;
-use nullspace_types::{
-    casino::GameType,
-    execution::{Instruction, Transaction, Key, Value},
-    Identity,
-};
 use clap::Parser;
 use commonware_codec::DecodeExt;
 use commonware_cryptography::{
-    ed25519::{PrivateKey, PublicKey}, 
-    PrivateKeyExt, Signer
+    ed25519::{PrivateKey, PublicKey},
+    PrivateKeyExt, Signer,
+};
+use nullspace_client::Client;
+use nullspace_types::{
+    casino::GameType,
+    execution::{Instruction, Key, Transaction, Value},
+    Identity,
 };
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::{
@@ -30,8 +30,8 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tracing::{info, warn, error};
 use tokio::time;
+use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Bot stress test for casino games")]
@@ -111,7 +111,8 @@ impl Metrics {
         } else {
             self.transactions_failed.fetch_add(1, Ordering::Relaxed);
         }
-        self.total_latency_ms.fetch_add(latency_ms, Ordering::Relaxed);
+        self.total_latency_ms
+            .fetch_add(latency_ms, Ordering::Relaxed);
     }
 }
 
@@ -145,7 +146,7 @@ fn generate_move_payload(game_type: GameType, rng: &mut StdRng, move_number: u32
             // Just wait for deal - usually immediate resolution?
             // Actually CasinoWar init() does nothing, process_move handles bet then deal.
             // If move 0 is bet, move 1 is deal?
-            // Let's assume standard flow: 0=bet, 1=deal? 
+            // Let's assume standard flow: 0=bet, 1=deal?
             // Wait, CasinoWar might be simpler. Let's send empty to be safe or check code.
             // Assuming it needs a move to progress if not auto-resolved.
             if move_number == 0 {
@@ -233,7 +234,10 @@ async fn flush_batch(
     let start = Instant::now();
     let num_txs = pending_txs.len();
 
-    match client.submit_transactions(pending_txs.drain(..).collect()).await {
+    match client
+        .submit_transactions(pending_txs.drain(..).collect())
+        .await
+    {
         Ok(_) => {
             let latency = start.elapsed().as_millis() as u64;
             for _ in 0..num_txs {
@@ -339,13 +343,9 @@ async fn run_bot(
 }
 
 /// Monitor task to check leaderboard and logic
-async fn monitor_logic(
-    client: Arc<Client>,
-    bots: Vec<Arc<BotState>>,
-    duration: Duration,
-) {
+async fn monitor_logic(client: Arc<Client>, bots: Vec<Arc<BotState>>, duration: Duration) {
     let start_time = Instant::now();
-    
+
     info!("Starting leaderboard and logic monitor...");
 
     while start_time.elapsed() < duration {
@@ -360,9 +360,9 @@ async fn monitor_logic(
                     for (i, entry) in lb.entries.iter().enumerate() {
                         info!("  #{}: {} - {} chips", i + 1, entry.name, entry.chips);
                     }
-                    
+
                     if lb.entries.is_empty() {
-                         warn!("Leaderboard is empty!");
+                        warn!("Leaderboard is empty!");
                     }
                 } else {
                     error!("Expected CasinoLeaderboard value, got {:?}", value);
@@ -378,14 +378,17 @@ async fn monitor_logic(
 
         // 2. Check a random bot for logic verification
         if let Some(_) = bots.first() {
-            let sample_bots = bots.iter().take(5); 
+            let sample_bots = bots.iter().take(5);
             for bot in sample_bots {
-                match client.query_state(&Key::CasinoPlayer(bot.public_key())).await {
+                match client
+                    .query_state(&Key::CasinoPlayer(bot.public_key()))
+                    .await
+                {
                     Ok(Some(lookup)) => {
                         let value = lookup.operation.value();
                         if let Some(Value::CasinoPlayer(player)) = value {
-                             // Just checking if we can read state, no specific assertion logs to avoid spam
-                             // unless critical
+                            // Just checking if we can read state, no specific assertion logs to avoid spam
+                            // unless critical
                         }
                     }
                     _ => {}
@@ -408,14 +411,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse identity
     let identity_bytes =
         commonware_utils::from_hex(&args.identity).ok_or("Invalid identity hex format")?;
-    let identity: Identity =
-        Identity::decode(&mut identity_bytes.as_slice()).map_err(|_| "Failed to decode identity")?;
+    let identity: Identity = Identity::decode(&mut identity_bytes.as_slice())
+        .map_err(|_| "Failed to decode identity")?;
 
     info!(
         "Starting stress test tournament with {} bots",
         args.num_bots
     );
-    info!("Duration: {} seconds, Rate: {} bets/sec/bot", args.duration, args.rate);
+    info!(
+        "Duration: {} seconds, Rate: {} bets/sec/bot",
+        args.duration, args.rate
+    );
     info!("Connecting to {}", args.url);
 
     // Create client
@@ -460,7 +466,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for handle in handles {
         let _ = handle.await;
     }
-    
+
     // Wait for monitor
     let _ = monitor_handle.await;
 
@@ -470,7 +476,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let success = metrics.transactions_success.load(Ordering::Relaxed);
     let failed = metrics.transactions_failed.load(Ordering::Relaxed);
     let total_latency = metrics.total_latency_ms.load(Ordering::Relaxed);
-    let games_played: u64 = bots.iter().map(|b| b.games_played.load(Ordering::Relaxed)).sum();
+    let games_played: u64 = bots
+        .iter()
+        .map(|b| b.games_played.load(Ordering::Relaxed))
+        .sum();
 
     let tps = if elapsed.as_secs() > 0 {
         submitted as f64 / elapsed.as_secs_f64()
@@ -487,21 +496,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("=== TOURNAMENT SIMULATION RESULTS ===");
     info!("Duration: {:.2}s", elapsed.as_secs_f64());
     info!("Total Games Played: {}", games_played);
-    info!("Transactions: {} submitted, {} success, {} failed", submitted, success, failed);
+    info!(
+        "Transactions: {} submitted, {} success, {} failed",
+        submitted, success, failed
+    );
     info!("TPS: {:.2}", tps);
     info!("Average Latency: {:.2}ms", avg_latency);
-    
+
     // Final Leaderboard Check
     info!("Final Leaderboard Check:");
     match client.query_state(&Key::CasinoLeaderboard).await {
-         Ok(Some(lookup)) => {
-             if let Some(Value::CasinoLeaderboard(lb)) = lookup.operation.value() {
-                 for (i, entry) in lb.entries.iter().enumerate() {
+        Ok(Some(lookup)) => {
+            if let Some(Value::CasinoLeaderboard(lb)) = lookup.operation.value() {
+                for (i, entry) in lb.entries.iter().enumerate() {
                     info!("  #{}: {} - {} chips", i + 1, entry.name, entry.chips);
-                 }
-             }
-         }
-         _ => info!("Could not fetch final leaderboard"),
+                }
+            }
+        }
+        _ => info!("Could not fetch final leaderboard"),
     }
 
     Ok(())

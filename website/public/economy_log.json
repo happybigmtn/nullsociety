@@ -1,31 +1,34 @@
 [
   {
-    "timestamp": 77,
-    "house_pnl": 51,
+    "timestamp": 23,
+    "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 9013,
+    "total_burned": 0,
+    "total_issuance": 0,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 125,
-    "epoch": 1
+    "epoch": 0
   },
   {
-    "timestamp": 511,
+    "timestamp": 505,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 43848,
+    "total_burned": 0,
+    "total_issuance": 951,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 250,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 1007,
+    "timestamp": 1005,
     "house_pnl": 0,
     "rng_price": 0.0,
     "total_burned": 0,
+    "total_issuance": 951,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
@@ -33,564 +36,699 @@
     "epoch": 0
   },
   {
-    "timestamp": 1507,
+    "timestamp": 1503,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 43848,
+    "total_burned": 0,
+    "total_issuance": 951,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 500,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 2006,
+    "timestamp": 2002,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 43848,
+    "total_burned": 0,
+    "total_issuance": 951,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 625,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 2510,
+    "timestamp": 2505,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44030,
+    "total_burned": 1492,
+    "total_issuance": 951,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 750,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 3007,
+    "timestamp": 3005,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44030,
+    "total_burned": 1492,
+    "total_issuance": 951,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 875,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 3507,
+    "timestamp": 3508,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44030,
+    "total_burned": 1693,
+    "total_issuance": 951,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 1000,
-    "epoch": 2
+    "epoch": 0
   },
   {
     "timestamp": 4007,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44030,
+    "total_burned": 1693,
+    "total_issuance": 951,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 1125,
-    "epoch": 2
+    "epoch": 0
   },
   {
     "timestamp": 4506,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2359,
+    "total_issuance": 951,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 1250,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 5012,
+    "timestamp": 5008,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2359,
+    "total_issuance": 951,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 1375,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 5511,
+    "timestamp": 5507,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2359,
+    "total_issuance": 1902,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 1500,
-    "epoch": 2
+    "epoch": 0
   },
   {
     "timestamp": 6006,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2359,
+    "total_issuance": 1902,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 1625,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 6508,
+    "timestamp": 6505,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2604,
+    "total_issuance": 1902,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 1750,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 7007,
+    "timestamp": 7005,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2604,
+    "total_issuance": 1902,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 1875,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 7506,
+    "timestamp": 7505,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2604,
+    "total_issuance": 1902,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 2000,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 8006,
+    "timestamp": 8005,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2604,
+    "total_issuance": 1902,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 2125,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 8507,
+    "timestamp": 8506,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2718,
+    "total_issuance": 1902,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 2250,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 9008,
+    "timestamp": 9006,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2718,
+    "total_issuance": 1902,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 2375,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 9506,
+    "timestamp": 9505,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2718,
+    "total_issuance": 1902,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 2500,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 10011,
+    "timestamp": 10012,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2718,
+    "total_issuance": 1902,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 2625,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 10511,
+    "timestamp": 10508,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2718,
+    "total_issuance": 2853,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 2750,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 11007,
+    "timestamp": 11005,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2718,
+    "total_issuance": 2853,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 2875,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 11506,
+    "timestamp": 11505,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2718,
+    "total_issuance": 2853,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 3000,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 12007,
+    "timestamp": 12006,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44092,
+    "total_burned": 2718,
+    "total_issuance": 2853,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 3125,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 12507,
+    "timestamp": 12505,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 2853,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 3250,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 13006,
+    "timestamp": 13005,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 2853,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 3375,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 13506,
+    "timestamp": 13505,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 2853,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 3500,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 14006,
+    "timestamp": 14005,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 2853,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 3625,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 14507,
+    "timestamp": 14506,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 2853,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 3750,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 15010,
+    "timestamp": 15007,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 2853,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 3875,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 15510,
+    "timestamp": 15508,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 3804,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 4000,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 16006,
+    "timestamp": 16005,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 3804,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 4125,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 16507,
+    "timestamp": 16505,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 3804,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 4250,
-    "epoch": 2
+    "epoch": 0
   },
   {
     "timestamp": 17006,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 3804,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 4375,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 17510,
+    "timestamp": 17505,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 3804,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 4500,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 18007,
+    "timestamp": 18005,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 3804,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 4625,
-    "epoch": 2
+    "epoch": 0
   },
   {
     "timestamp": 18506,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 3804,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 4750,
-    "epoch": 2
+    "epoch": 0
   },
   {
     "timestamp": 19006,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 3804,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 4875,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 19506,
+    "timestamp": 19505,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 3804,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 5000,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 20011,
+    "timestamp": 20006,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 2941,
+    "total_issuance": 3804,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 5125,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 20511,
+    "timestamp": 20508,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 3450,
+    "total_issuance": 4755,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 5250,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 21006,
+    "timestamp": 21005,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 3450,
+    "total_issuance": 4755,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 5375,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 21507,
+    "timestamp": 21505,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 3450,
+    "total_issuance": 4755,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 5500,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 22007,
+    "timestamp": 22006,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 3450,
+    "total_issuance": 4755,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 5625,
-    "epoch": 2
+    "epoch": 0
   },
   {
     "timestamp": 22507,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 3450,
+    "total_issuance": 4755,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 5750,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 23006,
+    "timestamp": 23007,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 3450,
+    "total_issuance": 4755,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 5875,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 23506,
+    "timestamp": 23505,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 3450,
+    "total_issuance": 4755,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 6000,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 24007,
+    "timestamp": 24006,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 3450,
+    "total_issuance": 4755,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 6125,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 24508,
+    "timestamp": 24506,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 3450,
+    "total_issuance": 4755,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 6250,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 25010,
+    "timestamp": 25008,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 44199,
+    "total_burned": 3450,
+    "total_issuance": 4755,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 6375,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 25514,
+    "timestamp": 25507,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 45082,
+    "total_burned": 3450,
+    "total_issuance": 5706,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 6500,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 26006,
+    "timestamp": 26005,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 45082,
+    "total_burned": 3450,
+    "total_issuance": 5706,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 6625,
-    "epoch": 2
+    "epoch": 0
   },
   {
-    "timestamp": 26508,
+    "timestamp": 26505,
     "house_pnl": 0,
     "rng_price": 0.0,
-    "total_burned": 45082,
+    "total_burned": 3450,
+    "total_issuance": 5706,
     "amm_rng": 0,
     "amm_vusdt": 0,
     "maximizer_nw": 0,
     "total_txs": 6750,
-    "epoch": 2
+    "epoch": 0
+  },
+  {
+    "timestamp": 27006,
+    "house_pnl": 0,
+    "rng_price": 0.0,
+    "total_burned": 3450,
+    "total_issuance": 5706,
+    "amm_rng": 0,
+    "amm_vusdt": 0,
+    "maximizer_nw": 0,
+    "total_txs": 6875,
+    "epoch": 0
+  },
+  {
+    "timestamp": 27507,
+    "house_pnl": 0,
+    "rng_price": 0.0,
+    "total_burned": 3450,
+    "total_issuance": 5706,
+    "amm_rng": 0,
+    "amm_vusdt": 0,
+    "maximizer_nw": 0,
+    "total_txs": 7000,
+    "epoch": 0
+  },
+  {
+    "timestamp": 28005,
+    "house_pnl": 0,
+    "rng_price": 0.0,
+    "total_burned": 3450,
+    "total_issuance": 5706,
+    "amm_rng": 0,
+    "amm_vusdt": 0,
+    "maximizer_nw": 0,
+    "total_txs": 7125,
+    "epoch": 0
+  },
+  {
+    "timestamp": 28506,
+    "house_pnl": 0,
+    "rng_price": 0.0,
+    "total_burned": 3450,
+    "total_issuance": 5706,
+    "amm_rng": 0,
+    "amm_vusdt": 0,
+    "maximizer_nw": 0,
+    "total_txs": 7250,
+    "epoch": 0
+  },
+  {
+    "timestamp": 29006,
+    "house_pnl": 0,
+    "rng_price": 0.0,
+    "total_burned": 3450,
+    "total_issuance": 5706,
+    "amm_rng": 0,
+    "amm_vusdt": 0,
+    "maximizer_nw": 0,
+    "total_txs": 7375,
+    "epoch": 0
+  },
+  {
+    "timestamp": 29505,
+    "house_pnl": 0,
+    "rng_price": 0.0,
+    "total_burned": 3450,
+    "total_issuance": 5706,
+    "amm_rng": 0,
+    "amm_vusdt": 0,
+    "maximizer_nw": 0,
+    "total_txs": 7500,
+    "epoch": 0
+  },
+  {
+    "timestamp": 30007,
+    "house_pnl": 0,
+    "rng_price": 0.0,
+    "total_burned": 3450,
+    "total_issuance": 5706,
+    "amm_rng": 0,
+    "amm_vusdt": 0,
+    "maximizer_nw": 0,
+    "total_txs": 7625,
+    "epoch": 0
   }
 ]

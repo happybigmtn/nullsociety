@@ -7,7 +7,6 @@ use crate::{
     indexer::Indexer,
     seeder::{ingress::Mailbox, Config, Message},
 };
-use nullspace_types::Seed;
 use commonware_codec::{DecodeExt, Encode};
 use commonware_consensus::{threshold_simplex::types::View, Viewable};
 use commonware_cryptography::{
@@ -28,6 +27,7 @@ use futures::{
     StreamExt,
 };
 use governor::clock::Clock as GClock;
+use nullspace_types::Seed;
 use rand::RngCore;
 use tracing::{debug, info, warn};
 

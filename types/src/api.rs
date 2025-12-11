@@ -1,7 +1,4 @@
-use crate::{
-    execution::{Output, Progress, Seed, Transaction, Value},
-    Identity, NAMESPACE,
-};
+use crate::execution::{Identity, Output, Progress, Seed, Transaction, Value, NAMESPACE};
 use bytes::{Buf, BufMut};
 use commonware_codec::{EncodeSize, Error, Read, ReadExt, ReadRangeExt, Write};
 use commonware_consensus::aggregation::types::Certificate;

@@ -148,11 +148,7 @@ impl CasinoGame for HiLo {
                         let is_ace = card_rank(current_card) == 1;
                         // Cap streak at u8::MAX for the multiplier function
                         let streak = session.move_count.min(u8::MAX as u32) as u8;
-                        apply_hilo_streak_multiplier(
-                            payout_u64,
-                            streak,
-                            is_ace,
-                        )
+                        apply_hilo_streak_multiplier(payout_u64, streak, is_ace)
                     } else {
                         payout_u64
                     };

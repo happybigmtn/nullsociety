@@ -43,7 +43,6 @@ pub struct Peers {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nullspace_types::execution::{Instruction, Transaction};
     use commonware_cryptography::{
         bls12381::{
             dkg::ops,
@@ -62,6 +61,7 @@ mod tests {
     use engine::{Config, Engine};
     use governor::Quota;
     use indexer::Mock;
+    use nullspace_types::execution::{Instruction, Transaction};
     use rand::{rngs::StdRng, Rng, SeedableRng};
     use std::{
         collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
@@ -1005,9 +1005,13 @@ mod tests {
                 let signer = PrivateKey::from_seed(i as u64);
 
                 // Generate a casino registration transaction
-                let tx = Transaction::sign(&signer, 0, Instruction::CasinoRegister {
-                    name: format!("Player{}", i)
-                });
+                let tx = Transaction::sign(
+                    &signer,
+                    0,
+                    Instruction::CasinoRegister {
+                        name: format!("Player{}", i),
+                    },
+                );
                 indexer.submit_tx(tx.clone());
                 remaining.insert(signer.public_key(), tx);
 
@@ -1046,7 +1050,10 @@ mod tests {
                     for event in summary.events_proof_ops.iter() {
                         if let commonware_storage::store::operation::Keyless::Append(
                             nullspace_types::execution::Output::Event(
-                                nullspace_types::execution::Event::CasinoPlayerRegistered { player, .. },
+                                nullspace_types::execution::Event::CasinoPlayerRegistered {
+                                    player,
+                                    ..
+                                },
                             ),
                         ) = event
                         {

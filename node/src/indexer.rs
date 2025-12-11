@@ -1,9 +1,3 @@
-use nullspace_types::api::Pending;
-#[cfg(test)]
-use nullspace_types::execution::Transaction;
-use nullspace_types::{api::Summary, Seed};
-#[cfg(test)]
-use nullspace_types::{Identity, NAMESPACE};
 #[cfg(test)]
 use commonware_consensus::{threshold_simplex::types::View, Viewable};
 use commonware_cryptography::ed25519::Batch;
@@ -14,6 +8,12 @@ use commonware_runtime::Spawner;
 use commonware_runtime::{Clock, Handle};
 use futures::channel::mpsc;
 use futures::{SinkExt, Stream, StreamExt};
+use nullspace_types::api::Pending;
+#[cfg(test)]
+use nullspace_types::execution::Transaction;
+use nullspace_types::{api::Summary, Seed};
+#[cfg(test)]
+use nullspace_types::{Identity, NAMESPACE};
 use rand::{CryptoRng, Rng};
 use std::future::Future;
 #[cfg(test)]

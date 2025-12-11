@@ -3,11 +3,11 @@ mod ingress;
 
 use crate::{indexer::Indexer, supervisor::ViewSupervisor};
 pub use actor::Actor;
-use nullspace_types::Identity;
 use commonware_cryptography::ed25519::PublicKey;
 use commonware_runtime::buffer::PoolRef;
 use governor::Quota;
 pub use ingress::{Mailbox, Message};
+use nullspace_types::Identity;
 use std::num::NonZero;
 
 pub struct Config<I: Indexer> {

@@ -84,7 +84,11 @@ impl SicBoBet {
         let bet_type = BetType::try_from(bytes[0]).ok()?;
         let number = bytes[1];
         let amount = u64::from_be_bytes(bytes[2..10].try_into().ok()?);
-        Some(Self { bet_type, number, amount })
+        Some(Self {
+            bet_type,
+            number,
+            amount,
+        })
     }
 }
 
@@ -243,9 +247,9 @@ fn calculate_bet_payout(bet: &SicBoBet, dice: &[u8; 3]) -> u64 {
         BetType::Single => {
             let count = count_number(dice, bet.number);
             match count {
-                1 => bet.amount.saturating_mul(2),  // 1:1 -> 2x
-                2 => bet.amount.saturating_mul(3),  // 2:1 -> 3x
-                3 => bet.amount.saturating_mul(4),  // 3:1 -> 4x
+                1 => bet.amount.saturating_mul(2), // 1:1 -> 2x
+                2 => bet.amount.saturating_mul(3), // 2:1 -> 3x
+                3 => bet.amount.saturating_mul(4), // 3:1 -> 4x
                 _ => 0,
             }
         }
@@ -275,8 +279,8 @@ impl CasinoGame for SicBo {
         }
 
         let action = payload[0];
-        let mut state = SicBoState::from_bytes(&session.state_blob)
-            .ok_or(GameError::InvalidMove)?;
+        let mut state =
+            SicBoState::from_bytes(&session.state_blob).ok_or(GameError::InvalidMove)?;
 
         match action {
             // Action 0: Place bet
@@ -288,7 +292,9 @@ impl CasinoGame for SicBo {
                 let bet_type = BetType::try_from(payload[1])?;
                 let number = payload[2];
                 let amount = u64::from_be_bytes(
-                    payload[3..11].try_into().map_err(|_| GameError::InvalidPayload)?
+                    payload[3..11]
+                        .try_into()
+                        .map_err(|_| GameError::InvalidPayload)?,
                 );
 
                 // Validate number for bet types that need it
@@ -310,10 +316,16 @@ impl CasinoGame for SicBo {
                     return Err(GameError::InvalidPayload);
                 }
 
-                state.bets.push(SicBoBet { bet_type, number, amount });
+                state.bets.push(SicBoBet {
+                    bet_type,
+                    number,
+                    amount,
+                });
                 session.state_blob = state.to_bytes();
                 session.move_count += 1;
-                Ok(GameResult::ContinueWithUpdate { payout: -(amount as i64) })
+                Ok(GameResult::ContinueWithUpdate {
+                    payout: -(amount as i64),
+                })
             }
 
             // Action 1: Roll dice and resolve all bets
@@ -328,7 +340,9 @@ impl CasinoGame for SicBo {
 
                 // Calculate total winnings and losses
                 let total_bet: u64 = state.bets.iter().map(|b| b.amount).sum();
-                let total_winnings: u64 = state.bets.iter()
+                let total_winnings: u64 = state
+                    .bets
+                    .iter()
                     .map(|bet| calculate_bet_payout(bet, &dice))
                     .sum();
 
@@ -479,7 +493,10 @@ mod tests {
 
         assert!(result.is_ok());
         assert!(!session.is_complete); // Not complete until dice rolled
-        assert!(matches!(result.expect("Failed to process move"), GameResult::Continue));
+        assert!(matches!(
+            result.expect("Failed to process move"),
+            GameResult::Continue
+        ));
 
         // Verify bet was stored
         let state = SicBoState::from_bytes(&session.state_blob).expect("Failed to parse state");

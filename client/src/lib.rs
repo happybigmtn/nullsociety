@@ -37,6 +37,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use commonware_consensus::Viewable;
+    use commonware_cryptography::bls12381::primitives::group::Private;
+    use commonware_runtime::{deterministic::Runner, Runner as _};
+    use commonware_storage::store::operation::Variable;
     use nullspace_execution::mocks::{
         create_account_keypair, create_adbs, create_network_keypair, create_seed, execute_block,
     };
@@ -46,10 +50,6 @@ mod tests {
         execution::{Instruction, Key, Transaction, Value},
         Identity, Query, Seed,
     };
-    use commonware_consensus::Viewable;
-    use commonware_cryptography::bls12381::primitives::group::Private;
-    use commonware_runtime::{deterministic::Runner, Runner as _};
-    use commonware_storage::store::operation::Variable;
     use std::{net::SocketAddr, sync::Arc};
     use tokio::time::{sleep, Duration};
 
@@ -146,7 +146,13 @@ mod tests {
 
         // Create and submit transaction
         let (private, _) = create_account_keypair(1);
-        let tx = Transaction::sign(&private, 0, Instruction::CasinoRegister { name: "TestPlayer".to_string() });
+        let tx = Transaction::sign(
+            &private,
+            0,
+            Instruction::CasinoRegister {
+                name: "TestPlayer".to_string(),
+            },
+        );
 
         // Should succeed even though transaction isn't processed yet
         client.submit_transactions(vec![tx]).await.unwrap();
@@ -166,7 +172,13 @@ mod tests {
 
         // Create transaction
         let (private, _) = create_account_keypair(1);
-        let tx = Transaction::sign(&private, 0, Instruction::CasinoRegister { name: "TestPlayer".to_string() });
+        let tx = Transaction::sign(
+            &private,
+            0,
+            Instruction::CasinoRegister {
+                name: "TestPlayer".to_string(),
+            },
+        );
 
         // Create summary in deterministic runtime
         let executor = Runner::default();
@@ -198,7 +210,13 @@ mod tests {
 
         // Create and process transaction
         let (private, public) = create_account_keypair(1);
-        let tx = Transaction::sign(&private, 0, Instruction::CasinoRegister { name: "TestPlayer".to_string() });
+        let tx = Transaction::sign(
+            &private,
+            0,
+            Instruction::CasinoRegister {
+                name: "TestPlayer".to_string(),
+            },
+        );
 
         // Create summary in deterministic runtime
         let executor = Runner::default();
@@ -267,7 +285,13 @@ mod tests {
 
         // Test events update
         let (private, _) = create_account_keypair(1);
-        let tx = Transaction::sign(&private, 0, Instruction::CasinoRegister { name: "TestPlayer".to_string() });
+        let tx = Transaction::sign(
+            &private,
+            0,
+            Instruction::CasinoRegister {
+                name: "TestPlayer".to_string(),
+            },
+        );
 
         // Create summary in deterministic runtime
         let executor = Runner::default();
@@ -310,7 +334,13 @@ mod tests {
 
         // Submit transaction through simulator
         let (private, _) = create_account_keypair(1);
-        let tx = Transaction::sign(&private, 0, Instruction::CasinoRegister { name: "TestPlayer".to_string() });
+        let tx = Transaction::sign(
+            &private,
+            0,
+            Instruction::CasinoRegister {
+                name: "TestPlayer".to_string(),
+            },
+        );
         ctx.simulator.submit_transactions(vec![tx.clone()]);
 
         // Receive transaction from stream
@@ -362,7 +392,10 @@ mod tests {
         assert!(result.is_err());
         if let Err(err) = result {
             assert!(matches!(err, Error::InvalidScheme(_)));
-            assert_eq!(err.to_string(), "invalid URL scheme: ftp (expected http or https)");
+            assert_eq!(
+                err.to_string(),
+                "invalid URL scheme: ftp (expected http or https)"
+            );
         }
 
         // Test valid http scheme

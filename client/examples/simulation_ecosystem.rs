@@ -1,39 +1,46 @@
 //! Ecosystem Simulation (Enhanced)
-//! 
+//!
 //! Simulates a high-volume economy with:
 //! - Periodic Tournaments (MTT style, accelerated)
 //! - Whales (Buy/Sell pressure)
 //! - Retail (Lending/Borrowing/Trading)
 //! - Maximizer Agent (Optimized Strategy)
 //! - Epoch Keeper (Triggers distributions)
-//! 
+//!
 //! Connects to a live network.
 
-use nullspace_client::Client;
-use nullspace_types::{
-    casino::{GameType, HouseState, AmmPool},
-    execution::{Instruction, Transaction, Key, Value},
-    Identity,
-};
 use clap::Parser;
 use commonware_codec::DecodeExt;
 use commonware_cryptography::{
-    ed25519::{PrivateKey, PublicKey}, 
-    PrivateKeyExt, Signer
+    ed25519::{PrivateKey, PublicKey},
+    PrivateKeyExt, Signer,
+};
+use commonware_storage::store::operation::Keyless;
+use futures::StreamExt;
+use nullspace_client::Client;
+use nullspace_types::{
+    api::{Update, UpdatesFilter},
+    casino::{AmmPool, GameType, HouseState},
+    execution::{Event, Instruction, Key, Output, Transaction, Value}, // Added Output/Event
+    Identity,
 };
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use serde::Serialize;
 use std::{
+    fs::File,
+    io::Write,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
     time::{Duration, Instant},
-    fs::File,
-    io::Write,
 };
-use tracing::{info, warn, error};
 use tokio::time;
-use serde::Serialize;
+use tracing::{error, info, warn};
+
+const INITIAL_POOL_RNG: u64 = 500_000;
+const INITIAL_POOL_VUSD: u64 = 500_000;
+const BOOTSTRAP_COLLATERAL: u64 = INITIAL_POOL_VUSD * 2; // 50% LTV requires 2x collateral
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -65,7 +72,7 @@ impl Bot {
     fn next_nonce(&self) -> u64 {
         self.nonce.fetch_add(1, Ordering::Relaxed)
     }
-    
+
     fn public_key(&self) -> PublicKey {
         self.keypair.public_key()
     }
@@ -73,42 +80,189 @@ impl Bot {
 
 #[derive(Serialize)]
 struct EconomySnapshot {
+    block_height: u64,
     timestamp: u64,
     house_pnl: i128,
     rng_price: f64,
     total_burned: u64,
+    total_issuance: u64,
     amm_rng: u64,
     amm_vusdt: u64,
     maximizer_nw: i64,
-    total_txs: u64,
+    tx_count: usize,
+    volume_vusdt: u64,
+    fees_vusdt: u64,
+    burn_rng: u64,
+    mint_rng: u64,
     epoch: u64,
+    lp_shares: u64,
+    total_staked: u64,
+    swap_count: u64,
+    buy_volume_vusdt: u64,
+    sell_volume_rng: u64,
+    game_bet_volume: u64,
+    game_net_payout: i64,
+    game_starts: u64,
+    stakes_in: u64,
+    unstake_actions: u64,
+    claim_actions: u64,
+    vault_collateral: u64,
+    vusd_borrowed: u64,
+    vusd_repaid: u64,
+    liquidity_rng_added: u64,
+    liquidity_vusd_added: u64,
+    liquidity_shares_removed: u64,
+    tournament_started: u64,
+    tournament_joined: u64,
+    tournament_ended: u64,
+    epoch_calls: u64,
+    errors: u64,
 }
 
 async fn flush_batch(client: &Arc<Client>, txs: &mut Vec<Transaction>) {
-    if txs.is_empty() { return; }
+    if txs.is_empty() {
+        return;
+    }
     let batch: Vec<Transaction> = txs.drain(..).collect();
     if let Err(e) = client.submit_transactions(batch).await {
-         warn!("Batch submission failed: {}", e);
+        warn!("Batch submission failed: {}", e);
     }
 }
 
 async fn flush_tx(client: &Client, tx: Transaction) {
     if let Err(e) = client.submit_transactions(vec![tx]).await {
-         warn!("Tx failed: {}", e);
+        warn!("Tx failed: {}", e);
     }
 }
 
 // === Epoch Keeper ===
 async fn run_keeper(client: Arc<Client>, bot: Arc<Bot>, duration: Duration) {
     let start = Instant::now();
-    
-    flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoRegister { name: "Keeper".to_string() })).await;
+
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::CasinoRegister {
+                name: "Keeper".to_string(),
+            },
+        ),
+    )
+    .await;
 
     let mut interval = time::interval(Duration::from_secs(10)); // Trigger Epoch every 10s
     while start.elapsed() < duration {
         interval.tick().await;
         info!("Keeper: Processing Epoch...");
-        flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::ProcessEpoch)).await;
+        flush_tx(
+            &client,
+            Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::ProcessEpoch),
+        )
+        .await;
+    }
+}
+
+// === Bootstrap AMM Liquidity (Central Bank style) ===
+async fn bootstrap_amm(client: Arc<Client>, bot: Arc<Bot>) {
+    let seeded = match client.query_state(&Key::AmmPool).await {
+        Ok(Some(lookup)) => {
+            matches!(lookup.operation.value(), Some(Value::AmmPool(p)) if p.reserve_rng > 0 && p.reserve_vusdt > 0)
+        }
+        _ => false,
+    };
+    if seeded {
+        info!("AMM already seeded, skipping bootstrap.");
+        return;
+    }
+
+    info!(
+        "Bootstrapping AMM with {} RNG and {} vUSD liquidity",
+        INITIAL_POOL_RNG, INITIAL_POOL_VUSD
+    );
+
+    // Register/Fund bootstrap account
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::CasinoRegister {
+                name: "Bootstrapper".to_string(),
+            },
+        ),
+    )
+    .await;
+    // Need enough chips for RNG liquidity plus collateral to mint vUSD
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::CasinoDeposit {
+                amount: INITIAL_POOL_RNG + BOOTSTRAP_COLLATERAL,
+            },
+        ),
+    )
+    .await;
+    flush_tx(
+        &client,
+        Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CreateVault),
+    )
+    .await;
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::DepositCollateral {
+                amount: BOOTSTRAP_COLLATERAL,
+            },
+        ),
+    )
+    .await;
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::BorrowUSDT {
+                amount: INITIAL_POOL_VUSD,
+            },
+        ),
+    )
+    .await;
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::AddLiquidity {
+                rng_amount: INITIAL_POOL_RNG,
+                usdt_amount: INITIAL_POOL_VUSD,
+            },
+        ),
+    )
+    .await;
+
+    // Wait for block inclusion
+    let mut seeded = false;
+    for _ in 0..20 {
+        if let Ok(Some(lookup)) = client.query_state(&Key::AmmPool).await {
+            if let Some(Value::AmmPool(p)) = lookup.operation.value() {
+                info!(
+                    "AMM seeded: reserves {} RNG / {} vUSD, shares {}",
+                    p.reserve_rng, p.reserve_vusdt, p.total_shares
+                );
+                seeded = p.reserve_rng > 0 && p.reserve_vusdt > 0;
+                break;
+            }
+        }
+        time::sleep(Duration::from_millis(200)).await;
+    }
+
+    if !seeded {
+        warn!("AMM not found after bootstrap; trades will price at last known level");
     }
 }
 
@@ -119,47 +273,115 @@ async fn run_whale(client: Arc<Client>, bot: Arc<Bot>, duration: Duration) {
     let mut held_rng = 0u64;
 
     // Register & Fund
-    flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoRegister { name: bot.name.clone() })).await;
-    flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoDeposit { amount: 50_000_000 })).await; 
-    
-    // Initial Liquidity
-    flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CreateVault)).await;
-    flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::DepositCollateral { amount: 20_000_000 })).await;
-    flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::BorrowUSDT { amount: 10_000_000 })).await;
-    flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::AddLiquidity { rng_amount: 5_000_000, usdt_amount: 5_000_000 })).await;
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::CasinoRegister {
+                name: bot.name.clone(),
+            },
+        ),
+    )
+    .await;
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::CasinoDeposit { amount: 50_000_000 },
+        ),
+    )
+    .await;
 
-    let mut interval = time::interval(Duration::from_secs(5)); 
+    // Initial Liquidity
+    flush_tx(
+        &client,
+        Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CreateVault),
+    )
+    .await;
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::DepositCollateral { amount: 20_000_000 },
+        ),
+    )
+    .await;
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::BorrowUSDT { amount: 10_000_000 },
+        ),
+    )
+    .await;
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::AddLiquidity {
+                rng_amount: 5_000_000,
+                usdt_amount: 5_000_000,
+            },
+        ),
+    )
+    .await;
+
+    let mut interval = time::interval(Duration::from_secs(5));
     while start.elapsed() < duration {
         interval.tick().await;
-        
+
         // Strategy: Buy/Sell or Hold
         // If we have RNG, bias towards selling to realize profit? Or random.
-        
+
         let action = rng.gen_range(0..3);
         match action {
-            0 => { // Pump (Buy)
+            0 => {
+                // Pump (Buy)
                 let amount = rng.gen_range(10_000..50_000); // Reduced size
                 info!("{}: PUMP Buying {} vUSDT of RNG", bot.name, amount);
-                flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::Swap {
-                    amount_in: amount,
-                    min_amount_out: 0,
-                    is_buying_rng: true,
-                })).await;
+                flush_tx(
+                    &client,
+                    Transaction::sign(
+                        &bot.keypair,
+                        bot.next_nonce(),
+                        Instruction::Swap {
+                            amount_in: amount,
+                            min_amount_out: 0,
+                            is_buying_rng: true,
+                        },
+                    ),
+                )
+                .await;
                 // Approx conversion, just tracking "some" held
-                held_rng += amount; 
-            },
-            1 => { // Dump (Sell)
+                held_rng += amount;
+            }
+            1 => {
+                // Dump (Sell)
                 if held_rng > 0 {
-                    let amount = rng.gen_range(10_000..held_rng.min(50_000) + 1);
+                    let max_sell = held_rng.min(50_000).max(1);
+                    let amount = rng.gen_range(1..=max_sell);
                     info!("{}: DUMP Selling {} RNG", bot.name, amount);
-                    flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::Swap {
-                        amount_in: amount,
-                        min_amount_out: 0,
-                        is_buying_rng: false,
-                    })).await;
+                    flush_tx(
+                        &client,
+                        Transaction::sign(
+                            &bot.keypair,
+                            bot.next_nonce(),
+                            Instruction::Swap {
+                                amount_in: amount,
+                                min_amount_out: 0,
+                                is_buying_rng: false,
+                            },
+                        ),
+                    )
+                    .await;
                     held_rng = held_rng.saturating_sub(amount);
                 }
-            },
+            }
             _ => {} // Hold
         }
     }
@@ -170,46 +392,108 @@ async fn run_retail(client: Arc<Client>, bot: Arc<Bot>, duration: Duration) {
     let mut rng = StdRng::from_entropy();
     let start = Instant::now();
 
-    flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoRegister { name: bot.name.clone() })).await;
-    flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoDeposit { amount: 500_000 })).await;
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::CasinoRegister {
+                name: bot.name.clone(),
+            },
+        ),
+    )
+    .await;
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::CasinoDeposit { amount: 500_000 },
+        ),
+    )
+    .await;
 
     // Open Vault
-    flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CreateVault)).await;
+    flush_tx(
+        &client,
+        Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CreateVault),
+    )
+    .await;
 
     let mut interval = time::interval(Duration::from_secs(rng.gen_range(2..5)));
     while start.elapsed() < duration {
         interval.tick().await;
-        
+
         let r = rng.gen_range(0..10);
         if r < 3 {
             // Leverage Up: Deposit RNG, Borrow vUSDT, Buy RNG
             let amount = 10_000;
             let mut txs = Vec::new();
-            txs.push(Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::DepositCollateral { amount }));
-            txs.push(Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::BorrowUSDT { amount: amount / 2 })); // 50% LTV safe-ish
-            txs.push(Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::Swap { amount_in: amount/2, min_amount_out: 0, is_buying_rng: true }));
+            txs.push(Transaction::sign(
+                &bot.keypair,
+                bot.next_nonce(),
+                Instruction::DepositCollateral { amount },
+            ));
+            txs.push(Transaction::sign(
+                &bot.keypair,
+                bot.next_nonce(),
+                Instruction::BorrowUSDT { amount: amount / 2 },
+            )); // 50% LTV safe-ish
+            txs.push(Transaction::sign(
+                &bot.keypair,
+                bot.next_nonce(),
+                Instruction::Swap {
+                    amount_in: amount / 2,
+                    min_amount_out: 0,
+                    is_buying_rng: true,
+                },
+            ));
             flush_batch(&client, &mut txs).await;
         } else if r < 6 {
             // Trade
             let amount = rng.gen_range(1000..5000);
             let buy = rng.gen_bool(0.5);
-            flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::Swap {
-                amount_in: amount,
-                min_amount_out: 0,
-                is_buying_rng: buy,
-            })).await;
+            flush_tx(
+                &client,
+                Transaction::sign(
+                    &bot.keypair,
+                    bot.next_nonce(),
+                    Instruction::Swap {
+                        amount_in: amount,
+                        min_amount_out: 0,
+                        is_buying_rng: buy,
+                    },
+                ),
+            )
+            .await;
         } else {
             // Play Game
-            let session_id = bot.next_nonce() * 12345;
-            flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoStartGame {
-                game_type: GameType::Blackjack,
-                bet: 500,
-                session_id,
-            })).await;
-            flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoGameMove {
-                session_id,
-                payload: vec![1], // Stand
-            })).await;
+            let session_id = rng.gen::<u64>();
+            flush_tx(
+                &client,
+                Transaction::sign(
+                    &bot.keypair,
+                    bot.next_nonce(),
+                    Instruction::CasinoStartGame {
+                        game_type: GameType::Blackjack,
+                        bet: 500,
+                        session_id,
+                    },
+                ),
+            )
+            .await;
+            flush_tx(
+                &client,
+                Transaction::sign(
+                    &bot.keypair,
+                    bot.next_nonce(),
+                    Instruction::CasinoGameMove {
+                        session_id,
+                        payload: vec![1], // Stand
+                    },
+                ),
+            )
+            .await;
         }
     }
 }
@@ -217,41 +501,76 @@ async fn run_retail(client: Arc<Client>, bot: Arc<Bot>, duration: Duration) {
 // === Maximizer Bot ===
 async fn run_maximizer(client: Arc<Client>, bot: Arc<Bot>, duration: Duration) {
     let start = Instant::now();
+    let mut rng = StdRng::from_entropy();
     info!("Maximizer: Started.");
 
-    flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoRegister { name: "MAXIMIZER".to_string() })).await;
-    flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoDeposit { amount: 1_000_000 })).await;
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::CasinoRegister {
+                name: "MAXIMIZER".to_string(),
+            },
+        ),
+    )
+    .await;
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::CasinoDeposit { amount: 1_000_000 },
+        ),
+    )
+    .await;
 
     let mut interval = time::interval(Duration::from_millis(500));
     while start.elapsed() < duration {
         interval.tick().await;
         // Strategy: High volume Baccarat Banker bets to farm House Edge distribution (via Staking)
         // Also stake frequently.
-        
-        let session_id = bot.next_nonce() * 99999;
+
+        let session_id = rng.gen::<u64>();
         let mut txs = Vec::new();
-        
+
         // 1. Play
-        txs.push(Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoStartGame {
-            game_type: GameType::Baccarat,
-            bet: 2000,
-            session_id,
-        }));
-        txs.push(Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoGameMove {
-            session_id,
-            payload: vec![0, 1], // Banker
-        }));
-        txs.push(Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoGameMove {
-            session_id,
-            payload: vec![1], // Deal
-        }));
-        
+        txs.push(Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::CasinoStartGame {
+                game_type: GameType::Baccarat,
+                bet: 2000,
+                session_id,
+            },
+        ));
+        txs.push(Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::CasinoGameMove {
+                session_id,
+                payload: vec![0, 1], // Banker
+            },
+        ));
+        txs.push(Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::CasinoGameMove {
+                session_id,
+                payload: vec![1], // Deal
+            },
+        ));
+
         // 2. Stake Winnings (every ~10s)
         if start.elapsed().as_secs() % 10 == 0 {
-             txs.push(Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::Stake {
-                 amount: 1000,
-                 duration: 1000,
-             }));
+            txs.push(Transaction::sign(
+                &bot.keypair,
+                bot.next_nonce(),
+                Instruction::Stake {
+                    amount: 1000,
+                    duration: 1000,
+                },
+            ));
         }
 
         flush_batch(&client, &mut txs).await;
@@ -264,39 +583,65 @@ async fn run_tournament_grinder(client: Arc<Client>, bot: Arc<Bot>, duration: Du
     let start = Instant::now();
     let mut tournament_id = 1000;
 
-    flush_tx(&client, Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoRegister { name: bot.name.clone() })).await;
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::CasinoRegister {
+                name: bot.name.clone(),
+            },
+        ),
+    )
+    .await;
 
     let mut interval = time::interval(Duration::from_millis(2000)); // 2s actions
     while start.elapsed() < duration {
         interval.tick().await;
-        
+
         // Join (fire and forget)
-        let join_tx = Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoJoinTournament { tournament_id });
+        let join_tx = Transaction::sign(
+            &bot.keypair,
+            bot.next_nonce(),
+            Instruction::CasinoJoinTournament { tournament_id },
+        );
         flush_tx(&client, join_tx).await;
-        
+
         // Play to accumulate chips
         if rng.gen_bool(0.5) {
-            let session_id = bot.next_nonce() * 777;
+            let session_id = rng.gen::<u64>();
             let mut txs = Vec::new();
-            txs.push(Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoStartGame {
-                game_type: GameType::Baccarat,
-                bet: 1000,
-                session_id,
-            }));
-            txs.push(Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoGameMove {
-                session_id,
-                payload: vec![0, 1], // Banker
-            }));
-            txs.push(Transaction::sign(&bot.keypair, bot.next_nonce(), Instruction::CasinoGameMove {
-                session_id,
-                payload: vec![1], // Deal
-            }));
+            txs.push(Transaction::sign(
+                &bot.keypair,
+                bot.next_nonce(),
+                Instruction::CasinoStartGame {
+                    game_type: GameType::Baccarat,
+                    bet: 1000,
+                    session_id,
+                },
+            ));
+            txs.push(Transaction::sign(
+                &bot.keypair,
+                bot.next_nonce(),
+                Instruction::CasinoGameMove {
+                    session_id,
+                    payload: vec![0, 1], // Banker
+                },
+            ));
+            txs.push(Transaction::sign(
+                &bot.keypair,
+                bot.next_nonce(),
+                Instruction::CasinoGameMove {
+                    session_id,
+                    payload: vec![1], // Deal
+                },
+            ));
             flush_batch(&client, &mut txs).await;
         }
 
         // Simulating Tournament cycle
         if start.elapsed().as_secs() % 5 == 0 {
-             tournament_id += 1;
+            tournament_id += 1;
         }
     }
 }
@@ -308,96 +653,346 @@ async fn run_tournaments(client: Arc<Client>, organizer: Arc<Bot>, duration: Dur
 
     while start.elapsed() < duration {
         // Start Active Phase
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
-        flush_tx(&client, Transaction::sign(&organizer.keypair, organizer.next_nonce(), Instruction::CasinoStartTournament {
-            tournament_id,
-            start_time_ms: now,
-            end_time_ms: now + 5000, // 5s duration for sim
-        })).await;
-        
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        flush_tx(
+            &client,
+            Transaction::sign(
+                &organizer.keypair,
+                organizer.next_nonce(),
+                Instruction::CasinoStartTournament {
+                    tournament_id,
+                    start_time_ms: now,
+                    end_time_ms: now + 5000, // 5s duration for sim
+                },
+            ),
+        )
+        .await;
+
         // Wait for duration
         time::sleep(Duration::from_secs(5)).await;
-        
+
         // End & Payout
-        flush_tx(&client, Transaction::sign(&organizer.keypair, organizer.next_nonce(), Instruction::CasinoEndTournament {
-            tournament_id,
-        })).await;
-        
+        flush_tx(
+            &client,
+            Transaction::sign(
+                &organizer.keypair,
+                organizer.next_nonce(),
+                Instruction::CasinoEndTournament { tournament_id },
+            ),
+        )
+        .await;
+
         tournament_id += 1;
     }
 }
 
+#[derive(Default)]
+struct ActivityTally {
+    swap_count: u64,
+    buy_volume_vusdt: u64,
+    sell_volume_rng: u64,
+    game_bet_volume: u64,
+    game_net_payout: i64,
+    game_starts: u64,
+    stakes_in: u64,
+    unstake_actions: u64,
+    claim_actions: u64,
+    vault_collateral: u64,
+    vusd_borrowed: u64,
+    vusd_repaid: u64,
+    liquidity_rng_added: u64,
+    liquidity_vusd_added: u64,
+    liquidity_shares_removed: u64,
+    tournament_started: u64,
+    tournament_joined: u64,
+    tournament_ended: u64,
+    epoch_calls: u64,
+    errors: u64,
+}
+
 // === Monitor ===
-async fn run_monitor(client: Arc<Client>, maximizer: Arc<Bot>, sample_whale: Arc<Bot>, duration: Duration) {
+async fn run_monitor(
+    client: Arc<Client>,
+    maximizer: Arc<Bot>,
+    _sample_whale: Arc<Bot>,
+    duration: Duration,
+) {
     let start = Instant::now();
     let mut log = Vec::new();
-    let mut tx_count = 0;
+    let mut last_price = 1.0f64;
 
-    info!("Starting Monitor...");
-    let mut interval = time::interval(Duration::from_millis(500));
+    info!("Starting Monitor (Block-based)...");
 
-    while start.elapsed() < duration {
-        interval.tick().await;
-        tx_count += 125; 
+    // Connect to updates stream to get blocks/txs
+    let mut stream = match client.connect_updates(UpdatesFilter::All).await {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Failed to connect to updates stream: {}", e);
+            return;
+        }
+    };
 
-        // Debug Whale State
-        if start.elapsed().as_secs() % 5 == 0 {
-             if let Ok(Some(lookup)) = client.query_state(&Key::CasinoPlayer(sample_whale.public_key())).await {
-                if let Some(Value::CasinoPlayer(p)) = lookup.operation.value() {
-                    info!("DEBUG: Whale0 State - Name: {}, Chips: {}, vUSDT: {}", p.name, p.chips, p.vusdt_balance);
-                }
-            }
-            
-            // Debug Maximizer State
-            if let Ok(Some(lookup)) = client.query_state(&Key::CasinoPlayer(maximizer.public_key())).await {
-                if let Some(Value::CasinoPlayer(p)) = lookup.operation.value() {
-                    info!("DEBUG: Maximizer State - Chips: {}", p.chips);
-                }
-            }
+    // Initial State
+    let mut last_house = HouseState::new(0);
+    let mut last_amm: Option<AmmPool> = None;
+    // Try to fetch initial state
+    if let Ok(Some(lookup)) = client.query_state(&Key::House).await {
+        if let Some(Value::House(h)) = lookup.operation.value() {
+            last_house = h.clone();
+        }
+    }
+
+    while let Some(msg) = stream.next().await {
+        if start.elapsed() > duration {
+            break;
         }
 
-        let house = match client.query_state(&Key::House).await {
-            Ok(Some(lookup)) => if let Some(Value::House(h)) = lookup.operation.value() { Some(h.clone()) } else { None },
-            _ => None
+        let update = match msg {
+            Ok(u) => u,
+            Err(e) => {
+                warn!("Stream error: {}", e);
+                continue;
+            }
         };
 
-        let amm = match client.query_state(&Key::AmmPool).await {
-            Ok(Some(lookup)) => if let Some(Value::AmmPool(p)) = lookup.operation.value() { Some(p.clone()) } else { None },
-            _ => None
-        };
-        
-        // Calculate Maximizer NW
-        let mut max_nw = 0i64;
-        if let Ok(Some(lookup)) = client.query_state(&Key::CasinoPlayer(maximizer.public_key())).await {
-            if let Some(Value::CasinoPlayer(p)) = lookup.operation.value() {
-                if let Some(ref a) = amm {
-                    let price = if a.reserve_rng > 0 { a.reserve_vusdt as f64 / a.reserve_rng as f64 } else { 1.0 };
-                    let vusdt_val = if price > 0.0 { (p.vusdt_balance as f64 / price) as i64 } else { 0 };
-                    max_nw = p.chips as i64 + vusdt_val;
+        if let Update::Events(events) = update {
+            let block_height = events.progress.height;
+            let mut metrics = ActivityTally::default();
+
+            // 1. Process Transactions for Volume & Fees
+            let mut volume_vusdt = 0u64;
+            let mut tx_count = 0;
+
+            // Fetch current AMM state for price conversion
+            let amm = match client.query_state(&Key::AmmPool).await {
+                Ok(Some(lookup)) => {
+                    if let Some(Value::AmmPool(p)) = lookup.operation.value() {
+                        Some(p.clone())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+            let a = amm.clone().unwrap_or_default();
+            let price = if a.reserve_rng > 0 && a.reserve_vusdt > 0 {
+                let p = a.reserve_vusdt as f64 / a.reserve_rng as f64;
+                last_price = p;
+                p
+            } else {
+                last_price
+            };
+            let mut liquidity_rng_added = metrics.liquidity_rng_added;
+            let mut liquidity_vusd_added = metrics.liquidity_vusd_added;
+            let mut liquidity_shares_removed = metrics.liquidity_shares_removed;
+
+            if let Some(prev) = &last_amm {
+                if a.total_shares > prev.total_shares {
+                    if prev.total_shares == 0 {
+                        liquidity_rng_added =
+                            liquidity_rng_added.saturating_add(a.reserve_rng);
+                        liquidity_vusd_added =
+                            liquidity_vusd_added.saturating_add(a.reserve_vusdt);
+                    } else {
+                        let share_delta = a.total_shares - prev.total_shares;
+                        let add_rng = ((share_delta as u128 * prev.reserve_rng as u128)
+                            / prev.total_shares as u128) as u64;
+                        let add_vusd = ((share_delta as u128 * prev.reserve_vusdt as u128)
+                            / prev.total_shares as u128) as u64;
+                        liquidity_rng_added =
+                            liquidity_rng_added.saturating_add(add_rng);
+                        liquidity_vusd_added =
+                            liquidity_vusd_added.saturating_add(add_vusd);
+                    }
+                } else if a.total_shares < prev.total_shares {
+                    liquidity_shares_removed = liquidity_shares_removed
+                        .saturating_add(prev.total_shares - a.total_shares);
+                }
+            } else if a.total_shares > 0 {
+                liquidity_rng_added = liquidity_rng_added.saturating_add(a.reserve_rng);
+                liquidity_vusd_added = liquidity_vusd_added.saturating_add(a.reserve_vusdt);
+            }
+
+            for op in events.events_proof_ops {
+                // Keyless has Append variant.
+                if let Keyless::Append(output) = op {
+                    match output {
+                        Output::Transaction(tx) => {
+                            tx_count += 1;
+                            match &tx.instruction {
+                                Instruction::Swap {
+                                    amount_in,
+                                    is_buying_rng,
+                                    ..
+                                } => {
+                                    metrics.swap_count += 1;
+                                    if *is_buying_rng {
+                                        volume_vusdt += amount_in;
+                                        metrics.buy_volume_vusdt += amount_in;
+                                    } else {
+                                        let vusd_val = (*amount_in as f64 * price) as u64;
+                                        volume_vusdt += vusd_val;
+                                        metrics.sell_volume_rng += *amount_in;
+                                    }
+                                }
+                                Instruction::Stake { amount, .. } => metrics.stakes_in += *amount,
+                                Instruction::Unstake => metrics.unstake_actions += 1,
+                                Instruction::ClaimRewards => metrics.claim_actions += 1,
+                                Instruction::DepositCollateral { amount } => {
+                                    metrics.vault_collateral += *amount
+                                }
+                                Instruction::BorrowUSDT { amount } => {
+                                    metrics.vusd_borrowed += *amount
+                                }
+                                Instruction::RepayUSDT { amount } => metrics.vusd_repaid += *amount,
+                                Instruction::AddLiquidity {
+                                    rng_amount,
+                                    usdt_amount,
+                                } => {
+                                    metrics.liquidity_rng_added += *rng_amount;
+                                    metrics.liquidity_vusd_added += *usdt_amount;
+                                }
+                                Instruction::RemoveLiquidity { shares } => {
+                                    metrics.liquidity_shares_removed += *shares
+                                }
+                                Instruction::CasinoStartGame { bet, .. } => {
+                                    metrics.game_starts += 1;
+                                    metrics.game_bet_volume += *bet;
+                                }
+                                Instruction::CasinoStartTournament { .. } => {
+                                    metrics.tournament_started += 1
+                                }
+                                Instruction::CasinoJoinTournament { .. } => {
+                                    metrics.tournament_joined += 1
+                                }
+                                Instruction::CasinoEndTournament { .. } => {
+                                    metrics.tournament_ended += 1
+                                }
+                                Instruction::ProcessEpoch => metrics.epoch_calls += 1,
+                                _ => {}
+                            }
+                        }
+                        Output::Event(ev) => match ev {
+                            Event::CasinoGameCompleted { payout, .. } => {
+                                metrics.game_net_payout += payout
+                            }
+                            Event::TournamentStarted { .. } => metrics.tournament_started += 1,
+                            Event::PlayerJoined { .. } => metrics.tournament_joined += 1,
+                            Event::TournamentEnded { .. } => metrics.tournament_ended += 1,
+                            Event::CasinoError { .. } => metrics.errors += 1,
+                            _ => {}
+                        },
+                        _ => {}
+                    }
                 }
             }
-        }
 
-        // Use defaults if state not found yet
-        let h = house.unwrap_or(HouseState::new(0));
-        let a = amm.unwrap_or_default(); 
+            // 2. Fetch Global State Deltas
+            let current_house = match client.query_state(&Key::House).await {
+                Ok(Some(lookup)) => {
+                    if let Some(Value::House(h)) = lookup.operation.value() {
+                        h.clone()
+                    } else {
+                        last_house.clone()
+                    }
+                }
+                _ => last_house.clone(),
+            };
 
-        let price = if a.reserve_rng > 0 { a.reserve_vusdt as f64 / a.reserve_rng as f64 } else { 0.0 };
-        
-        log.push(EconomySnapshot {
-            timestamp: start.elapsed().as_millis() as u64,
-            house_pnl: h.net_pnl,
-            rng_price: price,
-            total_burned: h.total_burned,
-            amm_rng: a.reserve_rng,
-            amm_vusdt: a.reserve_vusdt,
-            maximizer_nw: max_nw,
-            total_txs: tx_count, 
-            epoch: h.current_epoch,
-        });
-        
-        if let Ok(json) = serde_json::to_string_pretty(&log) {
-            let _ = File::create("economy_log.json").and_then(|mut f| f.write_all(json.as_bytes()));
+            let burn_delta = current_house
+                .total_burned
+                .saturating_sub(last_house.total_burned);
+            let mint_delta = current_house
+                .total_issuance
+                .saturating_sub(last_house.total_issuance);
+            let fee_delta = current_house
+                .accumulated_fees
+                .saturating_sub(last_house.accumulated_fees); // Approx global fees
+
+            // 3. Maximizer NW
+            let mut max_nw = 0i64;
+            let mut max_debt = 0u64;
+            if let Ok(Some(lookup)) = client
+                .query_state(&Key::CasinoPlayer(maximizer.public_key()))
+                .await
+            {
+                if let Some(Value::CasinoPlayer(p)) = lookup.operation.value() {
+                    if let Ok(Some(vault_lookup)) = client
+                        .query_state(&Key::Vault(maximizer.public_key()))
+                        .await
+                    {
+                        if let Some(Value::Vault(v)) = vault_lookup.operation.value() {
+                            max_debt = v.debt_vusdt;
+                        }
+                    }
+                    let vusdt_val = p.vusdt_balance as f64;
+                    let rng_val = (p.chips as f64) * price;
+                    max_nw = (rng_val + vusdt_val - max_debt as f64).round() as i64;
+                }
+            }
+
+            // Log Snapshot
+            log.push(EconomySnapshot {
+                block_height,
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64,
+                house_pnl: current_house.net_pnl,
+                rng_price: price,
+                total_burned: current_house.total_burned,
+                total_issuance: current_house.total_issuance,
+                amm_rng: a.reserve_rng,
+                amm_vusdt: a.reserve_vusdt,
+                maximizer_nw: max_nw,
+                tx_count,
+                volume_vusdt,
+                fees_vusdt: fee_delta,
+                burn_rng: burn_delta,
+                mint_rng: mint_delta,
+                epoch: current_house.current_epoch,
+                lp_shares: a.total_shares,
+                total_staked: current_house.total_staked_amount,
+                swap_count: metrics.swap_count,
+                buy_volume_vusdt: metrics.buy_volume_vusdt,
+                sell_volume_rng: metrics.sell_volume_rng,
+                game_bet_volume: metrics.game_bet_volume,
+                game_net_payout: metrics.game_net_payout,
+                game_starts: metrics.game_starts,
+                stakes_in: metrics.stakes_in,
+                unstake_actions: metrics.unstake_actions,
+                claim_actions: metrics.claim_actions,
+                vault_collateral: metrics.vault_collateral,
+                vusd_borrowed: metrics.vusd_borrowed,
+                vusd_repaid: metrics.vusd_repaid,
+                liquidity_rng_added,
+                liquidity_vusd_added,
+                liquidity_shares_removed,
+                tournament_started: metrics.tournament_started,
+                tournament_joined: metrics.tournament_joined,
+                tournament_ended: metrics.tournament_ended,
+                epoch_calls: metrics.epoch_calls,
+                errors: metrics.errors,
+            });
+
+            // Write to file
+            if let Ok(json) = serde_json::to_string_pretty(&log) {
+                let _ =
+                    File::create("economy_log.json").and_then(|mut f| f.write_all(json.as_bytes()));
+            }
+
+            // Update state for next delta
+            last_house = current_house;
+            last_amm = Some(a);
+
+            // Debug Logs
+            info!(
+                "Block {}: Price=${:.4} Volume=${} Swaps={} Burn={} Mint={}",
+                block_height, price, volume_vusdt, metrics.swap_count, burn_delta, mint_delta
+            );
         }
     }
 }
@@ -405,7 +1000,9 @@ async fn run_monitor(client: Arc<Client>, maximizer: Arc<Bot>, sample_whale: Arc
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    tracing_subscriber::fmt().with_max_level(tracing::Level::INFO).init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .init();
 
     let identity_bytes = commonware_utils::from_hex(&args.identity).ok_or("Invalid identity")?;
     let identity = Identity::decode(&mut identity_bytes.as_slice())?;
@@ -415,16 +1012,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting Enhanced Ecosystem Simulation");
 
     // Agents
+    let bootstrapper = Arc::new(Bot::new("Bootstrapper", &mut rng));
     let organizer = Arc::new(Bot::new("Organizer", &mut rng));
     let keeper = Arc::new(Bot::new("Keeper", &mut rng));
     let maximizer = Arc::new(Bot::new("Maximizer", &mut rng));
-    let whales: Vec<_> = (0..2).map(|i| Arc::new(Bot::new(&format!("Whale{}", i), &mut rng))).collect();
-    let retail: Vec<_> = (0..50).map(|i| Arc::new(Bot::new(&format!("Retail{}", i), &mut rng))).collect();
-    let grinders: Vec<_> = (0..100).map(|i| Arc::new(Bot::new(&format!("Grinder{}", i), &mut rng))).collect();
+    let whales: Vec<_> = (0..2)
+        .map(|i| Arc::new(Bot::new(&format!("Whale{}", i), &mut rng)))
+        .collect();
+    let retail: Vec<_> = (0..50)
+        .map(|i| Arc::new(Bot::new(&format!("Retail{}", i), &mut rng)))
+        .collect();
+    let grinders: Vec<_> = (0..100)
+        .map(|i| Arc::new(Bot::new(&format!("Grinder{}", i), &mut rng)))
+        .collect();
 
     // Funding
-    flush_tx(&client, Transaction::sign(&organizer.keypair, organizer.next_nonce(), Instruction::CasinoRegister { name: "Organizer".to_string() })).await;
-    
+    flush_tx(
+        &client,
+        Transaction::sign(
+            &organizer.keypair,
+            organizer.next_nonce(),
+            Instruction::CasinoRegister {
+                name: "Organizer".to_string(),
+            },
+        ),
+    )
+    .await;
+    bootstrap_amm(client.clone(), bootstrapper.clone()).await;
+
     // Spawn
     let duration = Duration::from_secs(args.duration);
     let mut handles = Vec::new();
@@ -433,39 +1048,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let c = client.clone();
     let m = maximizer.clone();
     let w = whales[0].clone();
-    handles.push(tokio::spawn(async move { run_monitor(c, m, w, duration).await; }));
+    handles.push(tokio::spawn(async move {
+        run_monitor(c, m, w, duration).await;
+    }));
 
     // Keeper
     let c = client.clone();
     let k = keeper.clone();
-    handles.push(tokio::spawn(async move { run_keeper(c, k, duration).await; }));
+    handles.push(tokio::spawn(async move {
+        run_keeper(c, k, duration).await;
+    }));
 
     // Organizer
     let c = client.clone();
     let o = organizer.clone();
-    handles.push(tokio::spawn(async move { run_tournaments(c, o, duration).await; }));
+    handles.push(tokio::spawn(async move {
+        run_tournaments(c, o, duration).await;
+    }));
 
     // Maximizer
     let c = client.clone();
     let m = maximizer.clone();
-    handles.push(tokio::spawn(async move { run_maximizer(c, m, duration).await; }));
+    handles.push(tokio::spawn(async move {
+        run_maximizer(c, m, duration).await;
+    }));
 
     // Whales
     for bot in whales {
         let c = client.clone();
-        handles.push(tokio::spawn(async move { run_whale(c, bot, duration).await; }));
+        handles.push(tokio::spawn(async move {
+            run_whale(c, bot, duration).await;
+        }));
     }
 
     // Retail
     for bot in retail {
         let c = client.clone();
-        handles.push(tokio::spawn(async move { run_retail(c, bot, duration).await; }));
+        handles.push(tokio::spawn(async move {
+            run_retail(c, bot, duration).await;
+        }));
     }
 
     // Grinders
     for bot in grinders {
         let c = client.clone();
-        handles.push(tokio::spawn(async move { run_tournament_grinder(c, bot, duration).await; }));
+        handles.push(tokio::spawn(async move {
+            run_tournament_grinder(c, bot, duration).await;
+        }));
     }
 
     // Wait

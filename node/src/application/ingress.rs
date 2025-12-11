@@ -1,4 +1,3 @@
-use nullspace_types::{Block, Seed};
 use commonware_consensus::threshold_simplex::types::{Context, View};
 use commonware_consensus::{Automaton, Relay, Reporter};
 use commonware_cryptography::sha256::Digest;
@@ -7,6 +6,7 @@ use futures::{
     channel::{mpsc, oneshot},
     SinkExt,
 };
+use nullspace_types::{Block, Seed};
 
 /// Messages sent to the application.
 pub enum Message<E: Clock> {

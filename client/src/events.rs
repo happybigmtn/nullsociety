@@ -1,10 +1,10 @@
 use crate::{Error, Result};
+use commonware_codec::ReadExt;
+use futures_util::{Stream as FutStream, StreamExt};
 use nullspace_types::{
     api::{Events, Update},
     Identity, Seed, NAMESPACE,
 };
-use commonware_codec::ReadExt;
-use futures_util::{Stream as FutStream, StreamExt};
 use tokio::sync::mpsc;
 use tokio_tungstenite::{tungstenite::Message, WebSocketStream};
 use tracing::{debug, error};

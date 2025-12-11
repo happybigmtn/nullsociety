@@ -1,4 +1,3 @@
-use nullspace_types::{Activity, Seed};
 use bytes::Bytes;
 use commonware_consensus::{
     threshold_simplex::types::{Seedable, View},
@@ -10,6 +9,7 @@ use futures::{
     channel::{mpsc, oneshot},
     SinkExt,
 };
+use nullspace_types::{Activity, Seed};
 
 pub enum Message {
     Put(Seed),
