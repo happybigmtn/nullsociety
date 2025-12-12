@@ -58,7 +58,10 @@ pub const INITIAL_CHIPS: u64 = 1_000;
 /// Tokenomics Constants
 pub const TOTAL_SUPPLY: u64 = 1_000_000_000;
 pub const ANNUAL_EMISSION_RATE_BPS: u64 = 1000; // 10%
-pub const TOURNAMENTS_PER_DAY: u64 = 288; // 24 * 60 / 5
+/// Reward pool reserved for tournament emissions (50% of total supply over 5 years)
+pub const REWARD_POOL_BPS: u64 = 5000;
+/// Games per day given a new game every 5m15s (315s): floor(86400/315) = 274
+pub const TOURNAMENTS_PER_DAY: u64 = 274;
 
 /// Error codes for CasinoError events
 pub const ERROR_PLAYER_ALREADY_REGISTERED: u8 = 1;
