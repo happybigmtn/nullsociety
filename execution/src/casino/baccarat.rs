@@ -880,6 +880,7 @@ mod tests {
                     panic!("Baccarat should complete after deal")
                 }
                 GameResult::LossWithExtraDeduction(_) => {}
+                GameResult::LossPreDeducted(_) => {}
             }
         }
     }

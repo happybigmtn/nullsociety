@@ -5,6 +5,7 @@ import { useKeyboardControls } from './hooks/useKeyboardControls';
 
 // Components
 import { Header, Sidebar, Footer, CommandPalette, CustomBetOverlay, HelpOverlay, TournamentAlert } from './components/casino/Layout';
+import { ModeSelectView, type PlayMode } from './components/casino/ModeSelectView';
 import { RegistrationView } from './components/casino/RegistrationView';
 import { ActiveGame } from './components/casino/ActiveGame';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -13,7 +14,10 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 const SORTED_GAMES = Object.values(GameType).filter(g => g !== GameType.NONE).sort();
 
 export default function CasinoApp() {
-  const { stats, gameState, setGameState, deck, aiAdvice, tournamentTime, phase, leaderboard, isRegistered, lastTxSig, botConfig, setBotConfig, isTournamentStarting, startTournament, actions } = useTerminalGame();
+  // Mode selection (Cash vs Freeroll)
+  const [playMode, setPlayMode] = useState<PlayMode | null>(null);
+
+  const { stats, gameState, setGameState, deck, aiAdvice, tournamentTime, phase, leaderboard, isRegistered, lastTxSig, botConfig, setBotConfig, isFaucetClaiming, freerollActiveTimeLeft, freerollActivePrizePool, freerollActivePlayerCount, freerollNextStartIn, freerollNextTournamentId, freerollIsJoinedNext, tournamentsPlayedToday, actions } = useTerminalGame(playMode);
 
   // UI State
   const [commandOpen, setCommandOpen] = useState(false);
@@ -41,6 +45,7 @@ export default function CasinoApp() {
       },
       gameActions: { ...actions, setGameState },
       phase,
+      playMode,
       isRegistered,
       inputRefs: { input: inputRef, customBet: customBetRef },
       sortedGames: SORTED_GAMES
@@ -68,18 +73,24 @@ export default function CasinoApp() {
       setGameState((prev) => ({ ...prev, rouletteInputMode: 'NONE', sicBoInputMode: 'NONE' }));
   };
 
-  if (phase === 'REGISTRATION') {
+  if (playMode === null) {
+      return <ModeSelectView onSelect={setPlayMode} />;
+  }
+
+  if (playMode === 'FREEROLL' && phase === 'REGISTRATION') {
       return (
           <RegistrationView
               stats={stats}
               leaderboard={leaderboard}
               isRegistered={isRegistered}
-              timeLeft={tournamentTime}
+              activeTimeLeft={freerollActiveTimeLeft}
+              nextStartIn={freerollNextStartIn}
+              nextTournamentId={freerollNextTournamentId}
+              isJoinedNext={freerollIsJoinedNext}
+              tournamentsPlayedToday={tournamentsPlayedToday}
               onRegister={actions.registerForTournament}
               botConfig={botConfig}
               onBotConfigChange={setBotConfig}
-              onStartTournament={startTournament}
-              isTournamentStarting={isTournamentStarting}
           />
       );
   }
@@ -95,16 +106,44 @@ export default function CasinoApp() {
     }}>
        <Header
            phase={phase}
-           tournamentTime={tournamentTime}
+           tournamentTime={playMode === 'FREEROLL' ? tournamentTime : 0}
            stats={stats}
            lastTxSig={lastTxSig ?? undefined}
            focusMode={focusMode}
            setFocusMode={setFocusMode}
+           showTimer={playMode === 'FREEROLL'}
        />
 
        <div className="flex flex-1 overflow-hidden relative">
           <main className={`flex-1 flex flex-col relative bg-terminal-black p-4 overflow-y-auto ${gameState.type !== GameType.NONE ? 'pb-20 md:pb-4' : ''}`}>
-             <TournamentAlert tournamentTime={tournamentTime} />
+             {playMode === 'CASH' && (
+                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border border-gray-800 rounded bg-gray-900/30 px-3 py-2">
+                     <div className="text-[10px] text-gray-500 tracking-widest">
+                         MODE: <span className="text-terminal-green">CASH</span>
+                     </div>
+                     <div className="flex items-center gap-2">
+                         <button
+                             className="text-[10px] border px-2 py-1 rounded bg-gray-900 border-gray-800 text-gray-300 hover:border-gray-600"
+                             onClick={() => setPlayMode(null)}
+                         >
+                             CHANGE MODE
+                         </button>
+                         <button
+                             className={`text-[10px] border px-2 py-1 rounded ${
+                                 isFaucetClaiming
+                                     ? 'bg-gray-800 border-gray-700 text-gray-500 cursor-not-allowed'
+                                     : 'bg-terminal-green/20 border-terminal-green text-terminal-green hover:bg-terminal-green/30'
+                             }`}
+                             onClick={actions.claimFaucet}
+                             disabled={isFaucetClaiming}
+                         >
+                             {isFaucetClaiming ? 'CLAIMING…' : 'DAILY FAUCET'}
+                         </button>
+                     </div>
+                 </div>
+             )}
+
+             {playMode === 'FREEROLL' && <TournamentAlert tournamentTime={tournamentTime} />}
              <ErrorBoundary>
                <ActiveGame
                   gameState={gameState}
@@ -116,7 +155,15 @@ export default function CasinoApp() {
              </ErrorBoundary>
           </main>
           {!focusMode && (
-             <Sidebar leaderboard={leaderboard} history={stats.history} viewMode={leaderboardView} currentChips={stats.chips} />
+             <Sidebar
+                leaderboard={leaderboard}
+                history={stats.history}
+                viewMode={leaderboardView}
+                currentChips={stats.chips}
+                prizePool={playMode === 'FREEROLL' ? (freerollActivePrizePool ?? undefined) : undefined}
+                totalPlayers={playMode === 'FREEROLL' ? (freerollActivePlayerCount ?? undefined) : undefined}
+                winnersPct={0.15}
+             />
           )}
        </div>
 

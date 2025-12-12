@@ -57,19 +57,20 @@ interface KeyboardControlsProps {
     undoSicBoBet: () => void;
   };
   phase: string;
+  playMode?: 'CASH' | 'FREEROLL' | null;
   isRegistered: boolean;
   inputRefs: { input: RefObject<HTMLInputElement>; customBet: RefObject<HTMLInputElement> };
   sortedGames?: GameType[];
 }
 
 export const useKeyboardControls = ({
-    gameState, uiState, uiActions, gameActions, phase, isRegistered, inputRefs, sortedGames = []
+    gameState, uiState, uiActions, gameActions, phase, playMode = null, isRegistered, inputRefs, sortedGames = []
 }: KeyboardControlsProps) => {
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             // Registration Phase
-            if (phase === 'REGISTRATION') {
+            if (phase === 'REGISTRATION' && playMode !== 'CASH') {
                 if (e.key.toLowerCase() === 'r' && !isRegistered) {
                     gameActions.registerForTournament();
                 }

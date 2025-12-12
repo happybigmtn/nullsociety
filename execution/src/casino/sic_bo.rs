@@ -497,7 +497,7 @@ mod tests {
         assert!(!session.is_complete); // Not complete until dice rolled
         assert!(matches!(
             result.expect("Failed to process move"),
-            GameResult::Continue
+            GameResult::Continue | GameResult::ContinueWithUpdate { .. }
         ));
 
         // Verify bet was stored

@@ -232,6 +232,26 @@ impl Transaction {
         let tx = ExecutionTransaction::sign(&signer.private_key, nonce, instruction);
         Ok(Transaction { inner: tx })
     }
+
+    /// Sign a new casino deposit transaction (dev faucet / testing).
+    #[wasm_bindgen]
+    pub fn casino_deposit(signer: &Signer, nonce: u64, amount: u64) -> Result<Transaction, JsValue> {
+        let instruction = Instruction::CasinoDeposit { amount };
+        let tx = ExecutionTransaction::sign(&signer.private_key, nonce, instruction);
+        Ok(Transaction { inner: tx })
+    }
+
+    /// Sign a new casino end tournament transaction.
+    #[wasm_bindgen]
+    pub fn casino_end_tournament(
+        signer: &Signer,
+        nonce: u64,
+        tournament_id: u64,
+    ) -> Result<Transaction, JsValue> {
+        let instruction = Instruction::CasinoEndTournament { tournament_id };
+        let tx = ExecutionTransaction::sign(&signer.private_key, nonce, instruction);
+        Ok(Transaction { inner: tx })
+    }
 }
 
 /// Encode an account key.

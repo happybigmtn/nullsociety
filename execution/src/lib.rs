@@ -471,17 +471,18 @@ impl<'a, S: State> Layer<'a, S> {
             }
         };
 
-        // Check rate limiting
+        // Daily faucet rate limiting (dev/testing).
         let current_block = self.seed.view;
-        let is_rate_limited = player.last_deposit_block != 0
-            && player.last_deposit_block + nullspace_types::casino::FAUCET_RATE_LIMIT
-                > current_block;
+        let current_time_sec = current_block.saturating_mul(3);
+        let current_day = current_time_sec / 86_400;
+        let last_deposit_day = player.last_deposit_block.saturating_mul(3) / 86_400;
+        let is_rate_limited = player.last_deposit_block != 0 && last_deposit_day == current_day;
         if is_rate_limited {
             return vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_RATE_LIMITED,
-                message: "Faucet rate limited, try again later".to_string(),
+                message: "Daily faucet already claimed, try again tomorrow".to_string(),
             }];
         }
 
@@ -1308,7 +1309,26 @@ impl<'a, S: State> Layer<'a, S> {
         end_time_ms: u64,
     ) -> Vec<Event> {
         let mut tournament = match self.get(&Key::Tournament(tournament_id)).await {
-            Some(Value::Tournament(t)) => t,
+            Some(Value::Tournament(t)) => {
+                // Prevent double-starts which would double-mint the prize pool.
+                if matches!(t.phase, nullspace_types::casino::TournamentPhase::Active) {
+                    return vec![Event::CasinoError {
+                        player: public.clone(),
+                        session_id: None,
+                        error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
+                        message: "Tournament already active".to_string(),
+                    }];
+                }
+                if matches!(t.phase, nullspace_types::casino::TournamentPhase::Complete) {
+                    return vec![Event::CasinoError {
+                        player: public.clone(),
+                        session_id: None,
+                        error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
+                        message: "Tournament already complete".to_string(),
+                    }];
+                }
+                t
+            }
             None => {
                 // Create new if doesn't exist (single player start)
                 let mut t = nullspace_types::casino::Tournament {
@@ -1330,6 +1350,18 @@ impl<'a, S: State> Layer<'a, S> {
             _ => panic!("Storage corruption: Key::Tournament returned non-Tournament value"),
         };
 
+        // Enforce fixed tournament duration (5 minutes) for freeroll tournaments.
+        // Ignore client-provided end time if inconsistent.
+        let expected_duration_ms =
+            nullspace_types::casino::TOURNAMENT_DURATION_SECS.saturating_mul(1000);
+        let end_time_ms = if end_time_ms >= start_time_ms
+            && end_time_ms.saturating_sub(start_time_ms) == expected_duration_ms
+        {
+            end_time_ms
+        } else {
+            start_time_ms.saturating_add(expected_duration_ms)
+        };
+
         // Calculate Prize Pool (Inflationary)
         let total_supply = nullspace_types::casino::TOTAL_SUPPLY as u128;
         let annual_bps = nullspace_types::casino::ANNUAL_EMISSION_RATE_BPS as u128;
@@ -1341,7 +1373,7 @@ impl<'a, S: State> Layer<'a, S> {
         let daily_emission = annual_emission / 365;
         let per_game_emission = daily_emission / tournaments_per_day;
 
-        // Cap emissions to the remaining reward pool (50% of supply over 5 years)
+        // Cap emissions to the remaining reward pool (25% of supply over ~5 years)
         let mut house = self.get_or_init_house().await;
         let remaining_pool = reward_pool_cap.saturating_sub(house.total_issuance as u128);
         let capped_emission = per_game_emission.min(remaining_pool);

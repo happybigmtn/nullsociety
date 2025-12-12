@@ -15,8 +15,8 @@ export interface BotConfig {
 }
 
 export const DEFAULT_BOT_CONFIG: BotConfig = {
-  enabled: false,
-  numBots: 100,
+  enabled: true,
+  numBots: 300,
   betIntervalMs: 5000,
   randomizeInterval: true,
 };
@@ -65,6 +65,7 @@ export class BotService {
   private baseUrl: string;
   private identityHex: string;
   private onStatusUpdate?: (status: BotServiceStatus) => void;
+  private preparedTournamentId: number | null = null;
 
   constructor(baseUrl: string, identityHex: string) {
     this.baseUrl = baseUrl;
@@ -90,35 +91,53 @@ export class BotService {
     }
   }
 
-  async start(): Promise<void> {
-    if (this.isRunning || !this.config.enabled) return;
+  async prepareTournamentBots(tournamentId: number): Promise<void> {
+    if (!this.config.enabled) return;
+    if (this.preparedTournamentId === tournamentId && this.bots.length === this.config.numBots) {
+      return;
+    }
 
-    console.log(`[BotService] Starting ${this.config.numBots} bots...`);
-    this.isRunning = true;
-    this.updateStatus({ isRunning: true });
+    this.stop();
+    this.preparedTournamentId = tournamentId;
 
-    // Create bots
+    console.log(`[BotService] Preparing ${this.config.numBots} bots for tournament ${tournamentId}...`);
+    this.updateStatus({ isRunning: false });
+
     for (let i = 0; i < this.config.numBots; i++) {
       try {
         const bot = await this.createBot(i);
+
+        // Join the tournament during registration (or early).
+        await this.joinTournament(bot, tournamentId);
+
         this.bots.push(bot);
 
-        // Start bot playing loop
-        this.startBotLoop(bot);
-
-        // Stagger bot creation slightly
-        await new Promise(r => setTimeout(r, 10));
+        // Stagger bot creation slightly to avoid overloading the backend.
+        await new Promise(r => setTimeout(r, 5));
       } catch (e) {
-        console.warn(`[BotService] Failed to create bot ${i}:`, e);
+        console.warn(`[BotService] Failed to prepare bot ${i}:`, e);
       }
     }
 
-    console.log(`[BotService] Started ${this.bots.length} bots`);
+    console.log(`[BotService] Prepared ${this.bots.length} bots for tournament ${tournamentId}`);
     this.updateStatus({ activeBots: this.bots.length });
   }
 
+  startPlaying(): void {
+    if (this.isRunning || !this.config.enabled) return;
+    if (this.bots.length === 0) return;
+
+    console.log(`[BotService] Starting bot play loops (${this.bots.length} bots)...`);
+    this.isRunning = true;
+    this.updateStatus({ isRunning: true });
+
+    for (const bot of this.bots) {
+      this.startBotLoop(bot);
+    }
+  }
+
   stop(): void {
-    if (!this.isRunning) return;
+    if (!this.isRunning && this.bots.length === 0) return;
 
     console.log('[BotService] Stopping all bots...');
     this.isRunning = false;
@@ -134,6 +153,7 @@ export class BotService {
       bot.isActive = false;
     }
     this.bots = [];
+    this.preparedTournamentId = null;
 
     this.updateStatus({ isRunning: false, activeBots: 0 });
   }
@@ -190,6 +210,18 @@ export class BotService {
       sessionCounter: id * 1_000_000,
       isActive: true,
     };
+  }
+
+  private async joinTournament(bot: BotState, tournamentId: number): Promise<void> {
+    const joinNonce = bot.nonce;
+    const joinTx = bot.wasm.createCasinoJoinTournamentTransaction(joinNonce, tournamentId);
+    try {
+      await this.submitTransaction(bot.wasm, joinTx);
+      bot.nonce++;
+    } catch (e) {
+      // If join fails (already joined / tournament not registering / nonce mismatch), re-sync nonce and continue.
+      await this.resyncNonce(bot);
+    }
   }
 
   private async getAccountState(publicKeyBytes: Uint8Array): Promise<{ nonce: number } | null> {

@@ -321,4 +321,30 @@ export class WasmWrapper {
     );
     return tx.encode();
   }
+
+  // Create a casino deposit transaction (dev faucet / testing)
+  createCasinoDepositTransaction(nonce, amount) {
+    if (!this.keypair) {
+      throw new Error('Keypair not initialized');
+    }
+    const tx = this.wasm.Transaction.casino_deposit(
+      this.keypair,
+      BigInt(nonce),
+      BigInt(amount)
+    );
+    return tx.encode();
+  }
+
+  // Create a casino end tournament transaction
+  createCasinoEndTournamentTransaction(nonce, tournamentId) {
+    if (!this.keypair) {
+      throw new Error('Keypair not initialized');
+    }
+    const tx = this.wasm.Transaction.casino_end_tournament(
+      this.keypair,
+      BigInt(nonce),
+      BigInt(tournamentId)
+    );
+    return tx.encode();
+  }
 }
