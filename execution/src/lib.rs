@@ -1191,14 +1191,24 @@ impl<'a, S: State> Layer<'a, S> {
         let total_supply = nullspace_types::casino::TOTAL_SUPPLY as u128;
         let annual_bps = nullspace_types::casino::ANNUAL_EMISSION_RATE_BPS as u128;
         let tournaments_per_day = nullspace_types::casino::TOURNAMENTS_PER_DAY as u128;
+        let reward_pool_cap =
+            total_supply * nullspace_types::casino::REWARD_POOL_BPS as u128 / 10000;
 
         let annual_emission = total_supply * annual_bps / 10000;
         let daily_emission = annual_emission / 365;
-        let prize_pool = (daily_emission / tournaments_per_day) as u64;
+        let per_game_emission = daily_emission / tournaments_per_day;
+
+        // Cap emissions to the remaining reward pool (50% of supply over 5 years)
+        let mut house = self.get_or_init_house().await;
+        let remaining_pool = reward_pool_cap.saturating_sub(house.total_issuance as u128);
+        let capped_emission = per_game_emission.min(remaining_pool);
+        let prize_pool = capped_emission as u64;
 
         // Track Issuance in House
-        let mut house = self.get_or_init_house().await;
-        house.total_issuance += prize_pool;
+        house.total_issuance = house
+            .total_issuance
+            .saturating_add(prize_pool)
+            .min(reward_pool_cap as u64);
         self.insert(Key::House, Value::House(house));
 
         // Update state
@@ -1208,7 +1218,8 @@ impl<'a, S: State> Layer<'a, S> {
         tournament.end_time_ms = end_time_ms;
         tournament.prize_pool = prize_pool;
 
-        // Reset chips for all players
+        // Reset chips for all players and rebuild leaderboard for this tournament
+        let mut leaderboard = nullspace_types::casino::CasinoLeaderboard::default();
         for player_pk in &tournament.players {
             if let Some(Value::CasinoPlayer(mut player)) =
                 self.get(&Key::CasinoPlayer(player_pk.clone())).await
@@ -1225,9 +1236,15 @@ impl<'a, S: State> Layer<'a, S> {
                     Key::CasinoPlayer(player_pk.clone()),
                     Value::CasinoPlayer(player.clone()),
                 );
-                self.update_casino_leaderboard(player_pk, &player).await;
+                leaderboard.update(player_pk.clone(), player.name.clone(), player.chips);
             }
         }
+
+        // Publish a tournament-scoped leaderboard snapshot
+        self.insert(
+            Key::CasinoLeaderboard,
+            Value::CasinoLeaderboard(leaderboard),
+        );
 
         self.insert(
             Key::Tournament(tournament_id),
