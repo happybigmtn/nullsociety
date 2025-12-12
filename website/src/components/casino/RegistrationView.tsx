@@ -2,31 +2,35 @@
 import React from 'react';
 import { PlayerStats, LeaderboardEntry } from '../../types';
 import { formatTime } from '../../utils/gameUtils';
-import { BotConfig, DEFAULT_BOT_CONFIG } from '../../services/BotService';
+import { BotConfig } from '../../services/BotService';
 import { usePasskeyAuth } from '../../hooks/usePasskeyAuth';
 
 interface RegistrationViewProps {
   stats: PlayerStats;
   leaderboard: LeaderboardEntry[];
   isRegistered: boolean;
-  timeLeft: number;
+  activeTimeLeft: number;
+  nextStartIn: number;
+  nextTournamentId: number | null;
+  isJoinedNext: boolean;
+  tournamentsPlayedToday: number;
   onRegister: () => void;
   botConfig: BotConfig;
   onBotConfigChange: (config: BotConfig) => void;
-  onStartTournament?: () => void;
-  isTournamentStarting?: boolean;
 }
 
 export const RegistrationView: React.FC<RegistrationViewProps> = ({
   stats,
   leaderboard,
   isRegistered,
-  timeLeft,
+  activeTimeLeft,
+  nextStartIn,
+  nextTournamentId,
+  isJoinedNext,
+  tournamentsPlayedToday,
   onRegister,
   botConfig,
-  onBotConfigChange,
-  onStartTournament,
-  isTournamentStarting
+  onBotConfigChange
 }) => {
   const {
     session: passkeySession,
@@ -47,30 +51,40 @@ export const RegistrationView: React.FC<RegistrationViewProps> = ({
        return `${x},${y}`;
   }).join(' ');
 
+  const MAX_TOURNAMENTS_PER_DAY = 5;
+  const entriesRemaining = Math.max(0, MAX_TOURNAMENTS_PER_DAY - tournamentsPlayedToday);
+
   return (
       <div className="flex flex-col min-h-screen w-screen bg-terminal-black text-white font-mono items-center justify-center p-4 sm:p-6 md:p-8 overflow-auto">
           <div className="max-w-4xl w-full border border-terminal-green rounded-lg p-4 sm:p-6 md:p-8 shadow-2xl relative bg-black/80 backdrop-blur">
               <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-center mb-2 tracking-[0.2em] sm:tracking-[0.3em] md:tracking-[0.5em] text-white">
-                  {timeLeft > 0 ? 'TOURNAMENT ACTIVE' : 'TOURNAMENT LOBBY'}
+                  FREEROLL LOBBY
               </h1>
 
               {/* STATUS MESSAGE */}
               <div className="text-center mb-4 sm:mb-6 md:mb-8">
-                  {timeLeft > 0 ? (
-                      <>
-                          <span className="text-[10px] sm:text-xs text-gray-500 tracking-widest block mb-1">TOURNAMENT ENDS IN</span>
-                          <span className="text-2xl sm:text-3xl md:text-4xl font-bold text-terminal-accent animate-pulse font-mono">
-                              {formatTime(timeLeft)}
-                          </span>
-                      </>
-                  ) : (
-                      <>
-                          <span className="text-[10px] sm:text-xs text-gray-500 tracking-widest block mb-1">TOURNAMENT STATUS</span>
-                          <span className="text-lg sm:text-xl md:text-2xl font-bold text-terminal-green font-mono">
-                              CONFIGURE BOTS & START
-                          </span>
-                      </>
-                  )}
+                  <div className="flex flex-col items-center gap-4">
+                      {activeTimeLeft > 0 && (
+                          <div>
+                              <div className="text-[10px] sm:text-xs text-gray-500 tracking-widest mb-1">TOURNAMENT IN PROGRESS · ENDS IN</div>
+                              <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-terminal-accent animate-pulse font-mono">
+                                  {formatTime(activeTimeLeft)}
+                              </div>
+                          </div>
+                      )}
+
+                      <div>
+                          <div className="text-[10px] sm:text-xs text-gray-500 tracking-widest mb-1">
+                              NEXT TOURNAMENT STARTS IN{nextTournamentId !== null ? ` · ID ${nextTournamentId}` : ''}
+                          </div>
+                          <div className="text-xl sm:text-2xl md:text-3xl font-bold text-terminal-green font-mono">
+                              {formatTime(nextStartIn)}
+                          </div>
+                          <div className="mt-2 text-[10px] text-gray-600 tracking-widest">
+                              ENTRIES LEFT TODAY: <span className={entriesRemaining > 0 ? 'text-terminal-green' : 'text-terminal-accent'}>{entriesRemaining}/{MAX_TOURNAMENTS_PER_DAY}</span>
+                          </div>
+                      </div>
+                  </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-12">
@@ -121,19 +135,23 @@ export const RegistrationView: React.FC<RegistrationViewProps> = ({
                        </div>
 
                        <div className="flex-1 flex flex-col items-center justify-center gap-4">
-                           {isRegistered ? (
-                               <div className="flex flex-col items-center gap-2 animate-pulse">
-                                   <span className="text-2xl font-bold text-terminal-green">REGISTERED</span>
-                                   <span className="text-xs text-gray-500">WAITING FOR NEXT ROUND...</span>
-                               </div>
-                           ) : (
-                               <button 
-                                  className="px-8 py-4 bg-terminal-green text-black font-bold text-xl rounded hover:bg-green-400 transition-colors shadow-[0_0_20px_rgba(0,255,65,0.5)]"
-                                  onClick={onRegister}
-                               >
-                                   PRESS [R] TO REGISTER
-                               </button>
-                           )}
+                           <button
+                              className={`px-8 py-4 font-bold text-lg rounded transition-colors shadow-[0_0_20px_rgba(0,255,65,0.35)] ${
+                                  !isRegistered || (!isJoinedNext && entriesRemaining > 0)
+                                      ? 'bg-terminal-green text-black hover:bg-green-400'
+                                      : 'bg-gray-800 text-gray-500 cursor-not-allowed'
+                              }`}
+                              onClick={onRegister}
+                              disabled={isRegistered && (isJoinedNext || entriesRemaining <= 0)}
+                           >
+                               {!isRegistered
+                                   ? 'PRESS [R] TO REGISTER'
+                                   : isJoinedNext
+                                       ? 'REGISTERED FOR NEXT TOURNAMENT'
+                                       : entriesRemaining <= 0
+                                           ? 'DAILY LIMIT REACHED'
+                                           : 'JOIN NEXT TOURNAMENT'}
+                           </button>
                            <div className="text-xs text-gray-400 flex flex-col items-center gap-1">
                                <button
                                    onClick={registerPasskey}
@@ -166,7 +184,7 @@ export const RegistrationView: React.FC<RegistrationViewProps> = ({
               {/* BOT CONFIGURATION */}
               <div className="mt-8 border-t border-gray-800 pt-6">
                   <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-sm font-bold text-gray-500 tracking-widest">BOT OPPONENTS (OPTIONAL)</h2>
+                      <h2 className="text-sm font-bold text-gray-500 tracking-widest">BOT OPPONENTS</h2>
                       <button
                           className={`px-4 py-2 rounded text-xs font-bold transition-colors ${
                               botConfig.enabled
@@ -241,26 +259,6 @@ export const RegistrationView: React.FC<RegistrationViewProps> = ({
                   {botConfig.enabled && (
                       <div className="mt-2 text-[10px] text-gray-600 text-center">
                           {botConfig.numBots} bots will make random bets every ~{botConfig.betIntervalMs / 1000}s during the tournament
-                      </div>
-                  )}
-
-                  {/* START TOURNAMENT BUTTON - shows when registered */}
-                  {isRegistered && onStartTournament && (
-                      <div className="mt-6 text-center">
-                          <button
-                              className={`px-12 py-4 font-bold text-xl rounded transition-all shadow-lg ${
-                                  isTournamentStarting
-                                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                                      : 'bg-terminal-green text-black hover:bg-green-400 shadow-[0_0_30px_rgba(0,255,65,0.5)] animate-pulse'
-                              }`}
-                              onClick={onStartTournament}
-                              disabled={isTournamentStarting}
-                          >
-                              {isTournamentStarting ? 'STARTING...' : '🎰 START TOURNAMENT'}
-                          </button>
-                          <div className="mt-2 text-[10px] text-gray-500">
-                              5-minute tournament{botConfig.enabled ? ` with ${botConfig.numBots} bot opponents` : ' (solo mode - enable bots above for competition)'}
-                          </div>
                       </div>
                   )}
               </div>

@@ -57,11 +57,14 @@ pub const INITIAL_CHIPS: u64 = 1_000;
 
 /// Tokenomics Constants
 pub const TOTAL_SUPPLY: u64 = 1_000_000_000;
-pub const ANNUAL_EMISSION_RATE_BPS: u64 = 1000; // 10%
-/// Reward pool reserved for tournament emissions (50% of total supply over 5 years)
-pub const REWARD_POOL_BPS: u64 = 5000;
-/// Games per day given a new game every 5m15s (315s): floor(86400/315) = 274
-pub const TOURNAMENTS_PER_DAY: u64 = 274;
+/// Annual emission rate (basis points) used for freeroll tournament prizes.
+/// 5% per year (down from earlier 10% versions).
+pub const ANNUAL_EMISSION_RATE_BPS: u64 = 500;
+/// Reward pool reserved for tournament emissions.
+/// Target: distribute 25% of total supply over ~5 years (≈5%/year).
+pub const REWARD_POOL_BPS: u64 = 2500;
+/// Tournaments per day (registration 60s + active 300s = 360s): floor(86400/360) = 240
+pub const TOURNAMENTS_PER_DAY: u64 = 240;
 
 /// Error codes for CasinoError events
 pub const ERROR_PLAYER_ALREADY_REGISTERED: u8 = 1;
@@ -285,7 +288,7 @@ impl Player {
         }
     }
 
-    pub fn new_with_block(name: String, block: u64) -> Self {
+    pub fn new_with_block(name: String, _block: u64) -> Self {
         Self {
             nonce: 0,
             name,
@@ -301,8 +304,8 @@ impl Player {
             active_shield: false,
             active_double: false,
             active_session: None,
-            // Seed as if last faucet was sufficiently far in the past so the first deposit is allowed
-            last_deposit_block: block.saturating_sub(FAUCET_RATE_LIMIT + 1),
+            // Allow an immediate first faucet claim (daily limit is enforced by the executor).
+            last_deposit_block: 0,
             aura_meter: 0,
             tournaments_played_today: 0,
             last_tournament_ts: 0,

@@ -10,9 +10,10 @@ interface HeaderProps {
     lastTxSig?: string;
     focusMode: boolean;
     setFocusMode: (mode: boolean) => void;
+    showTimer?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ phase, tournamentTime, stats, lastTxSig, focusMode, setFocusMode }) => (
+export const Header: React.FC<HeaderProps> = ({ phase, tournamentTime, stats, lastTxSig, focusMode, setFocusMode, showTimer = true }) => (
     <header className="h-12 border-b-2 border-gray-700 flex items-center justify-between px-2 sm:px-4 z-10 bg-terminal-black/90 backdrop-blur">
     <div className="flex items-center gap-2 sm:gap-4">
         <span className="font-bold tracking-tighter text-white text-sm sm:text-base">null<span className="text-terminal-green">/</span>space</span>
@@ -27,10 +28,12 @@ export const Header: React.FC<HeaderProps> = ({ phase, tournamentTime, stats, la
         </div>
     </div>
     <div className="flex items-center gap-2 sm:gap-4 md:gap-6 text-xs sm:text-sm">
-            <div className="flex items-center gap-1 sm:gap-2">
-                <span className="text-gray-500 hidden sm:inline">TIMER</span>
-                <span className={`font-bold ${tournamentTime < 60 ? 'text-terminal-accent animate-pulse' : 'text-white'}`}>{formatTime(tournamentTime)}</span>
-            </div>
+            {showTimer && (
+                <div className="flex items-center gap-1 sm:gap-2">
+                    <span className="text-gray-500 hidden sm:inline">TIMER</span>
+                    <span className={`font-bold ${tournamentTime < 60 ? 'text-terminal-accent animate-pulse' : 'text-white'}`}>{formatTime(tournamentTime)}</span>
+                </div>
+            )}
             <div className="hidden sm:flex items-center gap-2">
                 <span className="text-gray-500">SHIELDS</span>
                 <div className="flex gap-1">
@@ -101,18 +104,26 @@ interface SidebarProps {
     history: string[];
     viewMode?: 'RANK' | 'PAYOUT';
     currentChips?: number;
+    prizePool?: number;
+    totalPlayers?: number;
+    winnersPct?: number;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ leaderboard, history, viewMode = 'RANK', currentChips }) => {
-    const bubbleIndex = Math.ceil(leaderboard.length * 0.2); // Top 20%
-    const userEntry = leaderboard.find(e => e.name === 'YOU');
+export const Sidebar: React.FC<SidebarProps> = ({ leaderboard, history, viewMode = 'RANK', currentChips, prizePool, totalPlayers, winnersPct = 0.15 }) => {
+    const effectivePlayerCount = totalPlayers ?? leaderboard.length;
+    const bubbleIndex = Math.max(1, Math.min(effectivePlayerCount, Math.ceil(effectivePlayerCount * winnersPct))); // Top 15% by default
+    const userEntry = leaderboard.find(e => e.name === 'YOU' || e.name.includes('(YOU)'));
 
     const getPayout = (rank: number) => {
-        if (rank === 1) return "$500,000";
-        if (rank === 2) return "$250,000";
-        if (rank === 3) return "$150,000";
-        if (rank <= bubbleIndex) return "$100,000";
-        return "$0";
+        if (!prizePool || effectivePlayerCount <= 0) return "$0";
+        if (rank > bubbleIndex) return "$0";
+
+        let totalWeight = 0;
+        for (let i = 1; i <= bubbleIndex; i++) {
+            totalWeight += 1 / i;
+        }
+        const payout = Math.floor(((1 / rank) / totalWeight) * prizePool);
+        return `$${payout.toLocaleString()}`;
     };
 
     const renderEntry = (entry: LeaderboardEntry, i: number, isSticky = false) => {
@@ -121,7 +132,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ leaderboard, history, viewMode
             rank = leaderboard.findIndex(e => e.name === entry.name) + 1;
         }
 
-        const isUser = entry.name === 'YOU';
+        const isUser = entry.name === 'YOU' || entry.name.includes('(YOU)');
         const isMoneyCutoff = rank === bubbleIndex;
         // Use real-time chips for the user to update instantly
         const displayChips = isUser && currentChips !== undefined ? currentChips : entry.chips;

@@ -14,6 +14,19 @@ const INITIAL_SHIELDS = 3;
 const INITIAL_DOUBLES = 3;
 const MAX_GRAPH_POINTS = 100; // Limit for graph/history arrays to prevent memory leaks
 
+// Freeroll schedule: 60s registration + 5m active
+const FREEROLL_REGISTRATION_MS = 60_000;
+const FREEROLL_TOURNAMENT_MS = 5 * 60_000;
+const FREEROLL_CYCLE_MS = FREEROLL_REGISTRATION_MS + FREEROLL_TOURNAMENT_MS;
+
+function getFreerollSchedule(nowMs: number) {
+  const slot = Math.floor(nowMs / FREEROLL_CYCLE_MS);
+  const slotStartMs = slot * FREEROLL_CYCLE_MS;
+  const startTimeMs = slotStartMs + FREEROLL_REGISTRATION_MS;
+  const endTimeMs = startTimeMs + FREEROLL_TOURNAMENT_MS;
+  return { slot, tournamentId: slot, slotStartMs, startTimeMs, endTimeMs, isRegistration: nowMs < startTimeMs };
+}
+
 // Map frontend GameType to chain GameType
 const GAME_TYPE_MAP: Record<GameType, ChainGameType> = {
   [GameType.BACCARAT]: ChainGameType.Baccarat,
@@ -79,7 +92,7 @@ const getBaccaratBetsToPlace = (selection: 'PLAYER' | 'BANKER', sideBets: Baccar
   return bets;
 };
 
-export const useTerminalGame = () => {
+export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => {
   // --- STATE ---
   const [stats, setStats] = useState<PlayerStats>({
     chips: INITIAL_CHIPS,
@@ -139,7 +152,16 @@ export const useTerminalGame = () => {
   const [botConfig, setBotConfig] = useState<BotConfig>(DEFAULT_BOT_CONFIG);
   const botServiceRef = useRef<BotService | null>(null);
   const [isTournamentStarting, setIsTournamentStarting] = useState(false);
+  const [isFaucetClaiming, setIsFaucetClaiming] = useState(false);
   const [manualTournamentEndTime, setManualTournamentEndTime] = useState<number | null>(null);
+  const [freerollActiveTournamentId, setFreerollActiveTournamentId] = useState<number | null>(null);
+  const [freerollActiveTimeLeft, setFreerollActiveTimeLeft] = useState(0);
+  const [freerollActivePrizePool, setFreerollActivePrizePool] = useState<number | null>(null);
+  const [freerollActivePlayerCount, setFreerollActivePlayerCount] = useState<number | null>(null);
+  const [freerollNextTournamentId, setFreerollNextTournamentId] = useState<number | null>(null);
+  const [freerollNextStartIn, setFreerollNextStartIn] = useState(0);
+  const [freerollIsJoinedNext, setFreerollIsJoinedNext] = useState(false);
+  const [tournamentsPlayedToday, setTournamentsPlayedToday] = useState(0);
 
   // Chain service integration
   const [chainService, setChainService] = useState<CasinoChainService | null>(null);
@@ -310,39 +332,7 @@ export const useTerminalGame = () => {
           console.debug('[useTerminalGame] Failed to fetch initial leaderboard:', leaderboardError);
         }
 
-        // Fetch tournament state to sync timer on page load
-        try {
-          const CURRENT_TOURNAMENT_ID = 1; // Default tournament ID
-          const tournamentState = await client.getCasinoTournament(CURRENT_TOURNAMENT_ID);
-          if (tournamentState) {
-            console.log('[useTerminalGame] Found tournament state:', tournamentState);
-            // Check if tournament is active and has valid end time
-            // Client normalizes snake_case to camelCase, so use endTimeMs
-            if (tournamentState.phase === 'Active' && tournamentState.endTimeMs) {
-              const endTimeMs = Number(tournamentState.endTimeMs);
-              const now = Date.now();
-              if (endTimeMs > now) {
-                // Tournament is still active - sync the timer
-                console.log('[useTerminalGame] Syncing active tournament timer, end time:', endTimeMs);
-                setManualTournamentEndTime(endTimeMs);
-                setPhase('ACTIVE');
-                const remaining = Math.ceil((endTimeMs - now) / 1000);
-                setTournamentTime(remaining);
-              } else {
-                // Tournament has ended
-                console.log('[useTerminalGame] Tournament has ended');
-                setPhase('REGISTRATION');
-                setManualTournamentEndTime(null);
-              }
-            } else {
-              console.log('[useTerminalGame] Tournament not active, phase:', tournamentState.phase);
-            }
-          } else {
-            console.log('[useTerminalGame] No tournament state found on-chain');
-          }
-        } catch (tournamentError) {
-          console.debug('[useTerminalGame] Failed to fetch tournament state:', tournamentError);
-        }
+        // Tournament state is synced by the freeroll scheduler effect (when enabled).
       } catch (error) {
         console.error('[useTerminalGame] Failed to initialize chain service:', error);
         setIsOnChain(false);
@@ -362,91 +352,259 @@ export const useTerminalGame = () => {
     currentChipsRef.current = stats.chips;
   }, [stats.chips]);
 
-  // --- TOURNAMENT CLOCK ---
+  const freerollStartInFlightRef = useRef(false);
+  const freerollEndInFlightRef = useRef(false);
+
+  // --- FREEROLL SCHEDULER + LEADERBOARD POLLING ---
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
 
-      // If we have a manual tournament running, use that timer
-      if (manualTournamentEndTime !== null) {
-        const remaining = Math.max(0, manualTournamentEndTime - now);
-        setTournamentTime(Math.ceil(remaining / 1000));
-
-        // Tournament ended
-        if (remaining <= 0) {
-          console.log('[useTerminalGame] Manual tournament ended');
-          setManualTournamentEndTime(null);
-          setPhase('REGISTRATION');
-
-          // Stop bots
-          const botService = botServiceRef.current;
-          if (botService) {
-            botService.stop();
-          }
-        }
+      if (playMode !== 'FREEROLL') {
+        // Cash mode: no tournament automation.
+        setTournamentTime(0);
+        setFreerollActiveTournamentId(null);
+        setFreerollActiveTimeLeft(0);
+        setFreerollNextTournamentId(null);
+        setFreerollNextStartIn(0);
+        setFreerollIsJoinedNext(false);
       } else {
-        // Manual tournament mode - stay in REGISTRATION until user starts tournament
-        // No cyclic automatic phase switching
-        if (phase === 'REGISTRATION') {
-          setTournamentTime(0); // No countdown when waiting for user to start
+        const scheduleNow = getFreerollSchedule(now);
+
+        const nextTid = scheduleNow.isRegistration ? scheduleNow.tournamentId : scheduleNow.tournamentId + 1;
+        const nextStartMs = nextTid * FREEROLL_CYCLE_MS + FREEROLL_REGISTRATION_MS;
+        setFreerollNextTournamentId(nextTid);
+        setFreerollNextStartIn(Math.max(0, Math.ceil((nextStartMs - now) / 1000)));
+
+        // Keep the in-game timer ticking smoothly for the active tournament the player is in.
+        if (manualTournamentEndTime !== null && phase === 'ACTIVE') {
+          const remaining = Math.max(0, manualTournamentEndTime - now);
+          setTournamentTime(Math.ceil(remaining / 1000));
         }
       }
 
-      // Poll on-chain leaderboard every 2 seconds during ACTIVE and REGISTRATION phases
       tickCounterRef.current++;
-      if ((phase === 'ACTIVE' || phase === 'REGISTRATION') && clientRef.current && tickCounterRef.current % 2 === 0) {
-        (async () => {
+      if (!clientRef.current || !publicKeyBytesRef.current || tickCounterRef.current % 2 !== 0) {
+        return;
+      }
+
+      (async () => {
+        const client: any = clientRef.current;
+        if (!client) return;
+
+        const myPublicKeyHex = publicKeyBytesRef.current
+          ? Array.from(publicKeyBytesRef.current).map(b => b.toString(16).padStart(2, '0')).join('')
+          : null;
+
+        // Always keep player state in sync (chips/shields/doubles + freeroll entry limits).
+        let playerState: any = null;
+        try {
+          playerState = await client.getCasinoPlayer(publicKeyBytesRef.current);
+        } catch (e) {
+          console.debug('[useTerminalGame] Failed to fetch player state:', e);
+        }
+
+        let shouldUpdateBalance = true;
+        let playerActiveTid: number | null = null;
+
+        if (playerState) {
+          setIsRegistered(true);
+          hasRegisteredRef.current = true;
+
+          setTournamentsPlayedToday(Number(playerState.tournamentsPlayedToday ?? 0));
+
+          // Update balances (avoid clobbering fresh WebSocket updates).
+          const timeSinceLastUpdate = Date.now() - lastBalanceUpdateRef.current;
+          shouldUpdateBalance = timeSinceLastUpdate > BALANCE_UPDATE_COOLDOWN;
+
+          playerActiveTid = playerState.activeTournament != null ? Number(playerState.activeTournament) : null;
+
+          // Joined status for the next freeroll (registration).
+          if (playMode === 'FREEROLL' && freerollNextTournamentId !== null) {
+            setFreerollIsJoinedNext(playerActiveTid === freerollNextTournamentId);
+          }
+        } else {
+          setIsRegistered(false);
+          hasRegisteredRef.current = false;
+          setTournamentsPlayedToday(0);
+        }
+
+        if (playMode !== 'FREEROLL') {
+          // Cash leaderboard
           try {
-            const leaderboardData = await clientRef.current!.getCasinoLeaderboard();
+            const leaderboardData = await client.getCasinoLeaderboard();
             if (leaderboardData && leaderboardData.entries) {
-              // Get current player's public key hex for identification
-              const myPublicKeyHex = publicKeyBytesRef.current
-                ? Array.from(publicKeyBytesRef.current).map(b => b.toString(16).padStart(2, '0')).join('')
-                : null;
+              const newBoard: LeaderboardEntry[] = leaderboardData.entries.map((entry: { player?: string; name?: string; chips: bigint | number }) => {
+                const name = entry.name || `Player_${entry.player?.substring(0, 8)}`;
+                const isYou = !!myPublicKeyHex && !!entry.player && entry.player.toLowerCase() === myPublicKeyHex.toLowerCase();
+                return {
+                  name: isYou ? `${name} (YOU)` : name,
+                  chips: Number(entry.chips),
+                  status: 'ALIVE' as const
+                };
+              });
 
-              // Map on-chain entries to our LeaderboardEntry format
-              const newBoard: LeaderboardEntry[] = leaderboardData.entries.map((entry: { player?: string; name?: string; chips: bigint | number }) => ({
-                name: entry.name || `Player_${entry.player?.substring(0, 8)}`,
-                chips: Number(entry.chips),
-                status: 'ALIVE' as const
-              }));
-
-              // Check if current player is in the leaderboard
-              const isPlayerInBoard = myPublicKeyHex && leaderboardData.entries.some(
+              const isPlayerInBoard = !!myPublicKeyHex && leaderboardData.entries.some(
                 (entry: { player?: string }) => entry.player?.toLowerCase() === myPublicKeyHex.toLowerCase()
               );
-
-              // If not in leaderboard, add current player (they might be outside top 10)
-              if (!isPlayerInBoard && myPublicKeyHex && isRegistered) {
-                newBoard.push({ name: "YOU", chips: currentChipsRef.current, status: 'ALIVE' });
-              } else if (myPublicKeyHex) {
-                // Mark the current player's entry
-                const playerEntry = newBoard.find((_, idx) =>
-                  leaderboardData.entries[idx]?.player?.toLowerCase() === myPublicKeyHex.toLowerCase()
-                );
-                if (playerEntry) {
-                  playerEntry.name = `${playerEntry.name} (YOU)`;
-                }
+              if (!isPlayerInBoard && isRegistered) {
+                newBoard.push({ name: 'YOU', chips: currentChipsRef.current, status: 'ALIVE' as const });
               }
 
-              // Sort by chips descending
               newBoard.sort((a, b) => b.chips - a.chips);
               setLeaderboard(newBoard);
 
-              // Update player's rank
               const myRank = newBoard.findIndex(p => p.name.includes("YOU")) + 1;
               if (myRank > 0) {
                 setStats(s => ({ ...s, rank: myRank }));
               }
             }
           } catch (e) {
-            console.warn('[useTerminalGame] Failed to fetch leaderboard:', e);
+            console.debug('[useTerminalGame] Failed to fetch cash leaderboard:', e);
           }
-        })();
-      }
+          return;
+        }
+
+        const scheduleNow = getFreerollSchedule(Date.now());
+        const currentSlotTid = scheduleNow.tournamentId;
+        const candidateTids = currentSlotTid > 0 ? [currentSlotTid, currentSlotTid - 1] : [currentSlotTid];
+
+        // Find an active tournament (current or just-finished slot).
+        let activeTournament: { id: number; endTimeMs: number; state: any } | null = null;
+        for (const tid of candidateTids) {
+          try {
+            const t = await client.getCasinoTournament(tid);
+            if (t && t.phase === 'Active' && t.endTimeMs) {
+              const endMs = Number(t.endTimeMs);
+              activeTournament = { id: tid, endTimeMs: endMs, state: t };
+              break;
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        setFreerollActiveTournamentId(activeTournament ? activeTournament.id : null);
+        setFreerollActiveTimeLeft(
+          activeTournament ? Math.max(0, Math.ceil((activeTournament.endTimeMs - now) / 1000)) : 0
+        );
+        setFreerollActivePrizePool(activeTournament ? Number(activeTournament.state?.prizePool ?? 0) : null);
+        setFreerollActivePlayerCount(
+          activeTournament && Array.isArray(activeTournament.state?.players)
+            ? activeTournament.state.players.length
+            : null
+        );
+
+        const isInActiveTournament = !!activeTournament && playerActiveTid === activeTournament.id;
+
+        if (playerState) {
+          const showTournamentStack = isInActiveTournament;
+          const desiredChips = showTournamentStack ? playerState.tournamentChips : playerState.chips;
+          const desiredShields = showTournamentStack ? playerState.tournamentShields : playerState.shields;
+          const desiredDoubles = showTournamentStack ? playerState.tournamentDoubles : playerState.doubles;
+
+          setStats(prev => ({
+            ...prev,
+            chips: shouldUpdateBalance ? Number(desiredChips) : prev.chips,
+            shields: Number(desiredShields),
+            doubles: Number(desiredDoubles),
+          }));
+        }
+
+        if (isInActiveTournament) {
+          setPhase('ACTIVE');
+          setManualTournamentEndTime(activeTournament!.endTimeMs);
+          setTournamentTime(Math.max(0, Math.ceil((activeTournament!.endTimeMs - now) / 1000)));
+        } else {
+          setPhase('REGISTRATION');
+          setManualTournamentEndTime(null);
+          setTournamentTime(0);
+        }
+
+        // Auto-start the scheduled tournament once registration ends.
+        if (!scheduleNow.isRegistration && now < scheduleNow.endTimeMs && !freerollStartInFlightRef.current) {
+          try {
+            const t = await client.getCasinoTournament(scheduleNow.tournamentId);
+            if (t && t.phase === 'Registration' && Array.isArray(t.players) && t.players.length > 0) {
+              freerollStartInFlightRef.current = true;
+              setIsTournamentStarting(true);
+              try {
+                const result = await client.nonceManager.submitCasinoStartTournament(
+                  scheduleNow.tournamentId,
+                  scheduleNow.startTimeMs,
+                  scheduleNow.endTimeMs
+                );
+                if (result?.txHash) setLastTxSig(result.txHash);
+              } finally {
+                setIsTournamentStarting(false);
+                freerollStartInFlightRef.current = false;
+              }
+            }
+          } catch (e) {
+            console.debug('[useTerminalGame] Auto-start tournament failed:', e);
+            setIsTournamentStarting(false);
+            freerollStartInFlightRef.current = false;
+          }
+        }
+
+        // Auto-end an active tournament once its end time passes.
+        if (activeTournament && now >= activeTournament.endTimeMs && !freerollEndInFlightRef.current) {
+          freerollEndInFlightRef.current = true;
+          try {
+            const result = await client.nonceManager.submitCasinoEndTournament(activeTournament.id);
+            if (result?.txHash) setLastTxSig(result.txHash);
+          } catch (e) {
+            console.debug('[useTerminalGame] Auto-end tournament failed:', e);
+          } finally {
+            freerollEndInFlightRef.current = false;
+          }
+        }
+
+        // Tournament leaderboard (preferred) while a tournament is active.
+        if (activeTournament?.state?.leaderboard?.entries) {
+          const entries = activeTournament.state.leaderboard.entries;
+          const newBoard: LeaderboardEntry[] = entries.map((entry: { player?: string; name?: string; chips: bigint | number }) => {
+            const name = entry.name || `Player_${entry.player?.substring(0, 8)}`;
+            const isYou = !!myPublicKeyHex && !!entry.player && entry.player.toLowerCase() === myPublicKeyHex.toLowerCase();
+            return { name: isYou ? `${name} (YOU)` : name, chips: Number(entry.chips), status: 'ALIVE' as const };
+          });
+
+          const isPlayerInBoard = !!myPublicKeyHex && entries.some(
+            (entry: { player?: string }) => entry.player?.toLowerCase() === myPublicKeyHex.toLowerCase()
+          );
+          if (!isPlayerInBoard && isInActiveTournament) {
+            newBoard.push({ name: 'YOU', chips: currentChipsRef.current, status: 'ALIVE' as const });
+          }
+
+          newBoard.sort((a, b) => b.chips - a.chips);
+          setLeaderboard(newBoard);
+
+          const myRank = newBoard.findIndex(p => p.name.includes("YOU")) + 1;
+          if (myRank > 0) {
+            setStats(s => ({ ...s, rank: myRank }));
+          }
+        } else {
+          // Fallback: show the cash leaderboard in the freeroll lobby when no active tournament board is available.
+          try {
+            const leaderboardData = await client.getCasinoLeaderboard();
+            if (leaderboardData && leaderboardData.entries) {
+              const newBoard: LeaderboardEntry[] = leaderboardData.entries.map((entry: { player?: string; name?: string; chips: bigint | number }) => {
+                const name = entry.name || `Player_${entry.player?.substring(0, 8)}`;
+                const isYou = !!myPublicKeyHex && !!entry.player && entry.player.toLowerCase() === myPublicKeyHex.toLowerCase();
+                return { name: isYou ? `${name} (YOU)` : name, chips: Number(entry.chips), status: 'ALIVE' as const };
+              });
+              newBoard.sort((a, b) => b.chips - a.chips);
+              setLeaderboard(newBoard);
+            }
+          } catch (e) {
+            console.debug('[useTerminalGame] Failed to fetch lobby leaderboard:', e);
+          }
+        }
+      })();
     }, 1000);
+
     return () => clearInterval(interval);
-  }, [phase, chainService, isRegistered, manualTournamentEndTime]);
+  }, [playMode, phase, manualTournamentEndTime, freerollNextTournamentId]);
 
   // --- BOT SERVICE MANAGEMENT ---
   useEffect(() => {
@@ -463,31 +621,37 @@ export const useTerminalGame = () => {
     }
   }, []);
 
-  // Start/stop bots based on phase
+  // Prepare bots during freeroll registration, then start playing when the player enters the active tournament.
   useEffect(() => {
     const botService = botServiceRef.current;
     if (!botService) return;
 
-    // Update bot config
     botService.setConfig(botConfig);
 
-    if (phase === 'ACTIVE' && botConfig.enabled) {
-      // Start bots when entering ACTIVE phase
-      console.log('[useTerminalGame] Starting bots for tournament...');
-      botService.start();
-    } else if (phase === 'REGISTRATION') {
-      // Stop bots when entering REGISTRATION phase
-      console.log('[useTerminalGame] Stopping bots...');
+    if (playMode !== 'FREEROLL' || !botConfig.enabled) {
       botService.stop();
+      return;
+    }
+
+    if (phase === 'REGISTRATION') {
+      if (freerollNextTournamentId !== null) {
+        console.log('[useTerminalGame] Preparing bots for tournament', freerollNextTournamentId);
+        botService.prepareTournamentBots(freerollNextTournamentId).catch((e) => {
+          console.warn('[useTerminalGame] Failed to prepare bots:', e);
+        });
+      }
+      return;
+    }
+
+    if (phase === 'ACTIVE') {
+      console.log('[useTerminalGame] Starting bot play loops...');
+      botService.startPlaying();
     }
 
     return () => {
-      // Cleanup on unmount
-      if (botService) {
-        botService.stop();
-      }
+      botService.stop();
     };
-  }, [phase, botConfig]);
+  }, [playMode, phase, botConfig, freerollNextTournamentId]);
 
   // Keep gameStateRef in sync with gameState for event handlers
   useEffect(() => {
@@ -3761,26 +3925,44 @@ export const useTerminalGame = () => {
   };
 
   const registerForTournament = async () => {
-      // Register on-chain first
-      if (chainService) {
-        try {
-          const playerName = `Player_${Date.now().toString(36)}`;
-          await chainService.register(playerName);
-          console.log('[useTerminalGame] Registered on-chain as:', playerName);
-        } catch (error) {
-          console.error('[useTerminalGame] Failed to register on-chain:', error);
-          // Continue anyway - the registration will be retried
-        }
+      const client: any = clientRef.current;
+      if (!client || !client.nonceManager || !publicKeyBytesRef.current) {
+        console.warn('[useTerminalGame] Cannot register/join - client not initialized');
+        return;
       }
-      setIsRegistered(true);
 
-      // Fetch on-chain player state instead of using hardcoded values
-      if (clientRef.current && publicKeyBytesRef.current) {
+      try {
+        // Ensure player exists on-chain.
+        if (!hasRegisteredRef.current) {
+          const playerName = `Player_${Date.now().toString(36)}`;
+          await client.nonceManager.submitCasinoRegister(playerName);
+          hasRegisteredRef.current = true;
+          const privateKeyHex = localStorage.getItem('casino_private_key');
+          if (privateKeyHex) {
+            localStorage.setItem(`casino_registered_${privateKeyHex}`, 'true');
+          }
+        }
+        setIsRegistered(true);
+
+        // Freeroll mode: also join the next tournament slot.
+        if (playMode === 'FREEROLL') {
+          const now = Date.now();
+          const scheduleNow = getFreerollSchedule(now);
+          const defaultNextTid = scheduleNow.isRegistration ? scheduleNow.tournamentId : scheduleNow.tournamentId + 1;
+          const tid = freerollNextTournamentId ?? defaultNextTid;
+
+          const result = await client.nonceManager.submitCasinoJoinTournament(tid);
+          if (result?.txHash) setLastTxSig(result.txHash);
+          setGameState(prev => ({ ...prev, message: `JOINED TOURNAMENT ${tid}` }));
+        } else {
+          setGameState(prev => ({ ...prev, message: 'REGISTERED' }));
+        }
+
+        // Refresh player state after submission.
         setTimeout(async () => {
           try {
-            const playerState = await clientRef.current!.getCasinoPlayer(publicKeyBytesRef.current!);
+            const playerState = await client.getCasinoPlayer(publicKeyBytesRef.current!);
             if (playerState) {
-              // Check if we should respect WebSocket update cooldown
               const timeSinceLastUpdate = Date.now() - lastBalanceUpdateRef.current;
               const shouldUpdateBalance = timeSinceLastUpdate > BALANCE_UPDATE_COOLDOWN;
 
@@ -3793,106 +3975,76 @@ export const useTerminalGame = () => {
                 pnlByGame: {},
                 pnlHistory: []
               }));
-
-              if (!shouldUpdateBalance) {
-                console.log('[useTerminalGame] Skipped balance update from reset game polling (within cooldown)');
-              }
             }
           } catch (e) {
-            console.warn('[useTerminalGame] Failed to fetch player state after registration:', e);
+            console.warn('[useTerminalGame] Failed to fetch player state after register/join:', e);
           }
-        }, 500);
+        }, 750);
+      } catch (e) {
+        console.error('[useTerminalGame] Register/join failed:', e);
+        setGameState(prev => ({ ...prev, message: 'REGISTER/JOIN FAILED' }));
       }
   };
 
-  // Start a manual 5-minute tournament (solo mode or with bots)
-  const startTournament = async () => {
-    if (isTournamentStarting) return;
+  const claimFaucet = async () => {
+      if (isFaucetClaiming) return;
 
-    const client = clientRef.current;
-    if (!client) {
-      console.error('[useTerminalGame] Cannot start tournament - client not initialized');
-      return;
-    }
-
-    setIsTournamentStarting(true);
-    console.log(`[useTerminalGame] Starting manual tournament${botConfig.enabled ? ` with ${botConfig.numBots} bots` : ' (solo mode)'}...`);
-
-    // Calculate tournament times
-    const TOURNAMENT_DURATION_MS = 5 * 60 * 1000; // 5 minutes
-    const CURRENT_TOURNAMENT_ID = 1;
-    const startTimeMs = Date.now();
-    const endTimeMs = startTimeMs + TOURNAMENT_DURATION_MS;
-
-    // Send on-chain CasinoStartTournament transaction
-    // This will create a fresh tournament and automatically add the starting player
-    try {
-      const nonce = await client.nonceManager.getNextNonce();
-      const txBytes = client.wasm.createCasinoStartTournamentTransaction(
-        nonce,
-        CURRENT_TOURNAMENT_ID,
-        startTimeMs,
-        endTimeMs
-      );
-      await client.submitTransaction(txBytes);
-      console.log('[useTerminalGame] CasinoStartTournament transaction submitted');
-    } catch (e) {
-      console.error('[useTerminalGame] Failed to submit CasinoStartTournament transaction:', e);
-      // Continue anyway - the local state will still work
-    }
-
-    // Force phase to ACTIVE
-    setPhase('ACTIVE');
-
-    // Set end time for 5 minutes from now (synced with on-chain)
-    setManualTournamentEndTime(endTimeMs);
-    setTournamentTime(5 * 60);
-
-    // Reset local player chips to starting values immediately
-    setStats(prev => ({
-      ...prev,
-      chips: INITIAL_CHIPS,
-      shields: INITIAL_SHIELDS,
-      doubles: INITIAL_DOUBLES,
-      history: [],
-      pnlByGame: {},
-      pnlHistory: []
-    }));
-
-    // After a delay, fetch player state from chain to ensure sync
-    if (publicKeyBytesRef.current) {
-      setTimeout(async () => {
-        try {
-          const playerState = await client.getCasinoPlayer(publicKeyBytesRef.current!);
-          if (playerState) {
-            console.log('[useTerminalGame] Tournament started, syncing player state from chain:', playerState);
-            setStats(prev => ({
-              ...prev,
-              chips: playerState.chips,
-              shields: playerState.shields,
-              doubles: playerState.doubles,
-            }));
-          }
-        } catch (e) {
-          console.warn('[useTerminalGame] Failed to sync player state after tournament start:', e);
-        }
-      }, 1000);
-    }
-
-    // Start the bots if enabled
-    if (botConfig.enabled) {
-      const botService = botServiceRef.current;
-      if (botService) {
-        try {
-          await botService.start();
-          console.log('[useTerminalGame] Bots started for tournament');
-        } catch (e) {
-          console.error('[useTerminalGame] Failed to start bots:', e);
-        }
+      const client = clientRef.current as any;
+      if (!client || !client.nonceManager) {
+        console.warn('[useTerminalGame] Cannot claim faucet - client not initialized');
+        return;
       }
-    }
+      if (!publicKeyBytesRef.current) {
+        console.warn('[useTerminalGame] Cannot claim faucet - public key not initialized');
+        return;
+      }
 
-    setIsTournamentStarting(false);
+      setIsFaucetClaiming(true);
+      try {
+        // Ensure player exists on-chain.
+        if (!hasRegisteredRef.current) {
+          const playerName = `Player_${Date.now().toString(36)}`;
+          await client.nonceManager.submitCasinoRegister(playerName);
+          hasRegisteredRef.current = true;
+          setIsRegistered(true);
+          const privateKeyHex = localStorage.getItem('casino_private_key');
+          if (privateKeyHex) {
+            localStorage.setItem(`casino_registered_${privateKeyHex}`, 'true');
+          }
+        }
+
+        // Dev faucet amount (RNG).
+        const amount = 1000;
+        const result = await client.nonceManager.submitCasinoDeposit(amount);
+        if (result?.txHash) setLastTxSig(result.txHash);
+        setGameState(prev => ({ ...prev, message: 'FAUCET CLAIMED' }));
+
+        // Sync player state after submission.
+        setTimeout(async () => {
+          try {
+            const playerState = await client.getCasinoPlayer(publicKeyBytesRef.current!);
+            if (playerState) {
+              setStats(prev => ({
+                ...prev,
+                chips: playerState.chips,
+                shields: playerState.shields,
+                doubles: playerState.doubles,
+              }));
+            }
+          } catch (e) {
+            console.debug('[useTerminalGame] Failed to sync player state after faucet:', e);
+          }
+        }, 750);
+      } catch (e) {
+        console.error('[useTerminalGame] Faucet claim failed:', e);
+        setGameState(prev => ({ ...prev, message: 'FAUCET FAILED' }));
+      } finally {
+        setIsFaucetClaiming(false);
+      }
+  };
+
+  const startTournament = async () => {
+    console.warn('[useTerminalGame] startTournament() is deprecated; freerolls auto-schedule.');
   };
 
   const getAdvice = async () => {
@@ -3915,6 +4067,15 @@ export const useTerminalGame = () => {
     botConfig,
     setBotConfig,
     isTournamentStarting,
+    isFaucetClaiming,
+    freerollActiveTournamentId,
+    freerollActiveTimeLeft,
+    freerollActivePrizePool,
+    freerollActivePlayerCount,
+    freerollNextTournamentId,
+    freerollNextStartIn,
+    freerollIsJoinedNext,
+    tournamentsPlayedToday,
     startTournament,
     actions: {
         startGame,
@@ -3962,6 +4123,7 @@ export const useTerminalGame = () => {
         uhFold,
         // Misc
         registerForTournament,
+        claimFaucet,
         getAdvice
     }
   };

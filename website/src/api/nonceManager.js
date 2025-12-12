@@ -514,4 +514,54 @@ export class NonceManager {
       'casinoToggleDouble'
     );
   }
+
+  /**
+   * Submit a casino deposit transaction (dev faucet / testing).
+   * @param {bigint|number} amount - Amount to deposit
+   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   */
+  async submitCasinoDeposit(amount) {
+    return this.submitTransaction(
+      (nonce) => this.wasm.createCasinoDepositTransaction(nonce, amount),
+      'casinoDeposit'
+    );
+  }
+
+  /**
+   * Submit a casino join tournament transaction.
+   * @param {bigint|number} tournamentId - Tournament ID
+   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   */
+  async submitCasinoJoinTournament(tournamentId) {
+    return this.submitTransaction(
+      (nonce) => this.wasm.createCasinoJoinTournamentTransaction(nonce, tournamentId),
+      'casinoJoinTournament'
+    );
+  }
+
+  /**
+   * Submit a casino start tournament transaction.
+   * @param {bigint|number} tournamentId - Tournament ID
+   * @param {bigint|number} startTimeMs - Start time in milliseconds
+   * @param {bigint|number} endTimeMs - End time in milliseconds
+   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   */
+  async submitCasinoStartTournament(tournamentId, startTimeMs, endTimeMs) {
+    return this.submitTransaction(
+      (nonce) => this.wasm.createCasinoStartTournamentTransaction(nonce, tournamentId, startTimeMs, endTimeMs),
+      'casinoStartTournament'
+    );
+  }
+
+  /**
+   * Submit a casino end tournament transaction.
+   * @param {bigint|number} tournamentId - Tournament ID
+   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   */
+  async submitCasinoEndTournament(tournamentId) {
+    return this.submitTransaction(
+      (nonce) => this.wasm.createCasinoEndTournamentTransaction(nonce, tournamentId),
+      'casinoEndTournament'
+    );
+  }
 }
