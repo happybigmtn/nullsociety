@@ -2865,7 +2865,7 @@ export const useTerminalGame = () => {
       
       setStats(prev => ({ 
           ...prev, 
-          chips: prev.chips + pnl,
+          chips: Math.max(0, prev.chips + pnl),
           history: [...prev.history, summary, ...results],
           pnlByGame: { ...prev.pnlByGame, [GameType.ROULETTE]: (prev.pnlByGame[GameType.ROULETTE] || 0) + pnl },
           pnlHistory: [...prev.pnlHistory, (prev.pnlHistory[prev.pnlHistory.length - 1] || 0) + pnl].slice(-MAX_GRAPH_POINTS)
@@ -2966,7 +2966,7 @@ export const useTerminalGame = () => {
 
        setStats(prev => ({
            ...prev,
-           chips: prev.chips + pnl,
+           chips: Math.max(0, prev.chips + pnl),
            history: [...prev.history, summary, ...results],
            pnlByGame: { ...prev.pnlByGame, [GameType.SIC_BO]: (prev.pnlByGame[GameType.SIC_BO] || 0) + pnl },
            pnlHistory: [...prev.pnlHistory, (prev.pnlHistory[prev.pnlHistory.length - 1] || 0) + pnl].slice(-MAX_GRAPH_POINTS)
@@ -3015,8 +3015,18 @@ export const useTerminalGame = () => {
     return payload;
   };
 
+  const totalCommittedCraps = () =>
+    gameState.crapsBets.reduce(
+      (sum, b) => sum + b.amount + (b.oddsAmount || 0),
+      0
+    );
+
   const placeCrapsBet = (type: CrapsBet['type'], target?: number) => {
-      if (stats.chips < gameState.bet) return;
+      const committed = totalCommittedCraps();
+      if (stats.chips - committed < gameState.bet) {
+          setGameState(prev => ({ ...prev, message: 'INSUFFICIENT FUNDS' }));
+          return;
+      }
       let bets = [...gameState.crapsBets];
       if (type === 'PASS') bets = bets.filter(b => b.type !== 'DONT_PASS' || !b.local);
       if (type === 'DONT_PASS') bets = bets.filter(b => b.type !== 'PASS' || !b.local);
@@ -3039,7 +3049,8 @@ export const useTerminalGame = () => {
           return;
       }
       const totalRequired = gameState.crapsLastRoundBets.reduce((a, b) => a + b.amount + (b.oddsAmount || 0), 0);
-      if (stats.chips < totalRequired) {
+      const committed = totalCommittedCraps();
+      if (stats.chips < totalRequired + committed) {
           setGameState(prev => ({ ...prev, message: 'INSUFFICIENT FUNDS' }));
           return;
       }
@@ -3066,6 +3077,12 @@ export const useTerminalGame = () => {
       }
 
       const targetBet = gameState.crapsBets[idx];
+      // No odds on the come-out roll for Pass/Don't Pass
+      if ((targetBet.type === 'PASS' || targetBet.type === 'DONT_PASS') && gameState.crapsPoint === null) {
+          setGameState(prev => ({ ...prev, message: "WAIT FOR POINT BEFORE ODDS" }));
+          return;
+      }
+
       const currentOdds = targetBet.oddsAmount || 0;
       const maxOdds = targetBet.amount * 5; // 5x cap
 
@@ -3082,7 +3099,8 @@ export const useTerminalGame = () => {
           return;
       }
 
-      if (stats.chips < oddsToAdd) {
+      const committed = totalCommittedCraps();
+      if (stats.chips - committed < oddsToAdd) {
           setGameState(prev => ({ ...prev, message: "INSUFFICIENT FUNDS" }));
           return;
       }
@@ -3220,13 +3238,13 @@ export const useTerminalGame = () => {
        const summary = `Rolled: ${total}. ${pnl >= 0 ? '+' : '-'}$${Math.abs(pnl)}`;
 
        // Update stats
-       setStats(prev => ({
-           ...prev,
-           chips: prev.chips + pnl,
-           history: [...prev.history, summary, ...results],
-           pnlByGame: { ...prev.pnlByGame, [GameType.CRAPS]: (prev.pnlByGame[GameType.CRAPS] || 0) + pnl },
-           pnlHistory: [...prev.pnlHistory, (prev.pnlHistory[prev.pnlHistory.length - 1] || 0) + pnl].slice(-MAX_GRAPH_POINTS)
-       }));
+      setStats(prev => ({
+          ...prev,
+          chips: Math.max(0, prev.chips + pnl),
+          history: [...prev.history, summary, ...results],
+          pnlByGame: { ...prev.pnlByGame, [GameType.CRAPS]: (prev.pnlByGame[GameType.CRAPS] || 0) + pnl },
+          pnlHistory: [...prev.pnlHistory, (prev.pnlHistory[prev.pnlHistory.length - 1] || 0) + pnl].slice(-MAX_GRAPH_POINTS)
+      }));
 
        // Update point logic simplified
        let newPoint = gameState.crapsPoint;
