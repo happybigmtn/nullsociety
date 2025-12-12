@@ -1,0 +1,164 @@
+# Liquidity Bootstrapping Plan for Nullsociety RNG
+
+This document is the canonical roadmap for RNG token distribution + liquidity across the Commonware (Nullspace) stack and Ethereum.
+
+## Token Economics (Target)
+
+**Total supply:** 1,000,000,000 RNG
+
+| Bucket | % of supply | Amount (RNG) | Mechanism | Status in code |
+|---|---:|---:|---|---|
+| Freeroll emissions | 25% | 250,000,000 | Linear over ~5 years (5%/yr) paid to top 15% of each tournament | **Implemented** (cap + per-tournament emission) |
+| Phase 2 auction sale | 25% | 250,000,000 | Ethereum auction (CCA) raising USDT/USDC; proceeds seed an Ethereum DEX pool | **Not implemented** |
+| Team / investors / treasury | 50% | 500,000,000 | Treasury-controlled allocations + vesting + strategic liquidity provisioning | **Not implemented (treasury ledger/vesting)** |
+
+### Freeroll emission schedule (implemented)
+On each tournament start, the executor mints a **per-tournament prize pool**:
+
+`per_tournament = floor( floor( floor(TOTAL_SUPPLY * 5% / 365) / TOURNAMENTS_PER_DAY ) )`
+
+Current protocol constants:
+- `types/src/casino.rs`: `TOTAL_SUPPLY = 1_000_000_000`
+- `types/src/casino.rs`: `ANNUAL_EMISSION_RATE_BPS = 500` (5%/year)
+- `types/src/casino.rs`: `REWARD_POOL_BPS = 2500` (25% cap)
+- `types/src/casino.rs`: `TOURNAMENTS_PER_DAY = 240` (1m registration + 5m active schedule)
+
+This yields approximately:
+- Annual emission target: `50,000,000 RNG/year`
+- Daily emission target: `~136,986 RNG/day`
+- Per-tournament prize pool: `~570 RNG/tournament` (integer division rounding)
+
+The executor tracks `HouseState.total_issuance` and caps total freeroll issuance to `25% * TOTAL_SUPPLY`.
+
+## Current Codebase Snapshot (Reality Today)
+
+The current “economy” lives inside the casino state machine. RNG is represented as the player’s `chips` balance.
+
+### What exists on the Commonware stack (today)
+- **RNG balance (in-protocol):** `types/src/casino.rs` `Player.chips`
+- **vUSDT (virtual stable):** `types/src/casino.rs` `Player.vusdt_balance`
+- **CPMM AMM (RNG/vUSDT):**
+  - State: `types/src/casino.rs` `AmmPool { reserve_rng, reserve_vusdt, total_shares, fee_basis_points, sell_tax_basis_points }`
+  - Execution: `execution/src/lib.rs` `handle_swap`, `handle_add_liquidity`, `handle_remove_liquidity`
+  - Defaults: 0.3% LP fee (`fee_basis_points=30`) + 5% sell-tax on RNG→vUSDT (`sell_tax_basis_points=500`)
+  - Accounting: sell-tax increments `HouseState.total_burned`; LP fee increments `HouseState.accumulated_fees`
+- **CDP/Vault to mint vUSDT:** `execution/src/lib.rs` `handle_create_vault`, `handle_deposit_collateral`, `handle_borrow_usdt`, `handle_repay_usdt`
+  - LTV: 50% based on AMM spot price (no external oracle)
+- **Freeroll tournaments + payouts (top 15%):**
+  - Join limit: 5/day enforced in `execution/src/lib.rs` `handle_casino_join_tournament`
+  - Start: `execution/src/lib.rs` `handle_casino_start_tournament` (mints prize pool; resets tournament stacks)
+  - End: `execution/src/lib.rs` `handle_casino_end_tournament` (harmonic payout across top 15%)
+- **Staking (very early / incomplete):**
+  - Stake/unstake bookkeeping exists (`execution/src/lib.rs` `handle_stake`, `handle_unstake`)
+  - Rewards distribution is currently a placeholder (`handle_claim_rewards`), and `ProcessEpoch` only resets PnL
+- **Analytics tooling (simulated):**
+  - Simulation: `client/examples/simulation_ecosystem.rs` writes `economy_log.json`
+  - Dashboard: `website/src/components/EconomyDashboard.jsx` reads `website/public/economy_log.json`
+
+### What does NOT exist yet (and is required for the roadmap)
+- A real **treasury / vesting ledger** for the 50% reserved supply (and the 25% auction pool).
+- A protocol-native **token ledger** (CTI-20 / “real RNG token”) separate from casino player state.
+- Any Ethereum contracts (ERC-20 RNG on Ethereum, auctions, Uniswap pool launch tooling).
+- Any bridge contracts or canonical supply enforcement across chains.
+
+## Stage 1 — On-Chain Price Discovery (RNG/vUSD on Commonware)
+
+**Goal:** discover a credible on-chain price curve and liquidity baseline *inside* Nullspace before any external bridge exists.
+
+### Stage 1A (now): make the existing AMM usable for price discovery
+Leverage the already-implemented CPMM:
+- Implement/ship a **Swap + LP + Vault UI** in the website:
+  - Swap RNG↔vUSDT with slippage controls.
+  - Add/remove liquidity and show LP share price.
+  - Create vault, deposit collateral, borrow/repay vUSDT; show health (LTV).
+- Emit and index **events** for swaps/liquidity/vault actions (currently most return `vec![]`), so:
+  - the UI can show confirmations without polling,
+  - the dashboard can consume real chain data (not just simulation logs),
+  - we can audit price discovery behavior over time.
+- Define a **treasury seeding mechanism**:
+  - Decide how initial reserves are provisioned (genesis allocation vs. privileged instruction vs. multisig account).
+  - Establish initial AMM parameters (fee, sell-tax, min liquidity, bootstrap price).
+
+### Stage 1B (optional but recommended): time-limited “futures” / bootstrap auction mode
+If we want a *fixed* “closing price” that later anchors Phase 2:
+- Add an on-chain **Auction/Bootstrap state** (deadline + finalized flag + closing price snapshot).
+- Add `finalize()` logic that:
+  - freezes trading after deadline,
+  - records `closing_price = reserve_vusdt / reserve_rng`,
+  - optionally disables further vault borrowing if the oracle is “closed”.
+
+This can be implemented as a wrapper around the existing `AmmPool` state (no need to replace swap math).
+
+## Stage 2 — Ethereum Auction + Uniswap Liquidity (RNG/USDT or RNG/USDC)
+
+**Goal:** sell the Phase 2 allocation (25% of supply) via an Ethereum-native mechanism and launch deep public liquidity.
+
+### Stage 2A: Ethereum contracts + testnet dry run
+Deliverables:
+- **ERC-20 RNG (Ethereum)**:
+  - initial mint = auction allocation + liquidity provisioning reserve (from the 50% treasury bucket).
+  - admin = multisig / timelock.
+- **Continuous Clearing Auction (CCA)** (or equivalent):
+  - accepts USDT/USDC bids over time/tranches,
+  - clears at a uniform price per tranche,
+  - produces a final clearing price + allocations + refunds.
+- **Liquidity launcher**:
+  - upon auction finalization, seeds a Uniswap pool at the discovered price with raised stable + RNG.
+
+Operational requirements:
+- Deployment scripts (Foundry/Hardhat), subgraph/indexing, and a minimal bidding UI.
+- Security review/audit plan (CCA and launch contracts are high-risk).
+
+### Stage 2B: mainnet launch
+- Finalize auction parameters: duration, tranche schedule, max bid size, allowlist (if any), and disclosures.
+- Run the auction, then automatically seed Uniswap liquidity.
+- Publish the canonical on-chain addresses and verification artifacts.
+
+## Stage 3 — Bridge + Multi-Chain Liquidity (Canonical Supply Across Commonware + Ethereum)
+
+**Goal:** unify the ecosystems so RNG can move between chains without inflating supply.
+
+### Bridge architecture decision (must be made)
+Pick one canonical supply domain:
+- **Option A (recommended):** Commonware RNG is canonical; Ethereum RNG is a wrapped representation.
+- **Option B:** Ethereum RNG is canonical; Commonware RNG becomes a wrapped representation.
+
+Then implement a bridge that is **supply-preserving**:
+- lock/mint (canonical token locked, wrapped minted),
+- or burn/mint (canonical burned, wrapped minted), with strong replay protection.
+
+### Stage 3 deliverables
+- Ethereum bridge contracts (lockbox + mint/burn roles).
+- Commonware-side bridge module (new instructions + state) *or* a trusted relayer/MPC for an MVP.
+- End-to-end integration in the website:
+  - deposit/withdraw flows,
+  - clear “where your RNG lives” UX,
+  - safety rails (limits, delays, emergency pause).
+- Ongoing liquidity:
+  - RNG/USDC, RNG/USDT pools on Ethereum L1/L2s,
+  - optional incentive program (separate from freeroll emissions) for external LPs.
+
+## Open Questions / Decisions Needed
+- **Canonical token ledger:** when do we graduate from `Player.chips` to a protocol-native CTI-20 RNG ledger?
+- **Treasury + vesting:** how is the 50% reserve controlled (multisig) and vested (time locks)?
+- **Stable choice:** USDT vs USDC (and which chain/L2 for Phase 2).
+- **Oracle strategy:** do we import Ethereum price back into Commonware (and how) once the bridge exists?
+- **AMM parameter governance:** who can change fee/sell-tax and under what process?
+
+## Next Steps (Concrete, Codebase-Aligned)
+
+### Immediate (this repo)
+1. Add a treasury + allocation document (and eventually code) for the 25/25/50 split.
+2. Implement website UI flows for:
+   - AMM swap + LP management,
+   - vault borrow/repay,
+   - price + TVL + LP share price display from chain state.
+3. Add execution events for AMM/vault/stake actions so the UI can rely on updates instead of polling.
+4. Update `client/examples/simulation_ecosystem.rs` assumptions to match the 25/25/50 supply plan (it currently hardcodes a different split for simulation purposes).
+5. Decide whether Stage 1 needs an explicit time-limited “finalize” step; if yes, design new state + instructions.
+
+### New repos / new modules (Phase 2/3)
+6. Create an `evm/` workspace (or separate repo) for Ethereum contracts + deployment scripts.
+7. Implement Stage 2 contracts (ERC-20 RNG, CCA, liquidity launcher) and run a full testnet rehearsal.
+8. Design and implement the canonical bridge (Stage 3), starting with an MVP trust model and a path to decentralization.
+
