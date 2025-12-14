@@ -347,7 +347,8 @@ mod tests {
                     pool.clone(),
                     vec![tx.clone()],
                 )
-                .await;
+                .await
+                .expect("execute layer");
 
             for output in outputs {
                 events.append(output).await.expect("append output");

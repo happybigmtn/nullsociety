@@ -69,7 +69,10 @@ impl Context {
         let mut layer = Layer::new(&self.state, self.network_public.clone(), NAMESPACE, seed);
 
         let tx = Transaction::sign(&self.player_secret, self.nonce, instruction);
-        let (outputs, _) = layer.execute(self.pool.clone(), vec![tx]).await;
+        let (outputs, _) = layer
+            .execute(self.pool.clone(), vec![tx])
+            .await
+            .expect("execution layer failed");
 
         // Extract events
         let mut events = Vec::new();
@@ -81,7 +84,10 @@ impl Context {
 
         // Commit state
         let changes = layer.commit();
-        self.state.apply(changes).await;
+        self.state
+            .apply(changes)
+            .await
+            .expect("failed to apply state changes");
 
         self.nonce += 1;
         self.view += 1;
@@ -96,7 +102,8 @@ impl Context {
                 Key::CasinoSession(session.id),
                 Value::CasinoSession(session),
             )
-            .await;
+            .await
+            .expect("failed to inject session");
     }
 
     fn get_session_id(&self) -> u64 {

@@ -59,7 +59,7 @@ This is a second-pass review of the current workspace with a focus on idiomatic 
 - [x] `website/wasm/src/lib.rs`: gate private-key exports behind `private-key-export` feature.
 - [x] `website/wasm/Cargo.toml`: make `private-key-export` default-off.
 - [x] `node/src/application/actor.rs`: replace metadata `.unwrap()` with logged fallback; add retry/backoff for proof generation; make prune failures non-fatal.
-- [ ] Deferred (larger and/or behavior-changing): fallible `State` plumbing.
+- [x] (**behavior-changing / API-breaking**) `execution/src/{state,state_transition,layer/*}.rs` + `node/src/application/actor.rs`: make execution `State` operations fallible (`anyhow::Result`) and propagate storage errors instead of logging+continuing.
 
 ---
 
@@ -453,6 +453,12 @@ cache.put(height, proofs).await.context("cache put")?;
 - Defines the execution `State` abstraction and adapters (`Adb`, `Memory`, `Noncer`).
 - `Layer` and state transition logic depend on it for reads/writes.
 
+### Progress (implemented)
+- `State::{get,insert,delete,apply}` now return `anyhow::Result` and propagate storage failures.
+- `Adb` no longer logs+returns `None` on IO/storage errors; it returns an error and bubbles up.
+- `Layer::execute` and `execute_state_transition` now fail fast on storage errors instead of producing partial/no-op state.
+- `nonce(&state, pk)` now returns `anyhow::Result<u64>`; `node` drops incoming txs on nonce read failure.
+
 ### Top Issues (ranked)
 1. **Storage errors are logged and silently dropped**
    - Impact: can mask corrupted/failed storage as “missing key”, causing incorrect execution results.
@@ -491,9 +497,8 @@ pub trait State {
 - Returning `Result` will likely improve performance debugging because failures become explicit rather than cascading into strange behavior.
 
 ### Refactor Plan
-- Phase 1: introduce a parallel trait `FallibleState` and migrate `Layer`/transition to it (minimize blast radius).
-- Phase 2: remove/limit the infallible adapter for production builds.
-- Phase 3: add error counters and structured logs for storage operations.
+- Phase 1 (**done**): make `State` fallible and propagate errors through `Layer` and `state_transition`.
+- Phase 2 (**optional**): add metrics counters (per-op error counts) and structured error logs at boundaries (node actor / supervisor).
 
 ### Open Questions
 - Are storage errors expected/transient, or should they be treated as fatal corruption?

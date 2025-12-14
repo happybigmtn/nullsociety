@@ -1,3 +1,4 @@
+use anyhow::{Context as _, Result};
 use bytes::{Buf, BufMut};
 use commonware_codec::{Encode, EncodeSize, Error, Read, ReadExt, Write};
 use commonware_cryptography::{
@@ -6,62 +7,56 @@ use commonware_cryptography::{
     Hasher,
 };
 use commonware_runtime::{Clock, Metrics, Spawner, Storage};
-use commonware_storage::{adb::any::variable::Any, translator::Translator};
+use commonware_storage::adb::any::variable::Any as AnyAdb;
+use commonware_storage::translator::Translator;
 use nullspace_types::execution::{Account, Key, Transaction, Value};
 use std::{
     collections::{BTreeMap, HashMap},
     future::Future,
 };
-use tracing::warn;
 
-pub type Adb<E, T> = Any<E, Digest, Value, Sha256, T>;
+pub type Adb<E, T> = AnyAdb<E, Digest, Value, Sha256, T>;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum PrepareError {
     NonceMismatch { expected: u64, got: u64 },
+    State(anyhow::Error),
 }
 
 pub trait State {
-    fn get(&self, key: &Key) -> impl Future<Output = Option<Value>>;
-    fn insert(&mut self, key: Key, value: Value) -> impl Future<Output = ()>;
-    fn delete(&mut self, key: &Key) -> impl Future<Output = ()>;
+    fn get(&self, key: &Key) -> impl Future<Output = Result<Option<Value>>>;
+    fn insert(&mut self, key: Key, value: Value) -> impl Future<Output = Result<()>>;
+    fn delete(&mut self, key: &Key) -> impl Future<Output = Result<()>>;
 
-    fn apply(&mut self, changes: Vec<(Key, Status)>) -> impl Future<Output = ()> {
+    fn apply(&mut self, changes: Vec<(Key, Status)>) -> impl Future<Output = Result<()>> {
         async {
             for (key, status) in changes {
                 match status {
-                    Status::Update(value) => self.insert(key, value).await,
-                    Status::Delete => self.delete(&key).await,
+                    Status::Update(value) => self.insert(key, value).await?,
+                    Status::Delete => self.delete(&key).await?,
                 }
             }
+            Ok(())
         }
     }
 }
 
 impl<E: Spawner + Metrics + Clock + Storage, T: Translator> State for Adb<E, T> {
-    async fn get(&self, key: &Key) -> Option<Value> {
-        let key = Sha256::hash(&key.encode());
-        match self.get(&key).await {
-            Ok(value) => value,
-            Err(e) => {
-                warn!("Database error during get operation: {:?}", e);
-                None
-            }
-        }
+    async fn get(&self, key: &Key) -> Result<Option<Value>> {
+        let key_hash = Sha256::hash(&key.encode());
+        AnyAdb::get(self, &key_hash).await.context("adb get")
     }
 
-    async fn insert(&mut self, key: Key, value: Value) {
-        let key = Sha256::hash(&key.encode());
-        if let Err(e) = self.update(key, value).await {
-            warn!("Database error during insert operation: {:?}", e);
-        }
+    async fn insert(&mut self, key: Key, value: Value) -> Result<()> {
+        let key_hash = Sha256::hash(&key.encode());
+        self.update(key_hash, value).await.context("adb update")?;
+        Ok(())
     }
 
-    async fn delete(&mut self, key: &Key) {
-        let key = Sha256::hash(&key.encode());
-        if let Err(e) = self.delete(key).await {
-            warn!("Database error during delete operation: {:?}", e);
-        }
+    async fn delete(&mut self, key: &Key) -> Result<()> {
+        let key_hash = Sha256::hash(&key.encode());
+        AnyAdb::delete(self, key_hash).await.context("adb delete")?;
+        Ok(())
     }
 }
 
@@ -71,16 +66,18 @@ pub struct Memory {
 }
 
 impl State for Memory {
-    async fn get(&self, key: &Key) -> Option<Value> {
-        self.state.get(key).cloned()
+    async fn get(&self, key: &Key) -> Result<Option<Value>> {
+        Ok(self.state.get(key).cloned())
     }
 
-    async fn insert(&mut self, key: Key, value: Value) {
+    async fn insert(&mut self, key: Key, value: Value) -> Result<()> {
         self.state.insert(key, value);
+        Ok(())
     }
 
-    async fn delete(&mut self, key: &Key) {
+    async fn delete(&mut self, key: &Key) -> Result<()> {
         self.state.remove(key);
+        Ok(())
     }
 }
 
@@ -125,15 +122,15 @@ impl EncodeSize for Status {
     }
 }
 
-pub async fn nonce<S: State>(state: &S, public: &PublicKey) -> u64 {
-    load_account(state, public).await.nonce
+pub async fn nonce<S: State>(state: &S, public: &PublicKey) -> Result<u64> {
+    Ok(load_account(state, public).await?.nonce)
 }
 
-pub(crate) async fn load_account<S: State>(state: &S, public: &PublicKey) -> Account {
-    match state.get(&Key::Account(public.clone())).await {
+pub(crate) async fn load_account<S: State>(state: &S, public: &PublicKey) -> Result<Account> {
+    Ok(match state.get(&Key::Account(public.clone())).await? {
         Some(Value::Account(account)) => account,
         _ => Account::default(),
-    }
+    })
 }
 
 pub(crate) fn validate_and_increment_nonce(
@@ -164,32 +161,37 @@ impl<'a, S: State> Noncer<'a, S> {
     }
 
     pub async fn prepare(&mut self, transaction: &Transaction) -> Result<(), PrepareError> {
-        let mut account = load_account(self, &transaction.public).await;
+        let mut account = load_account(self, &transaction.public)
+            .await
+            .map_err(PrepareError::State)?;
         validate_and_increment_nonce(&mut account, transaction.nonce)?;
         self.insert(
             Key::Account(transaction.public.clone()),
             Value::Account(account),
         )
-        .await;
+        .await
+        .map_err(PrepareError::State)?;
 
         Ok(())
     }
 }
 
 impl<'a, S: State> State for Noncer<'a, S> {
-    async fn get(&self, key: &Key) -> Option<Value> {
-        match self.pending.get(key) {
+    async fn get(&self, key: &Key) -> Result<Option<Value>> {
+        Ok(match self.pending.get(key) {
             Some(Status::Update(value)) => Some(value.clone()),
             Some(Status::Delete) => None,
-            None => self.state.get(key).await,
-        }
+            None => self.state.get(key).await?,
+        })
     }
 
-    async fn insert(&mut self, key: Key, value: Value) {
+    async fn insert(&mut self, key: Key, value: Value) -> Result<()> {
         self.pending.insert(key, Status::Update(value));
+        Ok(())
     }
 
-    async fn delete(&mut self, key: &Key) {
+    async fn delete(&mut self, key: &Key) -> Result<()> {
         self.pending.insert(key.clone(), Status::Delete);
+        Ok(())
     }
 }

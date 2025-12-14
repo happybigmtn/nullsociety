@@ -3,51 +3,54 @@ use super::super::*;
 impl<'a, S: State> Layer<'a, S> {
     // === Liquidity / Vault Handlers ===
 
-    pub(in crate::layer) async fn handle_create_vault(&mut self, public: &PublicKey) -> Vec<Event> {
-        if self.get(&Key::Vault(public.clone())).await.is_some() {
-            return vec![Event::CasinoError {
+    pub(in crate::layer) async fn handle_create_vault(
+        &mut self,
+        public: &PublicKey,
+    ) -> anyhow::Result<Vec<Event>> {
+        if self.get(&Key::Vault(public.clone())).await?.is_some() {
+            return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_INVALID_MOVE, // Reuse
                 message: "Vault already exists".to_string(),
-            }];
+            }]);
         }
 
         let vault = nullspace_types::casino::Vault::default();
         self.insert(Key::Vault(public.clone()), Value::Vault(vault));
-        vec![Event::VaultCreated {
+        Ok(vec![Event::VaultCreated {
             player: public.clone(),
-        }]
+        }])
     }
 
     pub(in crate::layer) async fn handle_deposit_collateral(
         &mut self,
         public: &PublicKey,
         amount: u64,
-    ) -> Vec<Event> {
-        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await {
+    ) -> anyhow::Result<Vec<Event>> {
+        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await? {
             Some(Value::CasinoPlayer(p)) => p,
-            _ => return vec![],
+            _ => return Ok(vec![]),
         };
 
         if player.chips < amount {
-            return vec![Event::CasinoError {
+            return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
                 message: "Insufficient chips".to_string(),
-            }];
+            }]);
         }
 
-        let mut vault = match self.get(&Key::Vault(public.clone())).await {
+        let mut vault = match self.get(&Key::Vault(public.clone())).await? {
             Some(Value::Vault(v)) => v,
             _ => {
-                return vec![Event::CasinoError {
+                return Ok(vec![Event::CasinoError {
                     player: public.clone(),
                     session_id: None,
                     error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
                     message: "Vault not found".to_string(),
-                }]
+                }])
             }
         };
 
@@ -61,25 +64,25 @@ impl<'a, S: State> Layer<'a, S> {
         );
         self.insert(Key::Vault(public.clone()), Value::Vault(vault));
 
-        vec![Event::CollateralDeposited {
+        Ok(vec![Event::CollateralDeposited {
             player: public.clone(),
             amount,
             new_collateral,
-        }]
+        }])
     }
 
     pub(in crate::layer) async fn handle_borrow_usdt(
         &mut self,
         public: &PublicKey,
         amount: u64,
-    ) -> Vec<Event> {
-        let mut vault = match self.get(&Key::Vault(public.clone())).await {
+    ) -> anyhow::Result<Vec<Event>> {
+        let mut vault = match self.get(&Key::Vault(public.clone())).await? {
             Some(Value::Vault(v)) => v,
-            _ => return vec![],
+            _ => return Ok(vec![]),
         };
 
         // Determine Price (RNG price in vUSDT)
-        let amm = self.get_or_init_amm().await;
+        let amm = self.get_or_init_amm().await?;
         let price_numerator = if amm.reserve_rng > 0 {
             amm.reserve_vusdt as u128
         } else {
@@ -100,12 +103,12 @@ impl<'a, S: State> Layer<'a, S> {
         let rhs = (vault.collateral_rng as u128) * price_numerator;
 
         if lhs > rhs {
-            return vec![Event::CasinoError {
+            return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
                 message: "Insufficient collateral (Max 50% LTV)".to_string(),
-            }];
+            }]);
         }
 
         // Update Vault
@@ -114,7 +117,7 @@ impl<'a, S: State> Layer<'a, S> {
 
         // Mint vUSDT to Player
         if let Some(Value::CasinoPlayer(mut player)) =
-            self.get(&Key::CasinoPlayer(public.clone())).await
+            self.get(&Key::CasinoPlayer(public.clone())).await?
         {
             player.vusdt_balance += amount;
             self.insert(
@@ -123,35 +126,35 @@ impl<'a, S: State> Layer<'a, S> {
             );
         }
 
-        vec![Event::VusdtBorrowed {
+        Ok(vec![Event::VusdtBorrowed {
             player: public.clone(),
             amount,
             new_debt,
-        }]
+        }])
     }
 
     pub(in crate::layer) async fn handle_repay_usdt(
         &mut self,
         public: &PublicKey,
         amount: u64,
-    ) -> Vec<Event> {
-        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await {
+    ) -> anyhow::Result<Vec<Event>> {
+        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await? {
             Some(Value::CasinoPlayer(p)) => p,
-            _ => return vec![],
+            _ => return Ok(vec![]),
         };
 
-        let mut vault = match self.get(&Key::Vault(public.clone())).await {
+        let mut vault = match self.get(&Key::Vault(public.clone())).await? {
             Some(Value::Vault(v)) => v,
-            _ => return vec![],
+            _ => return Ok(vec![]),
         };
 
         if player.vusdt_balance < amount {
-            return vec![Event::CasinoError {
+            return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
                 message: "Insufficient vUSDT".to_string(),
-            }];
+            }]);
         }
 
         let actual_repay = amount.min(vault.debt_vusdt);
@@ -166,11 +169,11 @@ impl<'a, S: State> Layer<'a, S> {
         );
         self.insert(Key::Vault(public.clone()), Value::Vault(vault));
 
-        vec![Event::VusdtRepaid {
+        Ok(vec![Event::VusdtRepaid {
             player: public.clone(),
             amount: actual_repay,
             new_debt,
-        }]
+        }])
     }
 
     pub(in crate::layer) async fn handle_swap(
@@ -179,25 +182,25 @@ impl<'a, S: State> Layer<'a, S> {
         mut amount_in: u64,
         min_amount_out: u64,
         is_buying_rng: bool,
-    ) -> Vec<Event> {
+    ) -> anyhow::Result<Vec<Event>> {
         let original_amount_in = amount_in;
-        let mut amm = self.get_or_init_amm().await;
-        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await {
+        let mut amm = self.get_or_init_amm().await?;
+        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await? {
             Some(Value::CasinoPlayer(p)) => p,
-            _ => return vec![],
+            _ => return Ok(vec![]),
         };
 
         if amount_in == 0 {
-            return vec![];
+            return Ok(vec![]);
         }
 
         if amm.reserve_rng == 0 || amm.reserve_vusdt == 0 {
-            return vec![Event::CasinoError {
+            return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
                 message: "AMM has zero liquidity".to_string(),
-            }];
+            }]);
         }
 
         // Apply Sell Tax (if Selling RNG)
@@ -210,7 +213,7 @@ impl<'a, S: State> Layer<'a, S> {
                 amount_in = amount_in.saturating_sub(burned_amount);
 
                 // Track burned amount in House
-                let mut house = self.get_or_init_house().await;
+                let mut house = self.get_or_init_house().await?;
                 house.total_burned += burned_amount;
                 self.insert(Key::House, Value::House(house));
             }
@@ -233,34 +236,34 @@ impl<'a, S: State> Layer<'a, S> {
             .saturating_mul(10_000)
             .saturating_add(amount_in_with_fee);
         if denominator == 0 {
-            return vec![Event::CasinoError {
+            return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
                 message: "Invalid AMM state".to_string(),
-            }];
+            }]);
         }
         let amount_out = (numerator / denominator) as u64;
 
         if amount_out < min_amount_out {
-            return vec![Event::CasinoError {
+            return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_INVALID_MOVE, // Slippage
                 message: "Slippage limit exceeded".to_string(),
-            }];
+            }]);
         }
 
         // Execute Swap
         if is_buying_rng {
             // Player gives vUSDT, gets RNG
             if player.vusdt_balance < amount_in {
-                return vec![Event::CasinoError {
+                return Ok(vec![Event::CasinoError {
                     player: public.clone(),
                     session_id: None,
                     error_code: nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
                     message: "Insufficient vUSDT".to_string(),
-                }];
+                }]);
             }
             player.vusdt_balance -= amount_in;
             player.chips = player.chips.saturating_add(amount_out);
@@ -272,12 +275,12 @@ impl<'a, S: State> Layer<'a, S> {
             // Note: We deduct the FULL amount (incl tax) from player
             let total_deduction = amount_in + burned_amount;
             if player.chips < total_deduction {
-                return vec![Event::CasinoError {
+                return Ok(vec![Event::CasinoError {
                     player: public.clone(),
                     session_id: None,
                     error_code: nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
                     message: "Insufficient RNG".to_string(),
-                }];
+                }]);
             }
 
             player.chips = player.chips.saturating_sub(total_deduction);
@@ -289,7 +292,7 @@ impl<'a, S: State> Layer<'a, S> {
 
         // Book fee to House
         if fee_amount > 0 {
-            let mut house = self.get_or_init_house().await;
+            let mut house = self.get_or_init_house().await?;
             house.accumulated_fees = house.accumulated_fees.saturating_add(fee_amount as u64);
             self.insert(Key::House, Value::House(house));
         }
@@ -311,7 +314,7 @@ impl<'a, S: State> Layer<'a, S> {
         );
         self.insert(Key::AmmPool, Value::AmmPool(amm));
 
-        vec![event]
+        Ok(vec![event])
     }
 
     pub(in crate::layer) async fn handle_add_liquidity(
@@ -319,32 +322,32 @@ impl<'a, S: State> Layer<'a, S> {
         public: &PublicKey,
         rng_amount: u64,
         usdt_amount: u64,
-    ) -> Vec<Event> {
-        let mut amm = self.get_or_init_amm().await;
-        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await {
+    ) -> anyhow::Result<Vec<Event>> {
+        let mut amm = self.get_or_init_amm().await?;
+        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await? {
             Some(Value::CasinoPlayer(p)) => p,
-            _ => return vec![],
+            _ => return Ok(vec![]),
         };
 
         if rng_amount == 0 || usdt_amount == 0 {
-            return vec![Event::CasinoError {
+            return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
                 message: "Zero liquidity not allowed".to_string(),
-            }];
+            }]);
         }
 
         if player.chips < rng_amount || player.vusdt_balance < usdt_amount {
-            return vec![Event::CasinoError {
+            return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
                 message: "Insufficient funds".to_string(),
-            }];
+            }]);
         }
 
-        let lp_balance = self.get_lp_balance(public).await;
+        let lp_balance = self.get_lp_balance(public).await?;
 
         // Initial liquidity?
         let mut shares_minted = if amm.total_shares == 0 {
@@ -354,12 +357,12 @@ impl<'a, S: State> Layer<'a, S> {
         } else {
             // Proportional to current reserves
             if amm.reserve_rng == 0 || amm.reserve_vusdt == 0 {
-                return vec![Event::CasinoError {
+                return Ok(vec![Event::CasinoError {
                     player: public.clone(),
                     session_id: None,
                     error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
                     message: "AMM has zero liquidity".to_string(),
-                }];
+                }]);
             }
             let share_a = (rng_amount as u128 * amm.total_shares as u128) / amm.reserve_rng as u128;
             let share_b =
@@ -370,24 +373,24 @@ impl<'a, S: State> Layer<'a, S> {
         // Lock a minimum amount of LP shares on first deposit so reserves can never be fully drained.
         if amm.total_shares == 0 {
             if shares_minted <= MINIMUM_LIQUIDITY {
-                return vec![Event::CasinoError {
+                return Ok(vec![Event::CasinoError {
                     player: public.clone(),
                     session_id: None,
                     error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
                     message: "Initial liquidity too small".to_string(),
-                }];
+                }]);
             }
             amm.total_shares = amm.total_shares.saturating_add(MINIMUM_LIQUIDITY);
             shares_minted = shares_minted.saturating_sub(MINIMUM_LIQUIDITY);
         }
 
         if shares_minted == 0 {
-            return vec![Event::CasinoError {
+            return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
                 message: "Deposit too small".to_string(),
-            }];
+            }]);
         }
 
         player.chips = player.chips.saturating_sub(rng_amount);
@@ -420,36 +423,36 @@ impl<'a, S: State> Layer<'a, S> {
             Value::LpBalance(new_lp_balance),
         );
 
-        vec![event]
+        Ok(vec![event])
     }
 
     pub(in crate::layer) async fn handle_remove_liquidity(
         &mut self,
         public: &PublicKey,
         shares: u64,
-    ) -> Vec<Event> {
+    ) -> anyhow::Result<Vec<Event>> {
         if shares == 0 {
-            return vec![];
+            return Ok(vec![]);
         }
 
-        let mut amm = self.get_or_init_amm().await;
+        let mut amm = self.get_or_init_amm().await?;
         if amm.total_shares == 0 || shares > amm.total_shares {
-            return vec![];
+            return Ok(vec![]);
         }
 
-        let lp_balance = self.get_lp_balance(public).await;
+        let lp_balance = self.get_lp_balance(public).await?;
         if shares > lp_balance {
-            return vec![Event::CasinoError {
+            return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
                 message: "Not enough LP shares".to_string(),
-            }];
+            }]);
         }
 
-        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await {
+        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await? {
             Some(Value::CasinoPlayer(p)) => p,
-            _ => return vec![],
+            _ => return Ok(vec![]),
         };
 
         // Calculate amounts out proportionally
@@ -488,6 +491,6 @@ impl<'a, S: State> Layer<'a, S> {
             Value::LpBalance(new_lp_balance),
         );
 
-        vec![event]
+        Ok(vec![event])
     }
 }

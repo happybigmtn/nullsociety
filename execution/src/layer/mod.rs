@@ -1,3 +1,4 @@
+use anyhow::{Context as _, Result};
 use commonware_consensus::threshold_simplex::types::View;
 use commonware_cryptography::{
     bls12381::primitives::variant::{MinSig, Variant},
@@ -201,7 +202,9 @@ impl<'a, S: State> Layer<'a, S> {
     }
 
     async fn prepare(&mut self, transaction: &Transaction) -> Result<(), PrepareError> {
-        let mut account = load_account(self, &transaction.public).await;
+        let mut account = load_account(self, &transaction.public)
+            .await
+            .map_err(PrepareError::State)?;
         validate_and_increment_nonce(&mut account, transaction.nonce)?;
         self.insert(
             Key::Account(transaction.public.clone()),
@@ -211,7 +214,7 @@ impl<'a, S: State> Layer<'a, S> {
         Ok(())
     }
 
-    async fn apply(&mut self, transaction: &Transaction) -> Vec<Event> {
+    async fn apply(&mut self, transaction: &Transaction) -> Result<Vec<Event>> {
         match &transaction.instruction {
             Instruction::CasinoRegister { name } => {
                 self.handle_casino_register(&transaction.public, name).await
@@ -315,45 +318,49 @@ impl<'a, S: State> Layer<'a, S> {
         }
     }
 
-    async fn get_or_init_house(&mut self) -> nullspace_types::casino::HouseState {
-        match self.get(&Key::House).await {
+    async fn get_or_init_house(&mut self) -> Result<nullspace_types::casino::HouseState> {
+        Ok(match self.get(&Key::House).await? {
             Some(Value::House(h)) => h,
             _ => nullspace_types::casino::HouseState::new(self.seed.view),
-        }
+        })
     }
 
-    async fn get_or_init_amm(&mut self) -> nullspace_types::casino::AmmPool {
-        match self.get(&Key::AmmPool).await {
+    async fn get_or_init_amm(&mut self) -> Result<nullspace_types::casino::AmmPool> {
+        Ok(match self.get(&Key::AmmPool).await? {
             Some(Value::AmmPool(p)) => p,
             _ => nullspace_types::casino::AmmPool::new(30), // 0.3% fee
-        }
+        })
     }
 
-    async fn get_lp_balance(&self, public: &PublicKey) -> u64 {
-        match self.get(&Key::LpBalance(public.clone())).await {
+    async fn get_lp_balance(&self, public: &PublicKey) -> Result<u64> {
+        Ok(match self.get(&Key::LpBalance(public.clone())).await? {
             Some(Value::LpBalance(bal)) => bal,
             _ => 0,
-        }
+        })
     }
 
     pub async fn execute(
         &mut self,
         #[cfg(feature = "parallel")] _pool: ThreadPool,
         transactions: Vec<Transaction>,
-    ) -> (Vec<Output>, BTreeMap<PublicKey, u64>) {
+    ) -> Result<(Vec<Output>, BTreeMap<PublicKey, u64>)> {
         let mut processed_nonces = BTreeMap::new();
         let mut outputs = Vec::new();
 
         for tx in transactions {
-            if self.prepare(&tx).await.is_err() {
-                continue;
+            match self.prepare(&tx).await {
+                Ok(()) => {}
+                Err(PrepareError::NonceMismatch { .. }) => continue,
+                Err(PrepareError::State(err)) => {
+                    return Err(err).context("state error during prepare");
+                }
             }
             processed_nonces.insert(tx.public.clone(), tx.nonce.saturating_add(1));
-            outputs.extend(self.apply(&tx).await.into_iter().map(Output::Event));
+            outputs.extend(self.apply(&tx).await?.into_iter().map(Output::Event));
             outputs.push(Output::Transaction(tx));
         }
 
-        (outputs, processed_nonces)
+        Ok((outputs, processed_nonces))
     }
 
     pub fn commit(self) -> Vec<(Key, Status)> {
@@ -362,20 +369,22 @@ impl<'a, S: State> Layer<'a, S> {
 }
 
 impl<'a, S: State> State for Layer<'a, S> {
-    async fn get(&self, key: &Key) -> Option<Value> {
-        match self.pending.get(key) {
+    async fn get(&self, key: &Key) -> Result<Option<Value>> {
+        Ok(match self.pending.get(key) {
             Some(Status::Update(value)) => Some(value.clone()),
             Some(Status::Delete) => None,
-            None => self.state.get(key).await,
-        }
+            None => self.state.get(key).await?,
+        })
     }
 
-    async fn insert(&mut self, key: Key, value: Value) {
+    async fn insert(&mut self, key: Key, value: Value) -> Result<()> {
         self.pending.insert(key, Status::Update(value));
+        Ok(())
     }
 
-    async fn delete(&mut self, key: &Key) {
+    async fn delete(&mut self, key: &Key) -> Result<()> {
         self.pending.insert(key.clone(), Status::Delete);
+        Ok(())
     }
 }
 #[cfg(test)]
@@ -400,16 +409,18 @@ mod tests {
     }
 
     impl State for MockState {
-        async fn get(&self, key: &Key) -> Option<Value> {
-            self.data.get(key).cloned()
+        async fn get(&self, key: &Key) -> Result<Option<Value>> {
+            Ok(self.data.get(key).cloned())
         }
 
-        async fn insert(&mut self, key: Key, value: Value) {
+        async fn insert(&mut self, key: Key, value: Value) -> Result<()> {
             self.data.insert(key, value);
+            Ok(())
         }
 
-        async fn delete(&mut self, key: &Key) {
+        async fn delete(&mut self, key: &Key) -> Result<()> {
             self.data.remove(key);
+            Ok(())
         }
     }
 
@@ -468,7 +479,7 @@ mod tests {
                 },
             );
             assert!(layer.prepare(&tx).await.is_ok());
-            let events = layer.apply(&tx).await;
+            let events = layer.apply(&tx).await.unwrap();
 
             assert_eq!(events.len(), 1);
             if let Event::CasinoPlayerRegistered { player, name } = &events[0] {
@@ -479,7 +490,9 @@ mod tests {
             }
 
             // Verify player was created
-            if let Some(Value::CasinoPlayer(player)) = layer.get(&Key::CasinoPlayer(public)).await {
+            if let Some(Value::CasinoPlayer(player)) =
+                layer.get(&Key::CasinoPlayer(public)).await.unwrap()
+            {
                 assert_eq!(player.name, "Alice");
                 assert_eq!(player.chips, 1000); // Initial chips
             } else {

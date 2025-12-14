@@ -105,7 +105,8 @@ pub async fn execute_state_transition<S: Spawner + Storage + Clock + Metrics, T:
                     pool,
                     transactions,
                 )
-                .await;
+                .await
+                .with_context(|| format!("execute layer (height={height})"))?;
             processed_nonces.extend(nonces);
 
             // Events must be committed before state, otherwise a crash could wedge on restart.
@@ -124,7 +125,10 @@ pub async fn execute_state_transition<S: Spawner + Storage + Clock + Metrics, T:
                 .with_context(|| format!("commit events (height={height})"))?;
 
             // Apply state once we've committed events (can't regenerate after state updated).
-            state.apply(layer.commit()).await;
+            state
+                .apply(layer.commit())
+                .await
+                .with_context(|| format!("apply state changes (height={height})"))?;
             state
                 .commit(Some(Value::Commit {
                     height,
@@ -162,7 +166,8 @@ pub async fn execute_state_transition<S: Spawner + Storage + Clock + Metrics, T:
                     pool,
                     transactions,
                 )
-                .await;
+                .await
+                .with_context(|| format!("execute layer (recovery, height={height})"))?;
             processed_nonces.extend(nonces);
 
             if outputs.len() as u64 != existing_output_count {
@@ -187,7 +192,10 @@ pub async fn execute_state_transition<S: Spawner + Storage + Clock + Metrics, T:
             }
 
             // Commit state only (events are already committed).
-            state.apply(layer.commit()).await;
+            state
+                .apply(layer.commit())
+                .await
+                .with_context(|| format!("apply state changes (recovery, height={height})"))?;
             state
                 .commit(Some(Value::Commit {
                     height,
