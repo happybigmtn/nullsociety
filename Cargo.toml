@@ -57,7 +57,7 @@ uuid = "1.15.1"
 
 # Web/API dependencies
 axum = { version = "0.7.9", features = ["ws"] }
-reqwest = { version = "0.11.27", features = ["json"] }
+reqwest = { version = "0.11.27", features = ["json", "stream"] }
 tokio-tungstenite = { version = "0.24.0", features = ["native-tls"] }
 tower = "0.5.2"
 url = "2.5.4"

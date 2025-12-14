@@ -44,7 +44,7 @@ fn parse_three_card_progressive_state(state_blob: &[u8]) -> Option<(u64, [u8; 3]
     let version = state_blob[0];
     let player = [state_blob[2], state_blob[3], state_blob[4]];
     let progressive_bet = if version >= 3 {
-        parse_u64_be_at(state_blob, 24).unwrap_or(0)
+        parse_u64_be_at(state_blob, 24)?
     } else {
         0
     };
@@ -84,7 +84,7 @@ fn parse_uth_progressive_state(state_blob: &[u8]) -> Option<(u64, [u8; 2], [u8; 
     let hole = [state_blob[2], state_blob[3]];
     let flop = [state_blob[4], state_blob[5], state_blob[6]];
     let progressive_bet = if version >= 3 {
-        parse_u64_be_at(state_blob, 32).unwrap_or(0)
+        parse_u64_be_at(state_blob, 32)?
     } else {
         0
     };

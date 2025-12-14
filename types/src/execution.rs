@@ -15,6 +15,7 @@ use commonware_cryptography::{
 };
 use commonware_utils::{modulo, union};
 use std::{fmt::Debug, hash::Hash};
+use thiserror::Error as ThisError;
 
 pub const NAMESPACE: &[u8] = b"_SUPERSOCIETY";
 pub const TRANSACTION_SUFFIX: &[u8] = b"_TX";
@@ -621,6 +622,12 @@ pub struct Block {
     digest: Digest,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ThisError)]
+pub enum BlockBuildError {
+    #[error("too many transactions: {got} (max {max})")]
+    TooManyTransactions { max: usize, got: usize },
+}
+
 impl Block {
     fn compute_digest(
         parent: &Digest,
@@ -639,15 +646,30 @@ impl Block {
     }
 
     pub fn new(parent: Digest, view: View, height: u64, transactions: Vec<Transaction>) -> Self {
-        assert!(transactions.len() <= MAX_BLOCK_TRANSACTIONS);
+        Self::try_new(parent, view, height, transactions)
+            .expect("block transaction count is within MAX_BLOCK_TRANSACTIONS")
+    }
+
+    pub fn try_new(
+        parent: Digest,
+        view: View,
+        height: u64,
+        transactions: Vec<Transaction>,
+    ) -> Result<Self, BlockBuildError> {
+        if transactions.len() > MAX_BLOCK_TRANSACTIONS {
+            return Err(BlockBuildError::TooManyTransactions {
+                max: MAX_BLOCK_TRANSACTIONS,
+                got: transactions.len(),
+            });
+        }
         let digest = Self::compute_digest(&parent, view, height, &transactions);
-        Self {
+        Ok(Self {
             parent,
             view,
             height,
             transactions,
             digest,
-        }
+        })
     }
 }
 
