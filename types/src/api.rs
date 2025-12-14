@@ -12,6 +12,7 @@ use commonware_storage::{
     mmr::{hasher::Standard, verification::Proof},
     store::operation::{Keyless, Variable},
 };
+use thiserror::Error as ThisError;
 
 /// Maximum number of transactions that can be submitted in a single submission
 pub const MAX_SUBMISSION_TRANSACTIONS: usize = 128;
@@ -34,66 +35,36 @@ pub const MAX_EVENTS_PROOF_NODES: usize = MAX_EVENTS_PROOF_OPS;
 /// Lookup proofs are for a single operation, so we keep a smaller node cap for DoS resistance.
 pub const MAX_LOOKUP_PROOF_NODES: usize = 500;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, ThisError)]
 #[non_exhaustive]
 pub enum VerifyError {
+    #[error("invalid signature")]
     InvalidSignature,
+    #[error("progress digest mismatch")]
     ProgressDigestMismatch,
+    #[error("state proof ops range mismatch (start={start}, end={end}, ops_len={ops_len})")]
     StateOpsRangeMismatch {
         start: u64,
         end: u64,
         ops_len: usize,
     },
+    #[error("events proof ops range mismatch (start={start}, end={end}, ops_len={ops_len})")]
     EventsOpsRangeMismatch {
         start: u64,
         end: u64,
         ops_len: usize,
     },
+    #[error("invalid state proof: {0}")]
     StateProofInvalid(String),
+    #[error("invalid events proof: {0}")]
     EventsProofInvalid(String),
+    #[error("invalid lookup proof")]
     LookupProofInvalid,
-    FilteredEventsOutOfRange {
-        loc: u64,
-        start: u64,
-        end: u64,
-    },
+    #[error("filtered event location out of range (loc={loc}, start={start}, end={end})")]
+    FilteredEventsOutOfRange { loc: u64, start: u64, end: u64 },
+    #[error("invalid filtered events proof")]
     FilteredEventsProofInvalid,
 }
-
-impl std::fmt::Display for VerifyError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VerifyError::InvalidSignature => write!(f, "invalid signature"),
-            VerifyError::ProgressDigestMismatch => write!(f, "progress digest mismatch"),
-            VerifyError::StateOpsRangeMismatch {
-                start,
-                end,
-                ops_len,
-            } => write!(
-                f,
-                "state proof ops range mismatch (start={start}, end={end}, ops_len={ops_len})"
-            ),
-            VerifyError::EventsOpsRangeMismatch {
-                start,
-                end,
-                ops_len,
-            } => write!(
-                f,
-                "events proof ops range mismatch (start={start}, end={end}, ops_len={ops_len})"
-            ),
-            VerifyError::StateProofInvalid(err) => write!(f, "invalid state proof: {err}"),
-            VerifyError::EventsProofInvalid(err) => write!(f, "invalid events proof: {err}"),
-            VerifyError::LookupProofInvalid => write!(f, "invalid lookup proof"),
-            VerifyError::FilteredEventsOutOfRange { loc, start, end } => write!(
-                f,
-                "filtered event location out of range (loc={loc}, start={start}, end={end})"
-            ),
-            VerifyError::FilteredEventsProofInvalid => write!(f, "invalid filtered events proof"),
-        }
-    }
-}
-
-impl std::error::Error for VerifyError {}
 
 pub enum Query {
     Latest,

@@ -64,9 +64,9 @@ pub fn evaluate_hand(cards: &[u8; 5]) -> Hand {
     // Extract ranks and suits into fixed arrays
     let mut ranks = [0u8; 5];
     let mut suits = [0u8; 5];
-    for i in 0..5 {
-        ranks[i] = card_rank(cards[i]);
-        suits[i] = card_suit(cards[i]);
+    for (i, &card) in cards.iter().enumerate() {
+        ranks[i] = card_rank(card);
+        suits[i] = card_suit(card);
     }
     ranks.sort_unstable();
 
@@ -230,9 +230,9 @@ impl CasinoGame for VideoPoker {
         let mut deck = rng.create_deck_excluding(&original_cards);
 
         // Replace non-held cards
-        for i in 0..5 {
+        for (i, card) in cards.iter_mut().enumerate() {
             if hold_mask & (1 << i) == 0 {
-                cards[i] = rng.draw_card(&mut deck).ok_or(GameError::InvalidMove)?;
+                *card = rng.draw_card(&mut deck).ok_or(GameError::InvalidMove)?;
             }
         }
 

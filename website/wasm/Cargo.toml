@@ -8,7 +8,8 @@ license.workspace = true
 crate-type = ["cdylib"]
 
 [features]
-default = []
+default = ["private-key-export"]
+private-key-export = []
 testing = ["nullspace-execution/mocks"]
 
 [dependencies]

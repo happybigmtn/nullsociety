@@ -610,7 +610,13 @@ impl Api {
                 .burst_size(2_000_000)
                 .key_extractor(SmartIpKeyExtractor)
                 .finish()
-                .unwrap(),
+                .unwrap_or_else(|| {
+                    tracing::warn!("invalid rate-limit config; falling back to defaults");
+                    GovernorConfigBuilder::default()
+                        .key_extractor(SmartIpKeyExtractor)
+                        .finish()
+                        .expect("default governor config is valid")
+                }),
         );
 
         let router = Router::new()

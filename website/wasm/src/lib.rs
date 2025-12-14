@@ -181,12 +181,14 @@ impl Signer {
     }
 
     /// Get the private key.
+    #[cfg(feature = "private-key-export")]
     #[wasm_bindgen(getter)]
     pub fn private_key(&self) -> Vec<u8> {
         self.private_key.as_ref().to_vec()
     }
 
     /// Get the private key as a hex string.
+    #[cfg(feature = "private-key-export")]
     #[wasm_bindgen(getter)]
     pub fn private_key_hex(&self) -> String {
         hex(self.private_key.as_ref())

@@ -16,6 +16,11 @@ pub enum Error {
     Tungstenite(#[from] tokio_tungstenite::tungstenite::Error),
     #[error("failed: {0}")]
     Failed(reqwest::StatusCode),
+    #[error("failed: {status}: {body}")]
+    FailedWithBody {
+        status: reqwest::StatusCode,
+        body: String,
+    },
     #[error("too many transactions in one submission: {got} (max {max})")]
     TooManyTransactions { max: usize, got: usize },
     #[error("invalid data: {0}")]

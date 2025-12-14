@@ -114,6 +114,13 @@ fn decode_hex<T: DecodeExt<()>>(field: &'static str, value: &str) -> Result<T, C
     })
 }
 
+fn ensure_nonzero(field: &'static str, value: usize) -> Result<(), ConfigError> {
+    if value == 0 {
+        return Err(ConfigError::InvalidNonZero { field, value });
+    }
+    Ok(())
+}
+
 pub fn parse_peer_public_key(name: &str) -> Option<PublicKey> {
     from_hex_formatted(name).and_then(|key| PublicKey::decode(key.as_ref()).ok())
 }
@@ -133,18 +140,13 @@ impl Config {
         signer: PrivateKey,
         peer_count: u32,
     ) -> Result<ValidatedConfig, ConfigError> {
-        if self.mempool_max_backlog == 0 {
-            return Err(ConfigError::InvalidNonZero {
-                field: "mempool_max_backlog",
-                value: self.mempool_max_backlog,
-            });
-        }
-        if self.mempool_max_transactions == 0 {
-            return Err(ConfigError::InvalidNonZero {
-                field: "mempool_max_transactions",
-                value: self.mempool_max_transactions,
-            });
-        }
+        ensure_nonzero("worker_threads", self.worker_threads)?;
+        ensure_nonzero("message_backlog", self.message_backlog)?;
+        ensure_nonzero("mailbox_size", self.mailbox_size)?;
+        ensure_nonzero("deque_size", self.deque_size)?;
+        ensure_nonzero("mempool_max_backlog", self.mempool_max_backlog)?;
+        ensure_nonzero("mempool_max_transactions", self.mempool_max_transactions)?;
+        ensure_nonzero("execution_concurrency", self.execution_concurrency)?;
 
         let public_key = signer.public_key();
 

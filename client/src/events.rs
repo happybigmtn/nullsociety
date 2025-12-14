@@ -51,25 +51,25 @@ impl Verifiable for Update {
 }
 
 impl<T: ReadExt + Send + Sync + 'static> Stream<T> {
-    pub(crate) fn new<S>(ws: WebSocketStream<S>) -> Self
-    where
-        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-    {
-        Self::new_with_capacity(ws, DEFAULT_CHANNEL_CAPACITY)
-    }
-
-    pub(crate) fn new_with_capacity<S>(mut ws: WebSocketStream<S>, capacity: usize) -> Self
-    where
-        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-    {
-        let capacity = if capacity == 0 {
+    fn capacity_or_default(capacity: usize) -> usize {
+        if capacity == 0 {
             DEFAULT_CHANNEL_CAPACITY
         } else {
             capacity
-        };
-        let (tx, rx) = mpsc::channel(capacity);
+        }
+    }
 
-        let handle = tokio::spawn(async move {
+    fn spawn_reader<S, V>(
+        ws: WebSocketStream<S>,
+        tx: mpsc::Sender<Result<T>>,
+        verify: V,
+    ) -> tokio::task::JoinHandle<()>
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        V: Fn(&T) -> Result<()> + Send + 'static,
+    {
+        tokio::spawn(async move {
+            let mut ws = ws;
             while let Some(msg) = ws.next().await {
                 match msg {
                     Ok(Message::Binary(data)) => {
@@ -77,6 +77,13 @@ impl<T: ReadExt + Send + Sync + 'static> Stream<T> {
                         let mut buf = data.as_slice();
                         match T::read(&mut buf) {
                             Ok(event) => {
+                                if let Err(err) = verify(&event) {
+                                    error!(?err, "Failed to verify consensus message");
+                                    if tx.send(Err(err)).await.is_err() {
+                                        break;
+                                    }
+                                    continue;
+                                }
                                 if tx.send(Ok(event)).await.is_err() {
                                     break; // Receiver dropped
                                 }
@@ -103,7 +110,24 @@ impl<T: ReadExt + Send + Sync + 'static> Stream<T> {
                     }
                 }
             }
-        });
+        })
+    }
+
+    pub(crate) fn new<S>(ws: WebSocketStream<S>) -> Self
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    {
+        Self::new_with_capacity(ws, DEFAULT_CHANNEL_CAPACITY)
+    }
+
+    pub(crate) fn new_with_capacity<S>(ws: WebSocketStream<S>, capacity: usize) -> Self
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    {
+        let capacity = Self::capacity_or_default(capacity);
+        let (tx, rx) = mpsc::channel(capacity);
+
+        let handle = Self::spawn_reader(ws, tx, |_| Ok(()));
 
         Self {
             receiver: rx,
@@ -120,7 +144,7 @@ impl<T: ReadExt + Send + Sync + 'static> Stream<T> {
     }
 
     pub(crate) fn new_with_verifier_with_capacity<S>(
-        mut ws: WebSocketStream<S>,
+        ws: WebSocketStream<S>,
         identity: Identity,
         capacity: usize,
     ) -> Self
@@ -128,56 +152,14 @@ impl<T: ReadExt + Send + Sync + 'static> Stream<T> {
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
         T: Verifiable,
     {
-        let capacity = if capacity == 0 {
-            DEFAULT_CHANNEL_CAPACITY
-        } else {
-            capacity
-        };
+        let capacity = Self::capacity_or_default(capacity);
         let (tx, rx) = mpsc::channel(capacity);
 
-        let handle = tokio::spawn(async move {
-            while let Some(msg) = ws.next().await {
-                match msg {
-                    Ok(Message::Binary(data)) => {
-                        debug!("Received binary message: {} bytes", data.len());
-                        let mut buf = data.as_slice();
-                        match T::read(&mut buf) {
-                            Ok(event) => {
-                                // Verify the message
-                                if !event.verify(&identity) {
-                                    error!("Failed to verify consensus message");
-                                    let err = Error::InvalidSignature;
-                                    if tx.send(Err(err)).await.is_err() {
-                                        break;
-                                    }
-                                    continue;
-                                }
-
-                                if tx.send(Ok(event)).await.is_err() {
-                                    break; // Receiver dropped
-                                }
-                            }
-                            Err(e) => {
-                                error!("Failed to decode event: {}", e);
-                                let err = Error::InvalidData(e);
-                                if tx.send(Err(err)).await.is_err() {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    Ok(Message::Close(_)) => {
-                        debug!("WebSocket closed");
-                        let _ = tx.send(Err(Error::ConnectionClosed)).await;
-                        break;
-                    }
-                    Ok(_) => {} // Ignore other message types
-                    Err(e) => {
-                        error!("WebSocket error: {}", e);
-                        let _ = tx.send(Err(e.into())).await;
-                        break;
-                    }
-                }
+        let handle = Self::spawn_reader(ws, tx, move |event| {
+            if event.verify(&identity) {
+                Ok(())
+            } else {
+                Err(Error::InvalidSignature)
             }
         });
 

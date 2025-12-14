@@ -41,7 +41,17 @@ This is a second-pass review of the current workspace with a focus on idiomatic 
 - [x] Idiomatic/clippy cleanups in core games: `execution/src/casino/{baccarat,roulette,blackjack,sic_bo}.rs`.
 - [x] Test hygiene: `types/src/casino/tests.rs`, `types/src/token.rs` clippy warning fixes.
 - [x] Proof limit unification: centralize summary/events decode limits in `types/src/api.rs` and reuse in `node/src/aggregator/actor.rs` + `simulator/src/lib.rs`.
-- [ ] Deferred (larger and/or behavior-changing): fallible `State` plumbing, event schema changes (e.g. `CasinoDeposit` event), wasm private-key exposure changes, simulator modularization/retention.
+- [x] `client/src/client.rs`: switch retryable POST bodies to `bytes::Bytes` (avoid per-attempt cloning).
+- [x] `client/src/{client,consensus}.rs` + `client/src/lib.rs`: include a size-limited response body snippet in HTTP failure errors (`Error::FailedWithBody`).
+- [x] `client/src/events.rs`: dedupe websocket reader loop; unify verified/unverified paths.
+- [x] `node/src/lib.rs`: validate additional non-zero config fields (`worker_threads`, `message_backlog`, `mailbox_size`, `deque_size`, `execution_concurrency`).
+- [x] `types/src/api.rs`: derive `thiserror::Error` for `VerifyError` (remove manual `Display` boilerplate).
+- [x] `types/src/execution.rs`: add `Block::try_new` + `BlockBuildError` (checked constructor).
+- [x] `execution/src/casino/video_poker.rs`: fix clippy `needless_range_loop` via iterator-based indexing.
+- [x] `execution/src/layer/mod.rs`: make progressive-bet parsing fail-closed (no silent `0` on short blobs).
+- [x] `simulator/src/lib.rs`: replace `GovernorConfigBuilder::finish().unwrap()` with safe fallback to defaults.
+- [x] `website/wasm/src/lib.rs`: gate private-key exports behind `private-key-export` feature (default enabled).
+- [ ] Deferred (larger and/or behavior-changing): fallible `State` plumbing, event schema changes (e.g. `CasinoDeposit` event), simulator modularization/retention, and making wasm key-export default-off.
 
 ---
 

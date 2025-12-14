@@ -1,7 +1,9 @@
 use crate::{events::Stream, Error, Result};
+use bytes::Bytes;
 use commonware_codec::{DecodeExt, Encode};
 use commonware_cryptography::{Hasher, Sha256};
 use commonware_utils::hex;
+use futures_util::StreamExt as _;
 use nullspace_types::{
     api::{
         Lookup, Pending, Submission, Summary, Update, UpdatesFilter, MAX_SUBMISSION_TRANSACTIONS,
@@ -18,6 +20,7 @@ use url::Url;
 
 /// Timeout for connections and requests
 const TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_ERROR_BODY_BYTES: usize = 8 * 1024;
 
 pub(crate) fn join_hex_path(base: &Url, prefix: &str, bytes: &[u8]) -> Result<Url> {
     Ok(base.join(&format!("{prefix}/{}", hex(bytes)))?)
@@ -116,16 +119,52 @@ impl Client {
             .await
     }
 
-    pub(crate) async fn post_bytes_with_retry(&self, url: Url, body: Vec<u8>) -> Result<()> {
+    pub(crate) async fn post_bytes_with_retry(&self, url: Url, body: Bytes) -> Result<()> {
         let response = self
             .send_with_retry(reqwest::Method::POST, || {
                 self.http_client.post(url.clone()).body(body.clone())
             })
             .await?;
         if !response.status().is_success() {
-            return Err(Error::Failed(response.status()));
+            return Err(Self::error_from_response(response).await);
         }
         Ok(())
+    }
+
+    pub(crate) async fn error_from_response(response: reqwest::Response) -> Error {
+        let status = response.status();
+
+        let mut stream = response.bytes_stream();
+        let mut buf = Vec::new();
+        let mut truncated = false;
+
+        while let Some(next) = stream.next().await {
+            let Ok(chunk) = next else {
+                break;
+            };
+            let remaining = MAX_ERROR_BODY_BYTES.saturating_sub(buf.len());
+            if remaining == 0 {
+                truncated = true;
+                break;
+            }
+            if chunk.len() > remaining {
+                buf.extend_from_slice(&chunk[..remaining]);
+                truncated = true;
+                break;
+            }
+            buf.extend_from_slice(&chunk);
+        }
+
+        let snippet = String::from_utf8_lossy(&buf).trim().to_string();
+        if snippet.is_empty() {
+            return Error::Failed(status);
+        }
+        let body = if truncated {
+            format!("{snippet}\n…(truncated)")
+        } else {
+            snippet
+        };
+        Error::FailedWithBody { status, body }
     }
 
     async fn send_with_retry(
@@ -189,11 +228,11 @@ impl Client {
     }
 
     async fn submit(&self, submission: Submission) -> Result<()> {
-        let encoded = submission.encode();
+        let encoded = submission.encode().to_vec();
         let url = self.base_url.join("submit")?;
         debug!("Submitting to {}", url);
 
-        self.post_bytes_with_retry(url, encoded.to_vec()).await
+        self.post_bytes_with_retry(url, Bytes::from(encoded)).await
     }
 
     /// Query state by key
@@ -203,23 +242,24 @@ impl Client {
         let url = join_hex_path(&self.base_url, "state", &key_hash.encode())?;
         let response = self.get_with_retry(url).await?;
 
-        // Parse response
-        match response.status() {
-            reqwest::StatusCode::OK => {
-                let buf = response.bytes().await?.to_vec();
-                let lookup = Lookup::decode(&mut buf.as_slice())?;
-
-                // Verify the lookup
-                if let Err(err) = lookup.verify(&self.identity) {
-                    debug!(?err, "Lookup verification failed");
-                    return Err(Error::InvalidSignature);
-                }
-
-                Ok(Some(lookup))
-            }
-            reqwest::StatusCode::NOT_FOUND => Ok(None),
-            _ => Err(Error::Failed(response.status())),
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
         }
+        if status != reqwest::StatusCode::OK {
+            return Err(Self::error_from_response(response).await);
+        }
+
+        let buf = response.bytes().await?.to_vec();
+        let lookup = Lookup::decode(&mut buf.as_slice())?;
+
+        // Verify the lookup
+        if let Err(err) = lookup.verify(&self.identity) {
+            debug!(?err, "Lookup verification failed");
+            return Err(Error::InvalidSignature);
+        }
+
+        Ok(Some(lookup))
     }
 
     /// Connect to the updates stream with the specified filter

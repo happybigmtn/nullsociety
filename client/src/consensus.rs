@@ -10,27 +10,29 @@ impl Client {
         let result = self.get_with_retry(url).await?;
 
         // Parse response
-        match result.status() {
-            reqwest::StatusCode::NOT_FOUND => Ok(None),
-            reqwest::StatusCode::OK => {
-                let bytes = result.bytes().await.map_err(Error::Reqwest)?;
-                let seed = Seed::decode(bytes.as_ref()).map_err(Error::InvalidData)?;
-                if !seed.verify(NAMESPACE, &self.identity) {
-                    return Err(Error::InvalidSignature);
-                }
-
-                // Verify the seed matches the query
-                match query {
-                    Query::Latest => {}
-                    Query::Index(index) => {
-                        if seed.view() != index {
-                            return Err(Error::UnexpectedResponse);
-                        }
-                    }
-                }
-                Ok(Some(seed))
-            }
-            _ => Err(Error::Failed(result.status())),
+        let status = result.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
         }
+        if status != reqwest::StatusCode::OK {
+            return Err(Self::error_from_response(result).await);
+        }
+
+        let bytes = result.bytes().await.map_err(Error::Reqwest)?;
+        let seed = Seed::decode(bytes.as_ref()).map_err(Error::InvalidData)?;
+        if !seed.verify(NAMESPACE, &self.identity) {
+            return Err(Error::InvalidSignature);
+        }
+
+        // Verify the seed matches the query
+        match query {
+            Query::Latest => {}
+            Query::Index(index) => {
+                if seed.view() != index {
+                    return Err(Error::UnexpectedResponse);
+                }
+            }
+        }
+        Ok(Some(seed))
     }
 }
