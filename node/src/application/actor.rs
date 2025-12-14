@@ -728,7 +728,13 @@ impl<R: Rng + CryptoRng + Spawner + Metrics + Clock + Storage, I: Indexer> Actor
                     // Process transactions (already verified in indexer client)
                     for tx in pending.transactions {
                         // Check if below next
-                        let next = nonce(&state, &tx.public).await;
+                        let next = match nonce(&state, &tx.public).await {
+                            Ok(next) => next,
+                            Err(err) => {
+                                warn!(?err, "failed to read account nonce; dropping transaction");
+                                continue;
+                            }
+                        };
                         if tx.nonce < next {
                             // If below next, we drop the incoming transaction
                             debug!(tx = tx.nonce, state = next, "dropping incoming transaction");

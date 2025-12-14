@@ -8,30 +8,30 @@ impl<'a, S: State> Layer<'a, S> {
         public: &PublicKey,
         amount: u64,
         duration: u64,
-    ) -> Vec<Event> {
-        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await {
+    ) -> anyhow::Result<Vec<Event>> {
+        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await? {
             Some(Value::CasinoPlayer(p)) => p,
-            _ => return vec![], // Error handled by checking balance
+            _ => return Ok(vec![]), // Error handled by checking balance
         };
 
         if player.chips < amount {
-            return vec![Event::CasinoError {
+            return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
                 message: "Insufficient chips to stake".to_string(),
-            }];
+            }]);
         }
 
         // Min duration 1 week (approx 201600 blocks @ 3s), Max 4 years
         const MIN_DURATION: u64 = 1; // Simplified for dev
         if duration < MIN_DURATION {
-            return vec![Event::CasinoError {
+            return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_INVALID_BET, // Reuse code
                 message: "Duration too short".to_string(),
-            }];
+            }]);
         }
 
         // Deduct chips
@@ -42,7 +42,7 @@ impl<'a, S: State> Layer<'a, S> {
         );
 
         // Create/Update Staker
-        let mut staker = match self.get(&Key::Staker(public.clone())).await {
+        let mut staker = match self.get(&Key::Staker(public.clone())).await? {
             Some(Value::Staker(s)) => s,
             _ => nullspace_types::casino::Staker::default(),
         };
@@ -61,45 +61,48 @@ impl<'a, S: State> Layer<'a, S> {
         self.insert(Key::Staker(public.clone()), Value::Staker(staker.clone()));
 
         // Update House Total VP
-        let mut house = self.get_or_init_house().await;
+        let mut house = self.get_or_init_house().await?;
         house.total_staked_amount += amount;
         house.total_voting_power += (amount as u128) * (duration as u128); // Approximation for new stake
         self.insert(Key::House, Value::House(house));
 
-        vec![Event::Staked {
+        Ok(vec![Event::Staked {
             player: public.clone(),
             amount,
             duration,
             new_balance: staker.balance,
             unlock_ts: staker.unlock_ts,
             voting_power: staker.voting_power,
-        }]
+        }])
     }
 
-    pub(in crate::layer) async fn handle_unstake(&mut self, public: &PublicKey) -> Vec<Event> {
-        let mut staker = match self.get(&Key::Staker(public.clone())).await {
+    pub(in crate::layer) async fn handle_unstake(
+        &mut self,
+        public: &PublicKey,
+    ) -> anyhow::Result<Vec<Event>> {
+        let mut staker = match self.get(&Key::Staker(public.clone())).await? {
             Some(Value::Staker(s)) => s,
-            _ => return vec![],
+            _ => return Ok(vec![]),
         };
 
         if self.seed.view < staker.unlock_ts {
-            return vec![Event::CasinoError {
+            return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
                 error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
                 message: "Stake still locked".to_string(),
-            }];
+            }]);
         }
 
         if staker.balance == 0 {
-            return vec![];
+            return Ok(vec![]);
         }
 
         let unstake_amount = staker.balance;
 
         // Return chips
         if let Some(Value::CasinoPlayer(mut player)) =
-            self.get(&Key::CasinoPlayer(public.clone())).await
+            self.get(&Key::CasinoPlayer(public.clone())).await?
         {
             player.chips += staker.balance;
             self.insert(
@@ -109,7 +112,7 @@ impl<'a, S: State> Layer<'a, S> {
         }
 
         // Update House
-        let mut house = self.get_or_init_house().await;
+        let mut house = self.get_or_init_house().await?;
         house.total_staked_amount = house.total_staked_amount.saturating_sub(staker.balance);
         house.total_voting_power = house.total_voting_power.saturating_sub(staker.voting_power);
         self.insert(Key::House, Value::House(house));
@@ -119,38 +122,38 @@ impl<'a, S: State> Layer<'a, S> {
         staker.voting_power = 0;
         self.insert(Key::Staker(public.clone()), Value::Staker(staker));
 
-        vec![Event::Unstaked {
+        Ok(vec![Event::Unstaked {
             player: public.clone(),
             amount: unstake_amount,
-        }]
+        }])
     }
 
     pub(in crate::layer) async fn handle_claim_rewards(
         &mut self,
         public: &PublicKey,
-    ) -> Vec<Event> {
+    ) -> anyhow::Result<Vec<Event>> {
         // Placeholder for distribution logic
         // In this MVP, rewards are auto-compounded or we just skip this for now
-        let staker = match self.get(&Key::Staker(public.clone())).await {
+        let staker = match self.get(&Key::Staker(public.clone())).await? {
             Some(Value::Staker(s)) => s,
-            _ => return vec![],
+            _ => return Ok(vec![]),
         };
 
         if staker.balance == 0 {
-            return vec![];
+            return Ok(vec![]);
         }
 
-        vec![Event::RewardsClaimed {
+        Ok(vec![Event::RewardsClaimed {
             player: public.clone(),
             amount: 0,
-        }]
+        }])
     }
 
     pub(in crate::layer) async fn handle_process_epoch(
         &mut self,
         _public: &PublicKey,
-    ) -> Vec<Event> {
-        let mut house = self.get_or_init_house().await;
+    ) -> anyhow::Result<Vec<Event>> {
+        let mut house = self.get_or_init_house().await?;
 
         // 1 Week Epoch (approx)
         const EPOCH_LENGTH: u64 = 100; // Short for testing
@@ -175,9 +178,9 @@ impl<'a, S: State> Layer<'a, S> {
             let epoch = house.current_epoch;
             self.insert(Key::House, Value::House(house));
 
-            return vec![Event::EpochProcessed { epoch }];
+            return Ok(vec![Event::EpochProcessed { epoch }]);
         }
 
-        vec![]
+        Ok(vec![])
     }
 }
