@@ -6,7 +6,6 @@
 use commonware_cryptography::{
     bls12381::primitives::variant::{MinSig, Variant},
     ed25519::{PrivateKey, PublicKey},
-    Signer,
 };
 use commonware_runtime::ThreadPool;
 use nullspace_execution::mocks::{create_account_keypair, create_network_keypair, create_seed};

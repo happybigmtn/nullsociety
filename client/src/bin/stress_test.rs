@@ -386,7 +386,7 @@ async fn monitor_logic(client: Arc<Client>, bots: Vec<Arc<BotState>>, duration: 
                 {
                     Ok(Some(lookup)) => {
                         let value = lookup.operation.value();
-                        if let Some(Value::CasinoPlayer(player)) = value {
+                        if let Some(Value::CasinoPlayer(_player)) = value {
                             // Just checking if we can read state, no specific assertion logs to avoid spam
                             // unless critical
                         }

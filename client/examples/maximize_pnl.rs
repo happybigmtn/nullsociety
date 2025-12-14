@@ -10,7 +10,7 @@
 use clap::Parser;
 use commonware_codec::DecodeExt;
 use commonware_cryptography::{
-    ed25519::{PrivateKey, PublicKey},
+    ed25519::PrivateKey,
     PrivateKeyExt, Signer,
 };
 use nullspace_client::Client;
@@ -19,12 +19,9 @@ use nullspace_types::{
     execution::{Instruction, Key, Transaction, Value},
     Identity,
 };
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{rngs::StdRng, SeedableRng};
 use std::{
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 use tokio::time;

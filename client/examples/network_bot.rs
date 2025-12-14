@@ -13,7 +13,6 @@
 
 use commonware_cryptography::ed25519::PrivateKey;
 use commonware_storage::store::operation::Keyless;
-use futures_util::StreamExt;
 use nullspace_client::{Client, Error};
 use nullspace_execution::mocks::{create_account_keypair, create_network_keypair};
 use nullspace_types::{
