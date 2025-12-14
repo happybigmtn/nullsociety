@@ -64,6 +64,62 @@ pub struct ExplorerState {
     pub(super) blocks_by_hash: HashMap<Digest, ExplorerBlock>,
     pub(super) txs_by_hash: HashMap<Digest, ExplorerTransaction>,
     pub(super) accounts: HashMap<PublicKey, AccountActivity>,
+    max_blocks: Option<usize>,
+    max_account_entries: Option<usize>,
+}
+
+impl ExplorerState {
+    pub(crate) fn set_retention(
+        &mut self,
+        max_blocks: Option<usize>,
+        max_account_entries: Option<usize>,
+    ) {
+        self.max_blocks = max_blocks;
+        self.max_account_entries = max_account_entries;
+    }
+
+    fn enforce_retention(&mut self) {
+        if let Some(max_blocks) = self.max_blocks {
+            while self.indexed_blocks.len() > max_blocks {
+                let Some((removed_height, _)) = self.indexed_blocks.pop_first() else {
+                    break;
+                };
+
+                let blocks_to_remove = self
+                    .blocks_by_hash
+                    .iter()
+                    .filter(|(_, block)| block.height == removed_height)
+                    .map(|(digest, _)| *digest)
+                    .collect::<Vec<_>>();
+                for digest in blocks_to_remove {
+                    self.blocks_by_hash.remove(&digest);
+                }
+
+                let txs_to_remove = self
+                    .txs_by_hash
+                    .iter()
+                    .filter(|(_, tx)| tx.block_height == removed_height)
+                    .map(|(digest, _)| *digest)
+                    .collect::<Vec<_>>();
+                for digest in txs_to_remove {
+                    self.txs_by_hash.remove(&digest);
+                }
+            }
+        }
+
+        if let Some(max_entries) = self.max_account_entries {
+            for activity in self.accounts.values_mut() {
+                if activity.txs.len() > max_entries {
+                    let excess = activity.txs.len() - max_entries;
+                    activity.txs.drain(0..excess);
+                }
+                if activity.events.len() > max_entries {
+                    let excess = activity.events.len() - max_entries;
+                    activity.events.drain(0..excess);
+                }
+            }
+        }
+    }
 }
 
 impl Simulator {
@@ -312,6 +368,7 @@ impl Simulator {
             .blocks_by_hash
             .insert(progress.block_digest, block.clone());
         state.explorer.indexed_blocks.insert(progress.height, block);
+        state.explorer.enforce_retention();
     }
 }
 

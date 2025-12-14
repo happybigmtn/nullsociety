@@ -54,10 +54,11 @@ This is a second-pass review of the current workspace with a focus on idiomatic 
 - [x] `simulator/src/{lib,passkeys}.rs`: split passkeys storage + HTTP handlers into a dedicated module (feature-gated).
 - [x] `simulator/src/{lib,api/*}.rs`: move `Api` router + HTTP + websocket handlers into dedicated modules.
 - [x] `simulator/src/{lib,state}.rs`: move core `State`/`InternalUpdate` + proof/query logic into a dedicated module.
+- [x] `simulator/src/{lib,explorer,state,main}.rs`: add configurable explorer retention limits (opt-in) to bound memory growth.
 - [x] `website/wasm/src/lib.rs`: gate private-key exports behind `private-key-export` feature.
 - [x] `website/wasm/Cargo.toml`: make `private-key-export` default-off.
 - [x] `node/src/application/actor.rs`: replace metadata `.unwrap()` with logged fallback; add retry/backoff for proof generation; make prune failures non-fatal.
-- [ ] Deferred (larger and/or behavior-changing): fallible `State` plumbing, event schema changes (e.g. `CasinoDeposit` event), and simulator retention limits.
+- [ ] Deferred (larger and/or behavior-changing): fallible `State` plumbing and event schema changes (e.g. `CasinoDeposit` event).
 
 ---
 
@@ -1133,11 +1134,12 @@ pub(crate) async fn post_bytes_with_retry(&self, url: Url, body: bytes::Bytes) -
 - Passkeys state + endpoints moved to `simulator/src/passkeys.rs` (feature-gated).
 - API router + HTTP/WS handlers moved to `simulator/src/api/{mod,http,ws}.rs`.
 - Core state/proof logic moved to `simulator/src/state.rs`.
+- Explorer retention limits added (opt-in via `SimulatorConfig` / `simulator` CLI flags).
 - Rate limiter config no longer panics on invalid builder output (falls back to defaults).
 
 ### Top Issues (ranked)
 1. **Unbounded in-memory growth**
-   - Impact: simulator may grow without bound (blocks, txs, accounts, explorer indices).
+   - Impact: simulator may grow without bound by default; opt-in explorer retention limits exist now.
    - Risk: medium (long-running sims).
    - Effort: medium.
    - Location: `simulator/src/lib.rs` state maps (`State`); `simulator/src/explorer.rs` (`ExplorerState`).
@@ -1151,11 +1153,9 @@ pub(crate) async fn post_bytes_with_retry(&self, url: Url, body: bytes::Bytes) -
 - Module split is complete (`api/`, `explorer.rs`, `passkeys.rs`, `state.rs`); keep new logic out of `lib.rs` and add targeted module tests.
 
 ### Data Structure & Algorithm Changes
-- Add bounded retention (even for simulator):
-  - keep last N blocks/txs
-  - keep last N events per account
-  - optionally expose config knobs
-  - Complexity: prevents memory blowups; improves UX for long sims.
+- Bounded retention is available (opt-in):
+  - Keep last N blocks in explorer: `--explorer-max-blocks`.
+  - Keep last N txs/events per account: `--explorer-max-account-entries`.
 
 ### Safety & Concurrency Notes
 - `RwLock<State>` around large state can become a bottleneck; avoid holding write locks across expensive operations (proof creation, hashing, serialization).
