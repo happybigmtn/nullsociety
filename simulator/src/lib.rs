@@ -13,7 +13,7 @@ mod passkeys;
 pub use passkeys::{PasskeyChallenge, PasskeyCredential, PasskeySession, PasskeyStore};
 
 mod state;
-pub use state::{InternalUpdate, State};
+pub use state::{InternalUpdate, SimulatorConfig, State};
 
 #[derive(Clone)]
 pub struct Simulator {
@@ -25,9 +25,18 @@ pub struct Simulator {
 
 impl Simulator {
     pub fn new(identity: Identity) -> Self {
+        Self::new_with_config(identity, SimulatorConfig::default())
+    }
+
+    pub fn new_with_config(identity: Identity, config: SimulatorConfig) -> Self {
         let (update_tx, _) = broadcast::channel(1024);
         let (mempool_tx, _) = broadcast::channel(1024);
-        let state = Arc::new(RwLock::new(State::default()));
+        let mut state = State::default();
+        state.explorer.set_retention(
+            config.explorer_max_blocks,
+            config.explorer_max_account_entries,
+        );
+        let state = Arc::new(RwLock::new(state));
 
         Self {
             identity,

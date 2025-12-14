@@ -1,7 +1,7 @@
 use anyhow::Context;
 use clap::Parser;
 use commonware_codec::DecodeExt;
-use nullspace_simulator::{Api, Simulator};
+use nullspace_simulator::{Api, Simulator, SimulatorConfig};
 use nullspace_types::Identity;
 use std::sync::Arc;
 use tracing::info;
@@ -14,6 +14,14 @@ struct Args {
 
     #[arg(short, long)]
     identity: String,
+
+    /// Maximum number of blocks retained by the explorer index (unbounded if unset).
+    #[arg(long)]
+    explorer_max_blocks: Option<usize>,
+
+    /// Maximum number of txs/events retained per account in the explorer (unbounded if unset).
+    #[arg(long)]
+    explorer_max_account_entries: Option<usize>,
 }
 
 #[tokio::main]
@@ -32,7 +40,11 @@ async fn main() -> anyhow::Result<()> {
     let identity: Identity =
         Identity::decode(&mut bytes.as_slice()).context("failed to decode identity")?;
 
-    let simulator = Arc::new(Simulator::new(identity));
+    let config = SimulatorConfig {
+        explorer_max_blocks: args.explorer_max_blocks,
+        explorer_max_account_entries: args.explorer_max_account_entries,
+    };
+    let simulator = Arc::new(Simulator::new_with_config(identity, config));
     let api = Api::new(simulator);
     let app = api.router();
 

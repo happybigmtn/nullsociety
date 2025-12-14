@@ -16,6 +16,12 @@ use tokio::sync::broadcast;
 use crate::PasskeyStore;
 use crate::{ExplorerState, Simulator};
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SimulatorConfig {
+    pub explorer_max_blocks: Option<usize>,
+    pub explorer_max_account_entries: Option<usize>,
+}
+
 #[derive(Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum InternalUpdate {
