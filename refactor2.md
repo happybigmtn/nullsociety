@@ -47,6 +47,7 @@ This is a second-pass review of the current workspace with a focus on idiomatic 
 - [x] `client/src/client.rs`: switch retryable POST bodies to `bytes::Bytes` (avoid per-attempt cloning).
 - [x] `client/src/{client,consensus}.rs` + `client/src/lib.rs`: include a size-limited response body snippet in HTTP failure errors (`Error::FailedWithBody`).
 - [x] `client/src/consensus.rs`: return a structured mismatch error for `Query::Index` (expected vs got view).
+- [x] `client/src/lib.rs` + `client/src/client.rs`: add `Error::VerificationFailed` and use it for lookup verification failures (preserve reason).
 - [x] `client/src/events.rs`: dedupe websocket reader loop; unify verified/unverified paths.
 - [x] `client/examples/*` + `client/src/bin/stress_test.rs`: remove unused imports/vars to eliminate build warnings.
 - [x] `node/src/lib.rs`: validate additional non-zero config fields (`worker_threads`, `message_backlog`, `mailbox_size`, `deque_size`, `execution_concurrency`).
@@ -1438,6 +1439,10 @@ let mut state = match Adb::init(...).await {
 - Defines the client crate’s public API surface: `Client`, `RetryPolicy`, `Stream`, and `Error`.
 - Includes integration-style tests that exercise simulator APIs.
 
+### Progress (implemented)
+- HTTP failures now include a bounded response body snippet (`Error::FailedWithBody`).
+- Verification failures that produce a reason now surface it (`Error::VerificationFailed`).
+
 ### Top Issues (ranked)
 1. **`Error::Failed(StatusCode)` lacks structured context**
    - Impact: debugging is difficult when server returns non-200; body/endpoint not preserved.
@@ -1459,7 +1464,7 @@ let mut state = match Adb::init(...).await {
 
 ### Refactor Plan
 - Phase 1: enrich `Error::Failed` with context (endpoint + optional body snippet).
-- Phase 2: add an error variant for “verification failed with reason” instead of collapsing to `InvalidSignature`.
+- Phase 2 (**done**): add an error variant for “verification failed with reason” instead of collapsing to `InvalidSignature`.
 - Phase 3: document retry policy semantics (idempotent vs non-idempotent).
 
 ### Open Questions
