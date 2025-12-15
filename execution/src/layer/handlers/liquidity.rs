@@ -1,6 +1,7 @@
 use super::super::*;
 
 const BASIS_POINTS_SCALE: u128 = 10_000;
+const MAX_BASIS_POINTS: u16 = 10_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct SwapQuote {
@@ -23,6 +24,9 @@ fn constant_product_quote(
     reserve_out: u64,
     fee_basis_points: u16,
 ) -> Option<SwapQuote> {
+    if fee_basis_points > MAX_BASIS_POINTS {
+        return None;
+    }
     let fee_amount =
         (amount_in as u128).saturating_mul(fee_basis_points as u128) / BASIS_POINTS_SCALE;
     let net_in = (amount_in as u128).saturating_sub(fee_amount);
@@ -97,9 +101,17 @@ impl<'a, S: State> Layer<'a, S> {
             }
         };
 
+        let Some(new_collateral) = vault.collateral_rng.checked_add(amount) else {
+            return Ok(vec![Event::CasinoError {
+                player: public.clone(),
+                session_id: None,
+                error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
+                message: "Collateral amount overflow".to_string(),
+            }]);
+        };
+
         player.chips -= amount;
-        vault.collateral_rng += amount;
-        let new_collateral = vault.collateral_rng;
+        vault.collateral_rng = new_collateral;
 
         self.insert(
             Key::CasinoPlayer(public.clone()),
@@ -130,10 +142,19 @@ impl<'a, S: State> Layer<'a, S> {
         // LTV Calculation: Max Debt = (Collateral * Price) * 50%
         // Debt <= (Collateral * P_num / P_den) / 2
         // 2 * Debt * P_den <= Collateral * P_num
-        let new_debt = vault.debt_vusdt + amount;
+        let Some(new_debt) = vault.debt_vusdt.checked_add(amount) else {
+            return Ok(vec![Event::CasinoError {
+                player: public.clone(),
+                session_id: None,
+                error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
+                message: "Debt amount overflow".to_string(),
+            }]);
+        };
 
-        let lhs = 2 * (new_debt as u128) * price_denominator;
-        let rhs = (vault.collateral_rng as u128) * price_numerator;
+        let lhs = (new_debt as u128)
+            .saturating_mul(2)
+            .saturating_mul(price_denominator);
+        let rhs = (vault.collateral_rng as u128).saturating_mul(price_numerator);
 
         if lhs > rhs {
             return Ok(vec![Event::CasinoError {
@@ -146,13 +167,26 @@ impl<'a, S: State> Layer<'a, S> {
 
         // Update Vault
         vault.debt_vusdt = new_debt;
-        self.insert(Key::Vault(public.clone()), Value::Vault(vault));
 
-        // Mint vUSDT to Player
+        // Mint vUSDT to Player (if the player exists).
+        let mut updated_player = None;
         if let Some(Value::CasinoPlayer(mut player)) =
             self.get(&Key::CasinoPlayer(public.clone())).await?
         {
-            player.vusdt_balance += amount;
+            let Some(new_balance) = player.vusdt_balance.checked_add(amount) else {
+                return Ok(vec![Event::CasinoError {
+                    player: public.clone(),
+                    session_id: None,
+                    error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
+                    message: "vUSDT balance overflow".to_string(),
+                }]);
+            };
+            player.vusdt_balance = new_balance;
+            updated_player = Some(player);
+        }
+
+        self.insert(Key::Vault(public.clone()), Value::Vault(vault));
+        if let Some(player) = updated_player {
             self.insert(
                 Key::CasinoPlayer(public.clone()),
                 Value::CasinoPlayer(player),
@@ -239,6 +273,14 @@ impl<'a, S: State> Layer<'a, S> {
         // Apply Sell Tax (if Selling RNG)
         let mut burned_amount = 0;
         if !is_buying_rng {
+            if amm.sell_tax_basis_points > MAX_BASIS_POINTS {
+                return Ok(vec![Event::CasinoError {
+                    player: public.clone(),
+                    session_id: None,
+                    error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
+                    message: "Invalid AMM state".to_string(),
+                }]);
+            }
             // Sell Tax: 5% (default)
             burned_amount = (amount_in as u128 * amm.sell_tax_basis_points as u128 / 10000) as u64;
             if burned_amount > 0 {
@@ -247,7 +289,7 @@ impl<'a, S: State> Layer<'a, S> {
 
                 // Track burned amount in House
                 let mut house = self.get_or_init_house().await?;
-                house.total_burned += burned_amount;
+                house.total_burned = house.total_burned.saturating_add(burned_amount);
                 self.insert(Key::House, Value::House(house));
             }
         }
@@ -298,7 +340,7 @@ impl<'a, S: State> Layer<'a, S> {
         } else {
             // Player gives RNG, gets vUSDT
             // Note: We deduct the FULL amount (incl tax) from player
-            let total_deduction = amount_in + burned_amount;
+            let total_deduction = original_amount_in;
             if player.chips < total_deduction {
                 return Ok(vec![Event::CasinoError {
                     player: public.clone(),
@@ -565,5 +607,10 @@ mod tests {
     #[test]
     fn constant_product_quote_denominator_zero_returns_none() {
         assert_eq!(constant_product_quote(0, 0, 0, 0), None);
+    }
+
+    #[test]
+    fn constant_product_quote_rejects_fee_bps_over_10000() {
+        assert_eq!(constant_product_quote(1, 1, 1, 10_001), None);
     }
 }
