@@ -112,7 +112,7 @@ impl<R: Rng + CryptoRng + Spawner + Metrics + Clock + Storage, I: Indexer> Actor
     ) -> (Self, ViewSupervisor, EpochSupervisor, Mailbox<R>) {
         // Create actor
         let (sender, mailbox) = mpsc::channel(config.mailbox_size);
-        let inbound = Mailbox::new(sender);
+        let inbound = Mailbox::new(sender, context.stopped());
 
         // Create supervisors
         let identity = *public::<MinSig>(&config.polynomial);
@@ -334,7 +334,10 @@ impl<R: Rng + CryptoRng + Spawner + Metrics + Clock + Storage, I: Indexer> Actor
                 })
                 .unwrap_or(0),
             Err(err) => {
-                warn!(?err, "failed to read state metadata during init; using height=0");
+                warn!(
+                    ?err,
+                    "failed to read state metadata during init; using height=0"
+                );
                 0
             }
         };

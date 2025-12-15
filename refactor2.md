@@ -32,6 +32,7 @@ This is a second-pass review of the current workspace with a focus on idiomatic 
 
 - [x] `node/src/application/ingress.rs`: remove panic-on-send/receive; return safe defaults on mailbox closure.
 - [x] `node/src/aggregator/ingress.rs`: remove panic-on-send/receive; keep `deliver()` default-accept behavior to avoid blocking.
+- [x] `node/src/{application,aggregator}/ingress.rs`: add stop-signal aware mailbox sends/awaits to avoid hanging during shutdown.
 - [x] `node/src/supervisor.rs`: remove `block_on` from `peer_set_id()`; avoid `unimplemented!()` panics in `Su::leader()`.
 - [x] `node/src/indexer.rs`: treat invalid tx batches as drop+continue (do not permanently stop mempool ingestion).
 - [x] `node/src/seeder/actor.rs`: do not panic on dropped `oneshot` receivers/listeners.
@@ -98,12 +99,16 @@ This is a second-pass review of the current workspace with a focus on idiomatic 
 - Defines the application mailbox and implements consensus traits (`Automaton`, `Relay`, `Reporter`) by proxying messages into the application actor.
 - Sits directly on the consensus hot path: if it panics, consensus progress halts.
 
+### Progress (implemented)
+- Mailbox sends/receives are best-effort (no `.expect` panics); fall back to safe defaults on closure.
+- Mailbox operations are stop-signal aware (abort sends/awaits on shutdown).
+
 ### Top Issues (ranked)
-1. **Mailbox panics on normal shutdown / actor failure**
-   - Impact: consensus tasks can panic during shutdown, restarts, or transient channel closure.
-   - Risk: high (panic in production control-plane).
-   - Effort: low–medium.
-   - Location: `node/src/application/ingress.rs:66`–`169` (`.expect("Failed to send ...")` and `.expect("Failed to receive ...")`).
+1. **No typed mailbox error propagation (best-effort fallbacks)**
+   - Impact: downstream failures can be masked as defaults (genesis digest / parent digest / `false`), which can hide real faults.
+   - Risk: low–medium (depends on how upstream treats these fallbacks).
+   - Effort: medium.
+   - Location: `node/src/application/ingress.rs` (trait impls return defaults on shutdown/closure).
 
 ### Idiomatic Rust Improvements
 - Make mailbox operations fallible (match `node/src/seeder/ingress.rs` pattern) instead of panic-on-send.
@@ -143,9 +148,9 @@ async fn try_send<E: Clock>(
 - Panics cause restart churn and exacerbate instability; in distributed systems, “stop-the-world on shutdown” is a real availability risk.
 
 ### Refactor Plan
-- Phase 1: replace `.expect("Failed to send ...")` with `if send().await.is_err() { return; }` + `tracing::warn!` (minimal behavior change).
+- Phase 1 (**done**): replace `.expect("Failed to send ...")` with early-return/logging and safe fallbacks.
 - Phase 2: introduce mailbox error types and thread them through callers if consensus engine supports it.
-- Phase 3: propagate a shutdown `Signal` (like seeder) to allow bounded waits and cancellation.
+- Phase 3 (**done**): propagate a shutdown `Signal` (like seeder) to allow bounded waits and cancellation.
 
 ### Open Questions
 - Does `commonware_consensus::Automaton` allow returning an error, or must we “best-effort” and return defaults?
@@ -158,17 +163,16 @@ async fn try_send<E: Clock>(
 - Bridges aggregation consensus and the aggregator actor via an mpsc mailbox.
 - Also implements `Consumer`/`Producer` for p2p backfill plumbing.
 
+### Progress (implemented)
+- Mailbox sends/receives are best-effort (no `.expect` panics); fall back to safe defaults on closure.
+- Mailbox operations are stop-signal aware (abort sends/awaits on shutdown).
+
 ### Top Issues (ranked)
-1. **Panic on send throughout aggregation ingress**
-   - Impact: aggregation can panic on shutdown/actor restart; can halt progress or crash node.
-   - Risk: high.
-   - Effort: low–medium.
-   - Location: `node/src/aggregator/ingress.rs:75`–`215` (`.expect(...)` on send; `.expect(...)` on receive).
-2. **`deliver()` defaults to `true` if response channel is dropped**
+1. **`deliver()` defaults to `true` if response channel is dropped**
    - Impact: can acknowledge delivery even when aggregator didn’t process it; risks masking failures.
    - Risk: medium (depends on resolver semantics).
    - Effort: low.
-   - Location: `node/src/aggregator/ingress.rs:184`–`195`.
+   - Location: `node/src/aggregator/ingress.rs` (`Consumer::deliver`).
 
 ### Idiomatic Rust Improvements
 - Adopt the seeder ingress’ `Signal`-based shutdown handling and mailbox error enum.
@@ -199,8 +203,8 @@ receiver.await.unwrap_or(false)
 - Avoid panics in control-plane code; it amplifies transient overload into outages.
 
 ### Refactor Plan
-- Phase 1: remove `.expect(...)`; replace with early-return + logging.
-- Phase 2: add `Signal` to mailbox and bounded waits.
+- Phase 1 (**done**): remove `.expect(...)`; replace with early-return + logging.
+- Phase 2 (**done**): add `Signal` to mailbox and bounded waits.
 - Phase 3: decide a consistent “default on drop” policy (`false` is safer than `true`).
 
 ### Open Questions

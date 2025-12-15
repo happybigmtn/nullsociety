@@ -180,7 +180,7 @@ impl<R: Storage + Metrics + Clock + Spawner + GClock + RngCore, I: Indexer> Acto
     pub fn new(context: R, config: Config<I>) -> (Self, Mailbox) {
         // Create mailbox
         let (sender, mailbox) = mpsc::channel(config.mailbox_size);
-        let inbound = Mailbox::new(sender);
+        let inbound = Mailbox::new(sender, context.stopped());
 
         // Create metrics
         let certificates_processed = Gauge::default();

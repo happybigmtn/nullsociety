@@ -1,7 +1,8 @@
 use commonware_consensus::threshold_simplex::types::{Context, View};
 use commonware_consensus::{Automaton, Relay, Reporter};
 use commonware_cryptography::sha256::Digest;
-use commonware_runtime::{telemetry::metrics::histogram, Clock};
+use commonware_macros::select;
+use commonware_runtime::{signal::Signal, telemetry::metrics::histogram, Clock};
 use futures::{
     channel::{mpsc, oneshot},
     SinkExt,
@@ -50,11 +51,12 @@ pub enum Message<E: Clock> {
 #[derive(Clone)]
 pub struct Mailbox<E: Clock> {
     sender: mpsc::Sender<Message<E>>,
+    stopped: Signal,
 }
 
 impl<E: Clock> Mailbox<E> {
-    pub(super) fn new(sender: mpsc::Sender<Message<E>>) -> Self {
-        Self { sender }
+    pub(super) fn new(sender: mpsc::Sender<Message<E>>, stopped: Signal) -> Self {
+        Self { sender, stopped }
     }
 
     pub(super) async fn ancestry(
@@ -64,18 +66,17 @@ impl<E: Clock> Mailbox<E> {
         timer: histogram::Timer<E>,
         response: oneshot::Sender<Digest>,
     ) {
-        if self
-            .sender
-            .send(Message::Ancestry {
-                view,
-                blocks,
-                timer,
-                response,
-            })
-            .await
-            .is_err()
-        {
-            warn!(view, "application mailbox closed; ancestry dropped");
+        let mut sender = self.sender.clone();
+        let mut stopped = self.stopped.clone();
+        select! {
+            result = sender.send(Message::Ancestry { view, blocks, timer, response }) => {
+                if result.is_err() {
+                    warn!(view, "application mailbox closed; ancestry dropped");
+                }
+            },
+            _ = &mut stopped => {
+                warn!(view, "application shutting down; ancestry dropped");
+            }
         }
     }
 
@@ -86,18 +87,17 @@ impl<E: Clock> Mailbox<E> {
         timer: histogram::Timer<E>,
         response: oneshot::Sender<()>,
     ) {
-        if self
-            .sender
-            .send(Message::Seeded {
-                block,
-                seed,
-                timer,
-                response,
-            })
-            .await
-            .is_err()
-        {
-            warn!("application mailbox closed; seeded dropped");
+        let mut sender = self.sender.clone();
+        let mut stopped = self.stopped.clone();
+        select! {
+            result = sender.send(Message::Seeded { block, seed, timer, response }) => {
+                if result.is_err() {
+                    warn!("application mailbox closed; seeded dropped");
+                }
+            },
+            _ = &mut stopped => {
+                warn!("application shutting down; seeded dropped");
+            }
         }
     }
 }
@@ -108,14 +108,19 @@ impl<E: Clock> Automaton for Mailbox<E> {
 
     async fn genesis(&mut self) -> Self::Digest {
         let (response, receiver) = oneshot::channel();
-        if self
-            .sender
-            .send(Message::Genesis { response })
-            .await
-            .is_err()
-        {
-            warn!("application mailbox closed; returning genesis digest");
-            return genesis_digest();
+        let mut sender = self.sender.clone();
+        let mut stopped = self.stopped.clone();
+        select! {
+            result = sender.send(Message::Genesis { response }) => {
+                if result.is_err() {
+                    warn!("application mailbox closed; returning genesis digest");
+                    return genesis_digest();
+                }
+            },
+            _ = &mut stopped => {
+                warn!("application shutting down; returning genesis digest");
+                return genesis_digest();
+            },
         }
         receiver.await.unwrap_or_else(|_| {
             warn!("application actor dropped genesis response; returning genesis digest");
@@ -127,23 +132,23 @@ impl<E: Clock> Automaton for Mailbox<E> {
         // If we linked payloads to their parent, we would include
         // the parent in the `Context` in the payload.
         let (response, receiver) = oneshot::channel();
-        if self
-            .sender
-            .send(Message::Propose {
-                view: context.view,
-                parent: context.parent,
-                response,
-            })
-            .await
-            .is_err()
-        {
-            warn!(
-                view = context.view,
-                "application mailbox closed; proposing parent digest"
-            );
-            let (fallback_tx, fallback_rx) = oneshot::channel();
-            let _ = fallback_tx.send(context.parent.1);
-            return fallback_rx;
+        let mut sender = self.sender.clone();
+        let mut stopped = self.stopped.clone();
+        select! {
+            result = sender.send(Message::Propose { view: context.view, parent: context.parent, response }) => {
+                if result.is_err() {
+                    warn!(view = context.view, "application mailbox closed; proposing parent digest");
+                    let (fallback_tx, fallback_rx) = oneshot::channel();
+                    let _ = fallback_tx.send(context.parent.1);
+                    return fallback_rx;
+                }
+            },
+            _ = &mut stopped => {
+                warn!(view = context.view, "application shutting down; proposing parent digest");
+                let (fallback_tx, fallback_rx) = oneshot::channel();
+                let _ = fallback_tx.send(context.parent.1);
+                return fallback_rx;
+            }
         }
         receiver
     }
@@ -156,25 +161,23 @@ impl<E: Clock> Automaton for Mailbox<E> {
         // If we linked payloads to their parent, we would verify
         // the parent included in the payload matches the provided `Context`.
         let (response, receiver) = oneshot::channel();
-        if self
-            .sender
-            .send(Message::Verify {
-                view: context.view,
-                parent: context.parent,
-                payload,
-                response,
-            })
-            .await
-            .is_err()
-        {
-            warn!(
-                view = context.view,
-                ?payload,
-                "application mailbox closed; verify returns false"
-            );
-            let (fallback_tx, fallback_rx) = oneshot::channel();
-            let _ = fallback_tx.send(false);
-            return fallback_rx;
+        let mut sender = self.sender.clone();
+        let mut stopped = self.stopped.clone();
+        select! {
+            result = sender.send(Message::Verify { view: context.view, parent: context.parent, payload, response }) => {
+                if result.is_err() {
+                    warn!(view = context.view, ?payload, "application mailbox closed; verify returns false");
+                    let (fallback_tx, fallback_rx) = oneshot::channel();
+                    let _ = fallback_tx.send(false);
+                    return fallback_rx;
+                }
+            },
+            _ = &mut stopped => {
+                warn!(view = context.view, ?payload, "application shutting down; verify returns false");
+                let (fallback_tx, fallback_rx) = oneshot::channel();
+                let _ = fallback_tx.send(false);
+                return fallback_rx;
+            }
         }
         receiver
     }
@@ -184,13 +187,17 @@ impl<E: Clock> Relay for Mailbox<E> {
     type Digest = Digest;
 
     async fn broadcast(&mut self, digest: Self::Digest) {
-        if self
-            .sender
-            .send(Message::Broadcast { payload: digest })
-            .await
-            .is_err()
-        {
-            warn!(?digest, "application mailbox closed; broadcast dropped");
+        let mut sender = self.sender.clone();
+        let mut stopped = self.stopped.clone();
+        select! {
+            result = sender.send(Message::Broadcast { payload: digest }) => {
+                if result.is_err() {
+                    warn!(?digest, "application mailbox closed; broadcast dropped");
+                }
+            },
+            _ = &mut stopped => {
+                warn!(?digest, "application shutting down; broadcast dropped");
+            }
         }
     }
 }
@@ -200,18 +207,29 @@ impl<E: Clock> Reporter for Mailbox<E> {
 
     async fn report(&mut self, block: Self::Activity) {
         let (response, receiver) = oneshot::channel();
-        if self
-            .sender
-            .send(Message::Finalized { block, response })
-            .await
-            .is_err()
         {
-            warn!("application mailbox closed; finalized dropped");
-            return;
+            let mut sender = self.sender.clone();
+            let mut stopped = self.stopped.clone();
+            select! {
+                result = sender.send(Message::Finalized { block, response }) => {
+                    if result.is_err() {
+                        warn!("application mailbox closed; finalized dropped");
+                        return;
+                    }
+                },
+                _ = &mut stopped => {
+                    warn!("application shutting down; finalized dropped");
+                    return;
+                }
+            }
         }
 
         // Wait for the item to be processed (used to increment "save point" in marshal)
         // Note: Result is ignored as the receiver may fail if the system is shutting down
-        let _ = receiver.await;
+        let mut stopped = self.stopped.clone();
+        select! {
+            _ = receiver => {},
+            _ = &mut stopped => {},
+        }
     }
 }
