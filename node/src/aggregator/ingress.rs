@@ -5,7 +5,9 @@ use commonware_consensus::{
     Automaton, Reporter,
 };
 use commonware_cryptography::{bls12381::primitives::variant::MinSig, sha256::Digest};
+use commonware_macros::select;
 use commonware_resolver::{p2p::Producer, Consumer};
+use commonware_runtime::signal::Signal;
 use commonware_storage::{
     mmr::verification::Proof,
     store::operation::{Keyless, Variable},
@@ -69,16 +71,26 @@ pub enum Message {
 #[derive(Clone)]
 pub struct Mailbox {
     sender: mpsc::Sender<Message>,
+    stopped: Signal,
 }
 
 impl Mailbox {
-    pub(super) fn new(sender: mpsc::Sender<Message>) -> Self {
-        Self { sender }
+    pub(super) fn new(sender: mpsc::Sender<Message>, stopped: Signal) -> Self {
+        Self { sender, stopped }
     }
 
     pub(super) async fn uploaded(&mut self, index: Index) {
-        if self.sender.send(Message::Uploaded { index }).await.is_err() {
-            warn!(index, "aggregator mailbox closed; uploaded dropped");
+        let mut sender = self.sender.clone();
+        let mut stopped = self.stopped.clone();
+        select! {
+            result = sender.send(Message::Uploaded { index }) => {
+                if result.is_err() {
+                    warn!(index, "aggregator mailbox closed; uploaded dropped");
+                }
+            },
+            _ = &mut stopped => {
+                warn!(index, "aggregator shutting down; uploaded dropped");
+            }
         }
     }
 
@@ -95,23 +107,17 @@ impl Mailbox {
         events_proof_ops: Vec<Keyless<Output>>,
         response: oneshot::Sender<()>,
     ) {
-        if self
-            .sender
-            .send(Message::Executed {
-                view,
-                height,
-                commitment,
-                result,
-                state_proof,
-                state_proof_ops,
-                events_proof,
-                events_proof_ops,
-                response,
-            })
-            .await
-            .is_err()
-        {
-            warn!(view, height, "aggregator mailbox closed; executed dropped");
+        let mut sender = self.sender.clone();
+        let mut stopped = self.stopped.clone();
+        select! {
+            result = sender.send(Message::Executed { view, height, commitment, result, state_proof, state_proof_ops, events_proof, events_proof_ops, response }) => {
+                if result.is_err() {
+                    warn!(view, height, "aggregator mailbox closed; executed dropped");
+                }
+            },
+            _ = &mut stopped => {
+                warn!(view, height, "aggregator shutting down; executed dropped");
+            }
         }
     }
 }
@@ -122,14 +128,19 @@ impl Automaton for Mailbox {
 
     async fn genesis(&mut self) -> Self::Digest {
         let (response, receiver) = oneshot::channel();
-        if self
-            .sender
-            .send(Message::Genesis { response })
-            .await
-            .is_err()
-        {
-            warn!("aggregator mailbox closed; returning genesis digest");
-            return genesis_digest();
+        let mut sender = self.sender.clone();
+        let mut stopped = self.stopped.clone();
+        select! {
+            result = sender.send(Message::Genesis { response }) => {
+                if result.is_err() {
+                    warn!("aggregator mailbox closed; returning genesis digest");
+                    return genesis_digest();
+                }
+            },
+            _ = &mut stopped => {
+                warn!("aggregator shutting down; returning genesis digest");
+                return genesis_digest();
+            }
         }
         receiver.await.unwrap_or_else(|_| {
             warn!("aggregator actor dropped genesis response; returning genesis digest");
@@ -139,22 +150,23 @@ impl Automaton for Mailbox {
 
     async fn propose(&mut self, context: Self::Context) -> oneshot::Receiver<Self::Digest> {
         let (response, receiver) = oneshot::channel();
-        if self
-            .sender
-            .send(Message::Propose {
-                index: context,
-                response,
-            })
-            .await
-            .is_err()
-        {
-            warn!(
-                index = context,
-                "aggregator mailbox closed; propose returns genesis digest"
-            );
-            let (fallback_tx, fallback_rx) = oneshot::channel();
-            let _ = fallback_tx.send(genesis_digest());
-            return fallback_rx;
+        let mut sender = self.sender.clone();
+        let mut stopped = self.stopped.clone();
+        select! {
+            result = sender.send(Message::Propose { index: context, response }) => {
+                if result.is_err() {
+                    warn!(index = context, "aggregator mailbox closed; propose returns genesis digest");
+                    let (fallback_tx, fallback_rx) = oneshot::channel();
+                    let _ = fallback_tx.send(genesis_digest());
+                    return fallback_rx;
+                }
+            },
+            _ = &mut stopped => {
+                warn!(index = context, "aggregator shutting down; propose returns genesis digest");
+                let (fallback_tx, fallback_rx) = oneshot::channel();
+                let _ = fallback_tx.send(genesis_digest());
+                return fallback_rx;
+            }
         }
         receiver
     }
@@ -165,24 +177,23 @@ impl Automaton for Mailbox {
         payload: Self::Digest,
     ) -> oneshot::Receiver<bool> {
         let (response, receiver) = oneshot::channel();
-        if self
-            .sender
-            .send(Message::Verify {
-                index: context,
-                payload,
-                response,
-            })
-            .await
-            .is_err()
-        {
-            warn!(
-                index = context,
-                ?payload,
-                "aggregator mailbox closed; verify returns false"
-            );
-            let (fallback_tx, fallback_rx) = oneshot::channel();
-            let _ = fallback_tx.send(false);
-            return fallback_rx;
+        let mut sender = self.sender.clone();
+        let mut stopped = self.stopped.clone();
+        select! {
+            result = sender.send(Message::Verify { index: context, payload, response }) => {
+                if result.is_err() {
+                    warn!(index = context, ?payload, "aggregator mailbox closed; verify returns false");
+                    let (fallback_tx, fallback_rx) = oneshot::channel();
+                    let _ = fallback_tx.send(false);
+                    return fallback_rx;
+                }
+            },
+            _ = &mut stopped => {
+                warn!(index = context, ?payload, "aggregator shutting down; verify returns false");
+                let (fallback_tx, fallback_rx) = oneshot::channel();
+                let _ = fallback_tx.send(false);
+                return fallback_rx;
+            }
         }
         receiver
     }
@@ -194,18 +205,31 @@ impl Reporter for Mailbox {
     async fn report(&mut self, activity: Self::Activity) {
         match activity {
             Activity::Certified(certificate) => {
-                if self
-                    .sender
-                    .send(Message::Certified { certificate })
-                    .await
-                    .is_err()
-                {
-                    warn!("aggregator mailbox closed; certified dropped");
+                let mut sender = self.sender.clone();
+                let mut stopped = self.stopped.clone();
+                select! {
+                    result = sender.send(Message::Certified { certificate }) => {
+                        if result.is_err() {
+                            warn!("aggregator mailbox closed; certified dropped");
+                        }
+                    },
+                    _ = &mut stopped => {
+                        warn!("aggregator shutting down; certified dropped");
+                    }
                 }
             }
             Activity::Tip(index) => {
-                if self.sender.send(Message::Tip { index }).await.is_err() {
-                    warn!(index, "aggregator mailbox closed; tip dropped");
+                let mut sender = self.sender.clone();
+                let mut stopped = self.stopped.clone();
+                select! {
+                    result = sender.send(Message::Tip { index }) => {
+                        if result.is_err() {
+                            warn!(index, "aggregator mailbox closed; tip dropped");
+                        }
+                    },
+                    _ = &mut stopped => {
+                        warn!(index, "aggregator shutting down; tip dropped");
+                    }
                 }
             }
             _ => {}
@@ -220,20 +244,26 @@ impl Consumer for Mailbox {
 
     async fn deliver(&mut self, key: Self::Key, value: Self::Value) -> bool {
         let (sender, receiver) = oneshot::channel();
-        if self
-            .sender
-            .send(Message::Deliver {
-                index: key.into(),
-                certificate: value,
-                response: sender,
-            })
-            .await
-            .is_err()
         {
-            warn!("aggregator mailbox closed; deliver failed");
-            return true; // default to true to avoid blocking
+            let mut mailbox_sender = self.sender.clone();
+            let mut stopped = self.stopped.clone();
+            select! {
+                result = mailbox_sender.send(Message::Deliver { index: key.into(), certificate: value, response: sender }) => {
+                    if result.is_err() {
+                        warn!("aggregator mailbox closed; deliver failed");
+                        return true; // default to true to avoid blocking
+                    }
+                },
+                _ = &mut stopped => {
+                    return true; // default to true to avoid blocking
+                }
+            }
         }
-        receiver.await.unwrap_or(true) // default to true to avoid blocking
+        let mut stopped = self.stopped.clone();
+        select! {
+            result = receiver => { result.unwrap_or(true) }, // default to true to avoid blocking
+            _ = &mut stopped => { true }, // default to true to avoid blocking
+        }
     }
 
     async fn failed(&mut self, _: Self::Key, _: Self::Failure) {
@@ -246,16 +276,15 @@ impl Producer for Mailbox {
 
     async fn produce(&mut self, key: Self::Key) -> oneshot::Receiver<Bytes> {
         let (sender, receiver) = oneshot::channel();
-        if self
-            .sender
-            .send(Message::Produce {
-                index: key.into(),
-                response: sender,
-            })
-            .await
-            .is_err()
-        {
-            warn!("aggregator mailbox closed; produce dropped");
+        let mut mailbox_sender = self.sender.clone();
+        let mut stopped = self.stopped.clone();
+        select! {
+            result = mailbox_sender.send(Message::Produce { index: key.into(), response: sender }) => {
+                if result.is_err() {
+                    warn!("aggregator mailbox closed; produce dropped");
+                }
+            },
+            _ = &mut stopped => {}
         }
         receiver
     }
