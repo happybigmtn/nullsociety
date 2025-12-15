@@ -748,6 +748,7 @@ fn casino_error(player: &PublicKey, session_id: Option<u64>, code: u32, msg: imp
 
 ### Progress (implemented)
 - Extracted swap quote math (`constant_product_quote`) and borrow price ratio (`rng_price_ratio`) into pure helpers + added unit tests.
+- Added basic invariants: reject fee/tax BPS > 10_000 and avoid overflow panics in vault/house accounting (explicit `CasinoError` on overflow).
 
 ### Top Issues (ranked)
 1. **AMM math and “bootstrap price” are embedded and implicit**
@@ -794,7 +795,7 @@ fn constant_product_out(reserve_in: u128, reserve_out: u128, amount_in: u128, fe
 
 ### Refactor Plan
 - Phase 1 (**done**): extract AMM math into pure functions + unit tests.
-- Phase 2: define explicit invariants and validate them at key transitions (debug asserts or error events).
+- Phase 2 (**partially done**): define explicit invariants and validate them at key transitions (BPS bounds + overflow hardening done; add reserve/LP consistency checks).
 - Phase 3 (**behavior-changing**): revisit bootstrap pricing and fee model with economic design review.
 
 ### Open Questions
