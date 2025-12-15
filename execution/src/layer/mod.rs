@@ -214,107 +214,99 @@ impl<'a, S: State> Layer<'a, S> {
         Ok(())
     }
 
-    async fn apply(&mut self, transaction: &Transaction) -> Result<Vec<Event>> {
-        match &transaction.instruction {
-            Instruction::CasinoRegister { name } => {
-                self.handle_casino_register(&transaction.public, name).await
-            }
-            Instruction::CasinoDeposit { amount } => {
-                self.handle_casino_deposit(&transaction.public, *amount)
-                    .await
-            }
+    async fn apply_casino(&mut self, public: &PublicKey, instruction: &Instruction) -> Result<Vec<Event>> {
+        match instruction {
+            Instruction::CasinoRegister { name } => self.handle_casino_register(public, name).await,
+            Instruction::CasinoDeposit { amount } => self.handle_casino_deposit(public, *amount).await,
             Instruction::CasinoStartGame {
                 game_type,
                 bet,
                 session_id,
-            } => {
-                self.handle_casino_start_game(&transaction.public, *game_type, *bet, *session_id)
-                    .await
+            } => self
+                .handle_casino_start_game(public, *game_type, *bet, *session_id)
+                .await,
+            Instruction::CasinoGameMove { session_id, payload } => {
+                self.handle_casino_game_move(public, *session_id, payload).await
             }
-            Instruction::CasinoGameMove {
-                session_id,
-                payload,
-            } => {
-                self.handle_casino_game_move(&transaction.public, *session_id, payload)
-                    .await
-            }
-            Instruction::CasinoToggleShield => {
-                self.handle_casino_toggle_shield(&transaction.public).await
-            }
-            Instruction::CasinoToggleDouble => {
-                self.handle_casino_toggle_double(&transaction.public).await
-            }
-            Instruction::CasinoToggleSuper => {
-                self.handle_casino_toggle_super(&transaction.public).await
-            }
+            Instruction::CasinoToggleShield => self.handle_casino_toggle_shield(public).await,
+            Instruction::CasinoToggleDouble => self.handle_casino_toggle_double(public).await,
+            Instruction::CasinoToggleSuper => self.handle_casino_toggle_super(public).await,
             Instruction::CasinoJoinTournament { tournament_id } => {
-                self.handle_casino_join_tournament(&transaction.public, *tournament_id)
-                    .await
+                self.handle_casino_join_tournament(public, *tournament_id).await
             }
             Instruction::CasinoStartTournament {
                 tournament_id,
                 start_time_ms,
                 end_time_ms,
             } => {
-                self.handle_casino_start_tournament(
-                    &transaction.public,
-                    *tournament_id,
-                    *start_time_ms,
-                    *end_time_ms,
-                )
-                .await
+                self.handle_casino_start_tournament(public, *tournament_id, *start_time_ms, *end_time_ms)
+                    .await
             }
             Instruction::CasinoEndTournament { tournament_id } => {
-                self.handle_casino_end_tournament(&transaction.public, *tournament_id)
-                    .await
+                self.handle_casino_end_tournament(public, *tournament_id).await
             }
-            // Staking
-            Instruction::Stake { amount, duration } => {
-                self.handle_stake(&transaction.public, *amount, *duration)
-                    .await
-            }
-            Instruction::Unstake => self.handle_unstake(&transaction.public).await,
-            Instruction::ClaimRewards => self.handle_claim_rewards(&transaction.public).await,
-            Instruction::ProcessEpoch => self.handle_process_epoch(&transaction.public).await,
+            _ => anyhow::bail!("internal error: apply_casino called with non-casino instruction"),
+        }
+    }
 
-            // Vaults
-            Instruction::CreateVault => self.handle_create_vault(&transaction.public).await,
-            Instruction::DepositCollateral { amount } => {
-                self.handle_deposit_collateral(&transaction.public, *amount)
-                    .await
-            }
-            Instruction::BorrowUSDT { amount } => {
-                self.handle_borrow_usdt(&transaction.public, *amount).await
-            }
-            Instruction::RepayUSDT { amount } => {
-                self.handle_repay_usdt(&transaction.public, *amount).await
-            }
+    async fn apply_staking(&mut self, public: &PublicKey, instruction: &Instruction) -> Result<Vec<Event>> {
+        match instruction {
+            Instruction::Stake { amount, duration } => self.handle_stake(public, *amount, *duration).await,
+            Instruction::Unstake => self.handle_unstake(public).await,
+            Instruction::ClaimRewards => self.handle_claim_rewards(public).await,
+            Instruction::ProcessEpoch => self.handle_process_epoch(public).await,
+            _ => anyhow::bail!("internal error: apply_staking called with non-staking instruction"),
+        }
+    }
 
-            // AMM
+    async fn apply_liquidity(&mut self, public: &PublicKey, instruction: &Instruction) -> Result<Vec<Event>> {
+        match instruction {
+            Instruction::CreateVault => self.handle_create_vault(public).await,
+            Instruction::DepositCollateral { amount } => self.handle_deposit_collateral(public, *amount).await,
+            Instruction::BorrowUSDT { amount } => self.handle_borrow_usdt(public, *amount).await,
+            Instruction::RepayUSDT { amount } => self.handle_repay_usdt(public, *amount).await,
             Instruction::Swap {
                 amount_in,
                 min_amount_out,
                 is_buying_rng,
-            } => {
-                self.handle_swap(
-                    &transaction.public,
-                    *amount_in,
-                    *min_amount_out,
-                    *is_buying_rng,
-                )
-                .await
-            }
+            } => self.handle_swap(public, *amount_in, *min_amount_out, *is_buying_rng).await,
             Instruction::AddLiquidity {
                 rng_amount,
                 usdt_amount,
-            } => {
-                self.handle_add_liquidity(&transaction.public, *rng_amount, *usdt_amount)
-                    .await
-            }
-            Instruction::RemoveLiquidity { shares } => {
-                self.handle_remove_liquidity(&transaction.public, *shares)
-                    .await
-            }
+            } => self.handle_add_liquidity(public, *rng_amount, *usdt_amount).await,
+            Instruction::RemoveLiquidity { shares } => self.handle_remove_liquidity(public, *shares).await,
+            _ => anyhow::bail!("internal error: apply_liquidity called with non-liquidity instruction"),
+        }
+    }
+
+    async fn apply(&mut self, transaction: &Transaction) -> Result<Vec<Event>> {
+        let instruction = &transaction.instruction;
+        let public = &transaction.public;
+
+        match instruction {
+            Instruction::CasinoRegister { .. }
+            | Instruction::CasinoDeposit { .. }
+            | Instruction::CasinoStartGame { .. }
+            | Instruction::CasinoGameMove { .. }
+            | Instruction::CasinoToggleShield
+            | Instruction::CasinoToggleDouble
+            | Instruction::CasinoToggleSuper
+            | Instruction::CasinoJoinTournament { .. }
+            | Instruction::CasinoStartTournament { .. }
+            | Instruction::CasinoEndTournament { .. } => self.apply_casino(public, instruction).await,
+
+            Instruction::Stake { .. }
+            | Instruction::Unstake
+            | Instruction::ClaimRewards
+            | Instruction::ProcessEpoch => self.apply_staking(public, instruction).await,
+
+            Instruction::CreateVault
+            | Instruction::DepositCollateral { .. }
+            | Instruction::BorrowUSDT { .. }
+            | Instruction::RepayUSDT { .. }
+            | Instruction::Swap { .. }
+            | Instruction::AddLiquidity { .. }
+            | Instruction::RemoveLiquidity { .. } => self.apply_liquidity(public, instruction).await,
         }
     }
 
