@@ -53,7 +53,9 @@ This is a second-pass review of the current workspace with a focus on idiomatic 
 - [x] `execution/src/casino/video_poker.rs`: fix clippy `needless_range_loop` via iterator-based indexing.
 - [x] `execution/src/lib.rs`: add crate-level docs describing determinism and recovery invariants.
 - [x] `execution/src/layer/mod.rs`: make progressive-bet parsing fail-closed (no silent `0` on short blobs).
+- [x] `execution/src/layer/mod.rs`: split `apply()` dispatch by domain (`casino`, `staking`, `liquidity`) for maintainability (behavior-preserving).
 - [x] `execution/src/layer/handlers/casino.rs`: centralize `CasinoError` construction + add player/session lookup helpers (behavior-preserving).
+- [x] `execution/src/layer/handlers/staking.rs`: clarify dev/demo staking epoch/duration semantics (behavior-preserving).
 - [x] `execution/src/layer/handlers/liquidity.rs`: extract AMM math into pure helpers and add unit tests (behavior-preserving).
 - [x] `simulator/src/lib.rs`: replace `GovernorConfigBuilder::finish().unwrap()` with safe fallback to defaults.
 - [x] `simulator/src/{lib,explorer}.rs`: split explorer indexing + HTTP handlers into a dedicated module.
@@ -579,6 +581,10 @@ pub enum TransitionOutcome {
 - Implements the execution `Layer`: transaction prepare/apply, state updates, and handlers for casino/staking/liquidity.
 - Contains various helper parsers for game state blobs.
 
+### Progress (implemented)
+- Progressive state-blob parsing is now fail-closed for short/malformed blobs (no silent `0` fallbacks).
+- `apply()` dispatch is now split by domain (`casino` / `staking` / `liquidity`) to reduce cross-cutting change risk.
+
 ### Top Issues (ranked)
 1. **Monolithic `apply()` match makes cross-cutting changes risky**
    - Impact: hard to extend; easy to introduce subtle behavior changes.
@@ -619,8 +625,8 @@ let progressive_bet = match version {
 - `apply()` should stay allocation-light; prefer passing slices/refs where possible.
 
 ### Refactor Plan
-- Phase 1: refactor blob parsing helpers to return `Option`/`Result` and handle failures explicitly.
-- Phase 2: split `apply()` by domain (`casino`, `staking`, `liquidity`) behind a trait or helper object to reduce match size.
+- Phase 1 (**done**): refactor blob parsing helpers to return `Option`/`Result` and handle failures explicitly.
+- Phase 2 (**done**): split `apply()` by domain (`casino`, `staking`, `liquidity`) behind a trait or helper object to reduce match size.
 - Phase 3: add property tests for determinism given identical seeds/tx order.
 
 ### Open Questions
@@ -684,6 +690,9 @@ fn casino_error(player: &PublicKey, session_id: Option<u64>, code: u32, msg: imp
 - Implements staking actions (stake/unstake/claim/process epoch) using `Player`, `Staker`, and `House` state.
 - Currently includes placeholder reward behavior and “short epoch” constants for testing.
 
+### Progress (implemented)
+- Clarified dev/demo staking epoch and duration semantics (expressed in consensus views/blocks, not wall-clock time).
+
 ### Top Issues (ranked)
 1. **Claim rewards is a placeholder returning `amount: 0`**
    - Impact: instruction exists but does nothing; can confuse users and clients.
@@ -709,7 +718,7 @@ fn casino_error(player: &PublicKey, session_id: Option<u64>, code: u32, msg: imp
 - Staking operations are simple; correctness and determinism matter more than micro-optimizations.
 
 ### Refactor Plan
-- Phase 1: clarify whether staking is MVP/demo or production; rename constants/comments accordingly.
+- Phase 1 (**done**): clarify whether staking is MVP/demo or production; rename constants/comments accordingly.
 - Phase 2: implement rewards or remove the instruction (**behavior-changing**).
 - Phase 3: add invariants/tests (stake/unstake, multiple stakes, epoch rollover).
 

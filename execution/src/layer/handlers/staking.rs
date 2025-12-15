@@ -23,9 +23,11 @@ impl<'a, S: State> Layer<'a, S> {
             }]);
         }
 
-        // Min duration 1 week (approx 201600 blocks @ 3s), Max 4 years
-        const MIN_DURATION: u64 = 1; // Simplified for dev
-        if duration < MIN_DURATION {
+        // NOTE: Staking is currently in dev/demo mode: `duration` and `unlock_ts` are expressed in
+        // consensus views/blocks (not wall-clock time), and the minimum duration is intentionally
+        // small to make local testing easier.
+        const DEV_MIN_DURATION_BLOCKS: u64 = 1;
+        if duration < DEV_MIN_DURATION_BLOCKS {
             return Ok(vec![Event::CasinoError {
                 player: public.clone(),
                 session_id: None,
@@ -155,10 +157,10 @@ impl<'a, S: State> Layer<'a, S> {
     ) -> anyhow::Result<Vec<Event>> {
         let mut house = self.get_or_init_house().await?;
 
-        // 1 Week Epoch (approx)
-        const EPOCH_LENGTH: u64 = 100; // Short for testing
+        // NOTE: Dev/demo epoch length in consensus views/blocks (short to keep tests fast).
+        const DEV_EPOCH_LENGTH_BLOCKS: u64 = 100;
 
-        if self.seed.view >= house.epoch_start_ts + EPOCH_LENGTH {
+        if self.seed.view >= house.epoch_start_ts + DEV_EPOCH_LENGTH_BLOCKS {
             // End Epoch
 
             // If Net PnL > 0, Surplus!
