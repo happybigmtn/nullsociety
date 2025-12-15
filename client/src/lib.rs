@@ -27,6 +27,8 @@ pub enum Error {
     InvalidData(#[from] commonware_codec::Error),
     #[error("invalid signature")]
     InvalidSignature,
+    #[error("{context} verification failed: {reason}")]
+    VerificationFailed { context: &'static str, reason: String },
     #[error("unexpected response")]
     UnexpectedResponse,
     #[error("unexpected seed view: expected {expected}, got {got}")]

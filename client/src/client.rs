@@ -256,7 +256,10 @@ impl Client {
         // Verify the lookup
         if let Err(err) = lookup.verify(&self.identity) {
             debug!(?err, "Lookup verification failed");
-            return Err(Error::InvalidSignature);
+            return Err(Error::VerificationFailed {
+                context: "lookup",
+                reason: err.to_string(),
+            });
         }
 
         Ok(Some(lookup))
