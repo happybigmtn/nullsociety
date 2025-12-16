@@ -39,6 +39,9 @@ export const BaccaratView = React.memo<{ gameState: GameState; actions: any }>((
         [allBets]
     );
 
+    const playerColor = isPlayerSelected ? 'text-terminal-green' : 'text-terminal-accent';
+    const bankerColor = isBankerSelected ? 'text-terminal-green' : 'text-terminal-accent';
+
     const getWinnerClass = (type: string) => {
         if (gameState.stage !== 'RESULT') return 'border-gray-800 bg-black/40';
         const p = playerValue;
