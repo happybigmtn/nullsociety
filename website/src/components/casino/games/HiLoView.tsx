@@ -18,7 +18,7 @@ interface HiLoViewProps {
     };
 }
 
-export const HiLoView = React.memo<HiLoViewProps>(({ gameState, deck, actions }) => {
+export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number }>(({ gameState, deck, actions, lastWin }) => {
     // Keep the prop for compatibility (other games use the shared deck), but HiLo projections
     // must not depend on the local deck (on-chain play doesn't have a local deck).
     void deck;
@@ -68,7 +68,7 @@ export const HiLoView = React.memo<HiLoViewProps>(({ gameState, deck, actions })
                 {/* Center Info */}
                 <div className="text-center space-y-3 relative z-20">
                         <div className="text-lg sm:text-2xl font-bold text-terminal-gold tracking-widest leading-tight animate-pulse">
-                            {gameState.message}
+                            {gameState.message}{lastWin && lastWin > 0 ? ` (+$${lastWin})` : ''}
                         </div>
                 </div>
 

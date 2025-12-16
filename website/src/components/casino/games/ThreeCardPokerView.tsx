@@ -39,7 +39,7 @@ const getHandRankName = (cards: { rank: string }[]): string => {
     return 'HIGH CARD';
 };
 
-export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameState, actions }) => {
+export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps & { lastWin?: number }>(({ gameState, actions, lastWin }) => {
     const playerRank = useMemo(() =>
         gameState.playerCards.length === 3 ? getHandRankName(gameState.playerCards) : '',
         [gameState.playerCards]
@@ -143,7 +143,7 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameSta
                         <span className="text-terminal-gold">${totalBet.toLocaleString()}</span>
                     </div>
                     <div className="text-lg sm:text-2xl font-bold text-terminal-gold tracking-widest leading-tight animate-pulse">
-                        {gameState.message}
+                        {gameState.message}{lastWin && lastWin > 0 ? ` (+$${lastWin})` : ''}
                     </div>
                     <div className="text-sm text-gray-500 flex flex-col items-center gap-1">
                         <span>ANTE: ${gameState.bet.toLocaleString()}</span>

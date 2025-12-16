@@ -19,7 +19,7 @@ const getStageDescription = (stage: string, communityCards: number): string => {
     return '';
 };
 
-export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameState, actions }) => {
+export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin?: number }>(({ gameState, actions, lastWin }) => {
     const stageDesc = useMemo(() =>
         getStageDescription(gameState.stage, gameState.communityCards.length),
         [gameState.stage, gameState.communityCards.length]
@@ -149,7 +149,7 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
                         <span className="text-terminal-gold">${baseTotalBet.toLocaleString()}</span>
                     </div>
                     <div className="text-lg sm:text-xl font-bold text-terminal-gold tracking-widest leading-tight animate-pulse">
-                        {gameState.message}
+                        {gameState.message}{lastWin && lastWin > 0 ? ` (+$${lastWin})` : ''}
                     </div>
                     <div className="text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-1 justify-center">
                         <span>ANTE: ${gameState.bet.toLocaleString()}</span>

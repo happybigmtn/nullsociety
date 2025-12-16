@@ -6,7 +6,7 @@ import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
 import { getVisibleHandValue } from '../../../utils/gameUtils';
 
-export const GenericGameView = React.memo<{ gameState: GameState; actions: any }>(({ gameState, actions }) => {
+export const GenericGameView = React.memo<{ gameState: GameState; actions: any; lastWin?: number }>(({ gameState, actions, lastWin }) => {
     const dealerValue = useMemo(() => getVisibleHandValue(gameState.dealerCards), [gameState.dealerCards]);
     const playerValue = useMemo(() => getVisibleHandValue(gameState.playerCards), [gameState.playerCards]);
     const gameTitle = useMemo(() => gameState.type.replace(/_/g, ' '), [gameState.type]);
@@ -51,7 +51,7 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any }
                 {/* Center Info */}
                 <div className="text-center space-y-3 relative z-20">
                     <div className="text-lg sm:text-2xl font-bold text-terminal-gold tracking-widest leading-tight animate-pulse">
-                        {gameState.message}
+                        {gameState.message}{lastWin && lastWin > 0 ? ` (+$${lastWin})` : ''}
                     </div>
                 </div>
 
