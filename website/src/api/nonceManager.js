@@ -375,7 +375,7 @@ export class NonceManager {
    * Submit a transaction with automatic nonce management.
    * @param {Function} createTxFn - Function that creates transaction data given a nonce
    * @param {string} txType - Type of transaction for logging
-   * @returns {Promise<{status: string, nonce: number, txHash: string}>} Transaction result
+   * @returns {Promise<{status: string, nonce: number, txHash: string, txDigest?: string}>} Transaction result
    * @throws {Error} If transaction submission fails
    * @private
    */
@@ -391,6 +391,13 @@ export class NonceManager {
 
         // Compute a short hash of the tx data for display
         const txHash = this.computeTxHash(txData);
+        let txDigest;
+        try {
+          txDigest = this.wasm.digestTransaction(txData);
+        } catch {
+          // ignore (older WASM builds / unexpected decode issues)
+          txDigest = undefined;
+        }
 
         // Store the transaction before submitting
         this.storeTransaction(nonce, txData);
@@ -408,7 +415,7 @@ export class NonceManager {
           localStorage.removeItem(key);
         }
 
-        return { ...result, nonce, txHash };
+        return { ...result, nonce, txHash, txDigest };
       } catch (error) {
         // Continue trying to submit transactions until confirmed
         console.error(`Error submitting ${txType} transaction with nonce ${nonce}:`, error.message);
@@ -531,7 +538,7 @@ export class NonceManager {
   /**
    * Submit a casino deposit transaction (dev faucet / testing).
    * @param {bigint|number} amount - Amount to deposit
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitCasinoDeposit(amount) {
     return this.submitTransaction(
@@ -543,7 +550,7 @@ export class NonceManager {
   /**
    * Submit a casino join tournament transaction.
    * @param {bigint|number} tournamentId - Tournament ID
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitCasinoJoinTournament(tournamentId) {
     return this.submitTransaction(
@@ -557,7 +564,7 @@ export class NonceManager {
    * @param {bigint|number} tournamentId - Tournament ID
    * @param {bigint|number} startTimeMs - Start time in milliseconds
    * @param {bigint|number} endTimeMs - End time in milliseconds
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitCasinoStartTournament(tournamentId, startTimeMs, endTimeMs) {
     return this.submitTransaction(
@@ -569,7 +576,7 @@ export class NonceManager {
   /**
    * Submit a casino end tournament transaction.
    * @param {bigint|number} tournamentId - Tournament ID
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitCasinoEndTournament(tournamentId) {
     return this.submitTransaction(
@@ -580,7 +587,7 @@ export class NonceManager {
 
   /**
    * Submit a create vault transaction.
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitCreateVault() {
     return this.submitTransaction(
@@ -592,7 +599,7 @@ export class NonceManager {
   /**
    * Submit a deposit collateral transaction.
    * @param {bigint|number} amount - Amount of RNG to lock as collateral
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitDepositCollateral(amount) {
     return this.submitTransaction(
@@ -604,7 +611,7 @@ export class NonceManager {
   /**
    * Submit a borrow vUSDT transaction.
    * @param {bigint|number} amount - Amount of vUSDT to borrow
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitBorrowUsdt(amount) {
     return this.submitTransaction(
@@ -616,7 +623,7 @@ export class NonceManager {
   /**
    * Submit a repay vUSDT transaction.
    * @param {bigint|number} amount - Amount of vUSDT to repay
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitRepayUsdt(amount) {
     return this.submitTransaction(
@@ -630,7 +637,7 @@ export class NonceManager {
    * @param {bigint|number} amountIn - Amount of input token
    * @param {bigint|number} minAmountOut - Minimum amount out (slippage protection)
    * @param {boolean} isBuyingRng - True to swap vUSDT->RNG, false to swap RNG->vUSDT
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitSwap(amountIn, minAmountOut, isBuyingRng) {
     return this.submitTransaction(
@@ -643,7 +650,7 @@ export class NonceManager {
    * Submit an add liquidity transaction.
    * @param {bigint|number} rngAmount - RNG amount
    * @param {bigint|number} usdtAmount - vUSDT amount
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitAddLiquidity(rngAmount, usdtAmount) {
     return this.submitTransaction(
@@ -655,7 +662,7 @@ export class NonceManager {
   /**
    * Submit a remove liquidity transaction.
    * @param {bigint|number} shares - LP shares to burn
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitRemoveLiquidity(shares) {
     return this.submitTransaction(
@@ -668,7 +675,7 @@ export class NonceManager {
    * Submit a stake transaction.
    * @param {bigint|number} amount - Amount of RNG to stake
    * @param {bigint|number} duration - Lock duration (in blocks/views)
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitStake(amount, duration) {
     return this.submitTransaction(
@@ -679,7 +686,7 @@ export class NonceManager {
 
   /**
    * Submit an unstake transaction.
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitUnstake() {
     return this.submitTransaction(
@@ -690,7 +697,7 @@ export class NonceManager {
 
   /**
    * Submit a claim rewards transaction.
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitClaimRewards() {
     return this.submitTransaction(
@@ -701,7 +708,7 @@ export class NonceManager {
 
   /**
    * Submit an epoch processing transaction.
-   * @returns {Promise<{status: string, txHash?: string}>} Transaction result
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
    */
   async submitProcessEpoch() {
     return this.submitTransaction(

@@ -191,6 +191,9 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [isRegistered, setIsRegistered] = useState(false);
   const isRegisteredRef = useRef(false);
+  const [walletRng, setWalletRng] = useState<number | null>(null);
+  const [walletVusdt, setWalletVusdt] = useState<number | null>(null);
+  const [walletPublicKeyHex, setWalletPublicKeyHex] = useState<string | null>(null);
   const [botConfig, setBotConfig] = useState<BotConfig>(DEFAULT_BOT_CONFIG);
   const botServiceRef = useRef<BotService | null>(null);
   const [isTournamentStarting, setIsTournamentStarting] = useState(false);
@@ -400,13 +403,14 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
           return;
         }
         console.log('[useTerminalGame] Keypair initialized, public key:', keypair.publicKeyHex);
+        setWalletPublicKeyHex(keypair.publicKeyHex);
 
         // Store refs for later use
         clientRef.current = client;
         publicKeyBytesRef.current = keypair.publicKey;
 
         // Connect to WebSocket updates stream with account-specific filter
-        await client.connectUpdates(keypair.publicKey);
+        await client.switchUpdates(keypair.publicKey);
         console.log('[useTerminalGame] Connected to updates WebSocket (account-specific filter)');
 
         // Fetch account state for nonce synchronization - this is critical!
@@ -434,6 +438,8 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
               doubles: playerState.doubles,
               auraMeter: playerState.auraMeter ?? prev.auraMeter ?? 0,
             }));
+            setWalletRng((prev) => (shouldUpdateBalance ? Number(playerState.chips) : prev));
+            setWalletVusdt(Number(playerState.vusdtBalance ?? 0));
 
             if (!shouldUpdateBalance) {
               console.log('[useTerminalGame] Skipped balance update from polling (within cooldown)');
@@ -663,6 +669,8 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
               shields: Number(playerState.shields),
               doubles: Number(playerState.doubles),
             }));
+            setWalletRng((prev) => (shouldUpdateBalance ? Number(playerState.chips) : prev));
+            setWalletVusdt(Number(playerState.vusdtBalance ?? 0));
           }
 
           // Cash leaderboard
@@ -748,6 +756,8 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
             shields: Number(desiredShields),
             doubles: Number(desiredDoubles),
           }));
+          setWalletRng((prev) => (shouldUpdateBalance ? Number(playerState.chips) : prev));
+          setWalletVusdt(Number(playerState.vusdtBalance ?? 0));
         }
 
         if (isInActiveTournament) {
@@ -5754,6 +5764,9 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
     phase,
     leaderboard,
     isRegistered,
+    walletRng,
+    walletVusdt,
+    walletPublicKeyHex,
     lastTxSig,
     botConfig,
     setBotConfig,

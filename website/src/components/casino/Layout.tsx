@@ -3,6 +3,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { LeaderboardEntry, PlayerStats, GameType } from '../../types';
 import { formatTime, HELP_CONTENT } from '../../utils/gameUtils';
+import { MobileDrawer } from './MobileDrawer';
 
 interface HeaderProps {
     phase: string;
@@ -12,9 +13,31 @@ interface HeaderProps {
     focusMode: boolean;
     setFocusMode: (mode: boolean) => void;
     showTimer?: boolean;
+    onToggleHelp?: () => void;
+    touchMode?: boolean;
+    onToggleTouchMode?: () => void;
+    soundEnabled?: boolean;
+    onToggleSound?: () => void;
+    reducedMotion?: boolean;
+    onToggleReducedMotion?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ phase, tournamentTime, stats, lastTxSig, focusMode, setFocusMode, showTimer = true }) => (
+export const Header: React.FC<HeaderProps> = ({
+    phase,
+    tournamentTime,
+    stats,
+    lastTxSig,
+    focusMode,
+    setFocusMode,
+    showTimer = true,
+    onToggleHelp,
+    touchMode = false,
+    onToggleTouchMode,
+    soundEnabled = true,
+    onToggleSound,
+    reducedMotion = false,
+    onToggleReducedMotion,
+}) => (
     <header className="h-12 border-b-2 border-gray-700 flex items-center justify-between px-2 sm:px-4 z-10 bg-terminal-black/90 backdrop-blur">
     <div className="flex items-center gap-2 sm:gap-4">
         <span className="font-bold tracking-tighter text-white text-sm sm:text-base">null<span className="text-terminal-green">/</span>space</span>
@@ -25,13 +48,62 @@ export const Header: React.FC<HeaderProps> = ({ phase, tournamentTime, stats, la
             >
                 {focusMode ? 'FOCUS ON' : 'FOCUS OFF'}
             </button>
+            {onToggleTouchMode ? (
+                <button
+                    type="button"
+                    onClick={onToggleTouchMode}
+                    className={`text-[10px] border px-1.5 py-0.5 rounded transition-colors ${
+                        touchMode ? 'bg-terminal-green text-black border-terminal-green' : 'text-gray-600 bg-gray-900 border-gray-800 hover:border-gray-600'
+                    }`}
+                    title="Touch mode hides key hints"
+                >
+                    {touchMode ? 'TOUCH ON' : 'TOUCH OFF'}
+                </button>
+            ) : null}
+            {onToggleSound ? (
+                <button
+                    type="button"
+                    onClick={onToggleSound}
+                    className={`text-[10px] border px-1.5 py-0.5 rounded transition-colors ${
+                        soundEnabled ? 'bg-terminal-green text-black border-terminal-green' : 'text-gray-600 bg-gray-900 border-gray-800 hover:border-gray-600'
+                    }`}
+                    title="Sound effects"
+                >
+                    {soundEnabled ? 'SFX ON' : 'SFX OFF'}
+                </button>
+            ) : null}
+            {onToggleReducedMotion ? (
+                <button
+                    type="button"
+                    onClick={onToggleReducedMotion}
+                    className={`text-[10px] border px-1.5 py-0.5 rounded transition-colors ${
+                        reducedMotion ? 'bg-terminal-green text-black border-terminal-green' : 'text-gray-600 bg-gray-900 border-gray-800 hover:border-gray-600'
+                    }`}
+                    title="Reduce motion"
+                >
+                    {reducedMotion ? 'MOTION LOW' : 'MOTION FULL'}
+                </button>
+            ) : null}
             <NavLink
                 to="/security"
                 className="text-[10px] border px-1.5 py-0.5 rounded transition-colors text-gray-300 bg-gray-900 border-gray-800 hover:border-gray-600 hover:text-white"
             >
                 PASSKEY
             </NavLink>
-            <span className="text-[10px] text-gray-600 bg-gray-900 border border-gray-800 px-1.5 py-0.5 rounded">[?] HELP</span>
+            {onToggleHelp ? (
+                <button
+                    type="button"
+                    onClick={onToggleHelp}
+                    className="text-[10px] border px-1.5 py-0.5 rounded transition-colors text-gray-300 bg-gray-900 border-gray-800 hover:border-gray-600 hover:text-white"
+                    title="Help (shortcut: ?)"
+                >
+                    <span className="text-gray-600">[?]</span> HELP
+                </button>
+            ) : (
+                <span className="text-[10px] text-gray-600 bg-gray-900 border border-gray-800 px-1.5 py-0.5 rounded">
+                    [?] HELP
+                </span>
+            )}
         </div>
     </div>
     <div className="flex items-center gap-2 sm:gap-4 md:gap-6 text-xs sm:text-sm">
@@ -99,6 +171,63 @@ export const Header: React.FC<HeaderProps> = ({ phase, tournamentTime, stats, la
                 <span className="text-gray-500 hidden sm:inline">CHIPS</span>
                 <span className="text-white font-bold text-sm sm:text-lg">${stats.chips.toLocaleString()}</span>
             </div>
+            {(onToggleTouchMode || onToggleSound || onToggleReducedMotion) ? (
+                <MobileDrawer label="SET" title="SETTINGS" className="sm:hidden">
+                    <div className="space-y-3">
+                        {onToggleSound ? (
+                            <div className="flex items-center justify-between border border-gray-800 rounded bg-black/40 p-3">
+                                <div>
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest">Sound</div>
+                                    <div className="text-[11px] text-gray-400 mt-1">SFX for deal/win</div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={onToggleSound}
+                                    className={`text-[10px] px-2 py-1 rounded border ${
+                                        soundEnabled ? 'border-terminal-green text-terminal-green' : 'border-gray-800 text-gray-500'
+                                    }`}
+                                >
+                                    {soundEnabled ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+                        ) : null}
+                        {onToggleReducedMotion ? (
+                            <div className="flex items-center justify-between border border-gray-800 rounded bg-black/40 p-3">
+                                <div>
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest">Motion</div>
+                                    <div className="text-[11px] text-gray-400 mt-1">Reduce animations</div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={onToggleReducedMotion}
+                                    className={`text-[10px] px-2 py-1 rounded border ${
+                                        reducedMotion ? 'border-terminal-green text-terminal-green' : 'border-gray-800 text-gray-500'
+                                    }`}
+                                >
+                                    {reducedMotion ? 'LOW' : 'FULL'}
+                                </button>
+                            </div>
+                        ) : null}
+                        {onToggleTouchMode ? (
+                            <div className="flex items-center justify-between border border-gray-800 rounded bg-black/40 p-3">
+                                <div>
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest">Touch Mode</div>
+                                    <div className="text-[11px] text-gray-400 mt-1">Hide key hints</div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={onToggleTouchMode}
+                                    className={`text-[10px] px-2 py-1 rounded border ${
+                                        touchMode ? 'border-terminal-green text-terminal-green' : 'border-gray-800 text-gray-500'
+                                    }`}
+                                >
+                                    {touchMode ? 'ON' : 'OFF'}
+                                </button>
+                            </div>
+                        ) : null}
+                    </div>
+                </MobileDrawer>
+            ) : null}
     </div>
     </header>
 );
@@ -229,7 +358,7 @@ export const Footer: React.FC<{ currentBet?: number }> = ({ currentBet }) => {
     const isCustom = currentBet && !bets.includes(currentBet);
 
     return (
-        <footer className="fixed bottom-0 left-0 right-0 md:right-64 border-t-2 border-gray-700 bg-terminal-black/95 text-[10px] sm:text-xs text-gray-600 py-1 px-2 sm:px-4 flex flex-wrap justify-center gap-2 sm:gap-4 md:gap-6 z-20">
+        <footer className="fixed bottom-0 left-0 right-0 md:right-64 border-t-2 border-gray-700 bg-terminal-black/95 text-[10px] sm:text-xs text-gray-600 pt-1 pb-[calc(0.25rem+env(safe-area-inset-bottom))] px-2 sm:px-4 flex flex-wrap justify-center gap-2 sm:gap-4 md:gap-6 z-20">
             {bets.map((bet, i) => {
                 const label = bet >= 1000 ? `${bet/1000}K` : `$${bet}`;
                 const isSelected = currentBet === bet;
@@ -251,16 +380,23 @@ interface CommandPaletteProps {
     sortedGames: string[];
     onSelectGame: (g: string) => void;
     inputRef: React.RefObject<HTMLInputElement>;
+    onClose?: () => void;
 }
 
-export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, searchQuery, onSearchChange, sortedGames, onSelectGame, inputRef }) => {
+export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, searchQuery, onSearchChange, sortedGames, onSelectGame, inputRef, onClose }) => {
     if (!isOpen) return null;
 
     const filtered = sortedGames.filter(g => g.toLowerCase().includes(searchQuery.toLowerCase()));
 
     return (
-        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-center pt-16 sm:pt-32 px-4">
-            <div className="w-full max-w-[600px] bg-terminal-black border border-terminal-dim rounded shadow-2xl overflow-hidden flex flex-col max-h-[70vh] sm:max-h-[500px]">
+        <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-center pt-16 sm:pt-32 px-4"
+            onClick={onClose}
+        >
+            <div
+                className="w-full max-w-[600px] bg-terminal-black border border-terminal-dim rounded shadow-2xl overflow-hidden flex flex-col max-h-[70vh] sm:max-h-[500px]"
+                onClick={(e) => e.stopPropagation()}
+            >
                 <div className="p-3 sm:p-4 border-b border-terminal-dim flex items-center gap-2">
                     <span className="text-terminal-green font-bold">&gt;</span>
                     <input
@@ -523,6 +659,228 @@ export const HelpOverlay: React.FC<HelpOverlayProps> = ({ isOpen, onClose, gameT
 
                     {/* Specific Game Help */}
                     {renderHelpContent()}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export type ResponsiblePlaySettings = {
+    realityCheckMinutes: number; // 0 = off
+    maxWager: number; // 0 = unlimited
+    maxLoss: number; // 0 = unlimited (absolute loss)
+    maxSessionMinutes: number; // 0 = unlimited
+    cooldownUntilMs: number; // 0 = none
+    sessionStartMs: number; // 0 = not started
+    pnlBaseline: number; // baseline of stats.pnlHistory at session start
+    nextRealityCheckMs: number; // 0 = none scheduled
+};
+
+type ResponsiblePlayOverlayProps = {
+    isOpen: boolean;
+    mode?: 'settings' | 'reality';
+    onClose: () => void;
+    settings: ResponsiblePlaySettings;
+    onChange: (next: ResponsiblePlaySettings) => void;
+    summary: { sessionMinutes: number; netPnl: number; chips: number };
+    onContinue: () => void;
+    onCooldown: (minutes: number) => void;
+    onStop: () => void;
+};
+
+export const ResponsiblePlayOverlay: React.FC<ResponsiblePlayOverlayProps> = ({
+    isOpen,
+    mode = 'settings',
+    onClose,
+    settings,
+    onChange,
+    summary,
+    onContinue,
+    onCooldown,
+    onStop,
+}) => {
+    if (!isOpen) return null;
+
+    const now = Date.now();
+    const cooldownRemainingMs = settings.cooldownUntilMs > now ? settings.cooldownUntilMs - now : 0;
+    const cooldownMinutes = cooldownRemainingMs > 0 ? Math.ceil(cooldownRemainingMs / 60_000) : 0;
+
+    const setNumber = (key: keyof ResponsiblePlaySettings, raw: string) => {
+        const parsed = raw.trim() === '' ? 0 : parseInt(raw, 10);
+        const nextValue = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+        const next: ResponsiblePlaySettings = { ...settings, [key]: nextValue } as ResponsiblePlaySettings;
+
+        if (key === 'realityCheckMinutes') {
+            if (next.realityCheckMinutes <= 0) {
+                next.nextRealityCheckMs = 0;
+            } else if (next.sessionStartMs > 0) {
+                next.nextRealityCheckMs = Date.now() + next.realityCheckMinutes * 60_000;
+            }
+        }
+
+        onChange(next);
+    };
+
+    const pnlLabel =
+        summary.netPnl === 0 ? '$0' : summary.netPnl > 0 ? `+$${summary.netPnl}` : `-$${Math.abs(summary.netPnl)}`;
+
+    return (
+        <div
+            className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8"
+            onClick={() => (mode === 'reality' ? onContinue() : onClose())}
+        >
+            <div
+                className="bg-terminal-black border border-gray-800 rounded-lg shadow-2xl max-w-lg w-full flex flex-col max-h-[90vh] overflow-y-auto"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="p-4 sm:p-6 border-b border-gray-800 bg-terminal-black/90">
+                    <div className="text-[10px] text-gray-500 tracking-widest uppercase">
+                        {mode === 'reality' ? 'Reality Check' : 'Responsible Play'}
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-3">
+                        <div className="text-lg font-bold tracking-widest text-white">Session Summary</div>
+                        <button
+                            type="button"
+                            onClick={mode === 'reality' ? onContinue : onClose}
+                            className="text-[10px] px-2 py-1 rounded border border-gray-700 bg-black/40 text-gray-400 hover:border-gray-500"
+                        >
+                            ESC
+                        </button>
+                    </div>
+                </div>
+
+                <div className="p-4 sm:p-6 space-y-6">
+                    <div className="grid grid-cols-3 gap-2 text-[11px]">
+                        <div className="border border-gray-800 rounded bg-black/40 p-2">
+                            <div className="text-gray-500 tracking-widest text-[10px] uppercase">Time</div>
+                            <div className="text-white mt-1">{summary.sessionMinutes}m</div>
+                        </div>
+                        <div className="border border-gray-800 rounded bg-black/40 p-2">
+                            <div className="text-gray-500 tracking-widest text-[10px] uppercase">Net PnL</div>
+                            <div className={['mt-1', summary.netPnl < 0 ? 'text-terminal-accent' : 'text-terminal-green'].join(' ')}>
+                                {pnlLabel}
+                            </div>
+                        </div>
+                        <div className="border border-gray-800 rounded bg-black/40 p-2">
+                            <div className="text-gray-500 tracking-widest text-[10px] uppercase">Chips</div>
+                            <div className="text-white mt-1">${summary.chips.toLocaleString()}</div>
+                        </div>
+                    </div>
+
+                    <div className="border border-gray-800 rounded bg-black/40 p-3">
+                        <div className="text-[10px] text-gray-500 tracking-widest uppercase mb-2">Reality Check</div>
+                        <div className="grid grid-cols-2 gap-2 items-center text-[11px]">
+                            <div className="text-gray-400">Interval (minutes)</div>
+                            <select
+                                className="bg-terminal-black border border-gray-800 rounded px-2 py-2 text-[11px]"
+                                value={settings.realityCheckMinutes}
+                                onChange={(e) => setNumber('realityCheckMinutes', e.target.value)}
+                            >
+                                <option value={0}>Off</option>
+                                <option value={15}>15</option>
+                                <option value={30}>30</option>
+                                <option value={60}>60</option>
+                            </select>
+                        </div>
+                        <div className="mt-2 text-[10px] text-gray-600">
+                            When the timer triggers, this screen pauses new rounds until you continue or cool down.
+                        </div>
+                    </div>
+
+                    <div className="border border-gray-800 rounded bg-black/40 p-3">
+                        <div className="text-[10px] text-gray-500 tracking-widest uppercase mb-2">Optional Limits</div>
+                        <div className="grid grid-cols-2 gap-2 text-[11px] items-center">
+                            <div className="text-gray-400">Max wager (0 = unlimited)</div>
+                            <input
+                                className="bg-terminal-black border border-gray-800 rounded px-2 py-2 text-[11px]"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={String(settings.maxWager ?? 0)}
+                                onChange={(e) => setNumber('maxWager', e.target.value)}
+                            />
+                            <div className="text-gray-400">Max loss (0 = unlimited)</div>
+                            <input
+                                className="bg-terminal-black border border-gray-800 rounded px-2 py-2 text-[11px]"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={String(settings.maxLoss ?? 0)}
+                                onChange={(e) => setNumber('maxLoss', e.target.value)}
+                            />
+                            <div className="text-gray-400">Max session minutes (0 = unlimited)</div>
+                            <input
+                                className="bg-terminal-black border border-gray-800 rounded px-2 py-2 text-[11px]"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={String(settings.maxSessionMinutes ?? 0)}
+                                onChange={(e) => setNumber('maxSessionMinutes', e.target.value)}
+                            />
+                        </div>
+                        <div className="mt-2 text-[10px] text-gray-600">
+                            Limits block starting a new round when exceeded (they do not interrupt an in-progress hand).
+                        </div>
+                    </div>
+
+                    <div className="border border-gray-800 rounded bg-black/40 p-3">
+                        <div className="text-[10px] text-gray-500 tracking-widest uppercase mb-2">Cooldown</div>
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                            <div className="text-gray-400">
+                                Status:{' '}
+                                {cooldownMinutes > 0 ? (
+                                    <span className="text-terminal-accent">ACTIVE ({cooldownMinutes}m)</span>
+                                ) : (
+                                    <span className="text-gray-500">off</span>
+                                )}
+                            </div>
+                            <div className="flex gap-2">
+                                {[5, 15, 30].map((m) => (
+                                    <button
+                                        key={m}
+                                        type="button"
+                                        onClick={() => onCooldown(m)}
+                                        className="h-10 px-3 rounded border border-gray-800 text-gray-300 text-[10px] tracking-widest uppercase hover:border-gray-600 hover:text-white"
+                                    >
+                                        {m}m
+                                    </button>
+                                ))}
+                                <button
+                                    type="button"
+                                    onClick={() => onCooldown(0)}
+                                    className="h-10 px-3 rounded border border-gray-800 text-gray-300 text-[10px] tracking-widest uppercase hover:border-gray-600 hover:text-white"
+                                >
+                                    Clear
+                                </button>
+                            </div>
+                        </div>
+                        <div className="mt-2 text-[10px] text-gray-600">Cooldown prevents starting new rounds for the selected duration.</div>
+                    </div>
+                </div>
+
+                <div className="p-4 sm:p-6 border-t border-gray-800 bg-terminal-black/90 flex items-center justify-between gap-2">
+                    <button
+                        type="button"
+                        onClick={onStop}
+                        className="h-11 px-4 rounded border border-terminal-accent text-terminal-accent text-[10px] tracking-widest uppercase hover:bg-terminal-accent/10"
+                    >
+                        Stop Playing
+                    </button>
+                    <div className="flex items-center gap-2">
+                        {mode === 'reality' ? (
+                            <button
+                                type="button"
+                                onClick={onContinue}
+                                className="h-11 px-4 rounded border border-terminal-green text-terminal-green text-[10px] tracking-widest uppercase hover:bg-terminal-green/10"
+                            >
+                                Continue
+                            </button>
+                        ) : null}
+                        <button
+                            type="button"
+                            onClick={mode === 'reality' ? onContinue : onClose}
+                            className="h-11 px-4 rounded border border-gray-700 text-gray-300 text-[10px] tracking-widest uppercase hover:border-gray-500"
+                        >
+                            Close
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

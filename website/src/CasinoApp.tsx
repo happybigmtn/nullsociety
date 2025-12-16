@@ -3,22 +3,48 @@ import { GameType } from './types';
 import { useTerminalGame } from './hooks/useTerminalGame';
 import { useKeyboardControls } from './hooks/useKeyboardControls';
 import { PlaySwapStakeTabs } from './components/PlaySwapStakeTabs';
+import { WalletPill } from './components/WalletPill';
 
 // Components
-import { Header, Sidebar, Footer, CommandPalette, CustomBetOverlay, HelpOverlay, TournamentAlert } from './components/casino/Layout';
+import {
+  Header,
+  Sidebar,
+  Footer,
+  CommandPalette,
+  CustomBetOverlay,
+  HelpOverlay,
+  TournamentAlert,
+  ResponsiblePlayOverlay,
+  type ResponsiblePlaySettings,
+} from './components/casino/Layout';
 import { ModeSelectView, type PlayMode } from './components/casino/ModeSelectView';
 import { RegistrationView } from './components/casino/RegistrationView';
 import { ActiveGame } from './components/casino/ActiveGame';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { playSfx, setSfxEnabled } from './services/sfx';
+import { track } from './services/telemetry';
 
 // Menu
 const SORTED_GAMES = Object.values(GameType).filter(g => g !== GameType.NONE).sort();
+
+const RESPONSIBLE_PLAY_STORAGE_KEY = 'nullspace_responsible_play_v1';
+
+const DEFAULT_RESPONSIBLE_PLAY: ResponsiblePlaySettings = {
+  realityCheckMinutes: 30,
+  maxWager: 0,
+  maxLoss: 0,
+  maxSessionMinutes: 0,
+  cooldownUntilMs: 0,
+  sessionStartMs: 0,
+  pnlBaseline: 0,
+  nextRealityCheckMs: 0,
+};
 
 export default function CasinoApp() {
   // Mode selection (Cash vs Freeroll)
   const [playMode, setPlayMode] = useState<PlayMode | null>(null);
 
-  const { stats, gameState, setGameState, deck, aiAdvice, tournamentTime, phase, leaderboard, isRegistered, lastTxSig, botConfig, setBotConfig, isRegisteringOrJoining, isFaucetClaiming, freerollActiveTournamentId, freerollActiveTimeLeft, freerollActivePrizePool, freerollActivePlayerCount, playerActiveTournamentId, freerollNextStartIn, freerollNextTournamentId, freerollIsJoinedNext, tournamentsPlayedToday, actions } = useTerminalGame(playMode);
+  const { stats, gameState, setGameState, deck, aiAdvice, tournamentTime, phase, leaderboard, isRegistered, walletRng, walletVusdt, walletPublicKeyHex, lastTxSig, botConfig, setBotConfig, isRegisteringOrJoining, isFaucetClaiming, freerollActiveTournamentId, freerollActiveTimeLeft, freerollActivePrizePool, freerollActivePlayerCount, playerActiveTournamentId, freerollNextStartIn, freerollNextTournamentId, freerollIsJoinedNext, tournamentsPlayedToday, actions } = useTerminalGame(playMode);
 
   // UI State
   const [commandOpen, setCommandOpen] = useState(false);
@@ -30,9 +56,237 @@ export default function CasinoApp() {
   const [leaderboardView, setLeaderboardView] = useState<'RANK' | 'PAYOUT'>('RANK');
   const [numberInputString, setNumberInputString] = useState("");
   const [focusMode, setFocusMode] = useState(false);
+  const [touchMode, setTouchMode] = useState(() => {
+    try {
+      return localStorage.getItem('nullspace_touch_mode') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    try {
+      const raw = localStorage.getItem('nullspace_sound_enabled');
+      return raw === null ? true : raw === 'true';
+    } catch {
+      return true;
+    }
+  });
+  const [reducedMotion, setReducedMotion] = useState(() => {
+    try {
+      const raw = localStorage.getItem('nullspace_reduced_motion');
+      if (raw !== null) return raw === 'true';
+    } catch {
+      // ignore
+    }
+    try {
+      return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    } catch {
+      return false;
+    }
+  });
 
   const inputRef = useRef<HTMLInputElement>(null);
   const customBetRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nullspace_sound_enabled', soundEnabled ? 'true' : 'false');
+    } catch {
+      // ignore
+    }
+    setSfxEnabled(soundEnabled);
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nullspace_reduced_motion', reducedMotion ? 'true' : 'false');
+    } catch {
+      // ignore
+    }
+    if (typeof document !== 'undefined') {
+      if (reducedMotion) document.documentElement.dataset.reducedMotion = 'true';
+      else delete document.documentElement.dataset.reducedMotion;
+    }
+  }, [reducedMotion]);
+
+  const [rpOpen, setRpOpen] = useState(false);
+  const [rpMode, setRpMode] = useState<'settings' | 'reality'>('settings');
+  const [rp, setRp] = useState<ResponsiblePlaySettings>(() => {
+    try {
+      const raw = localStorage.getItem(RESPONSIBLE_PLAY_STORAGE_KEY);
+      if (!raw) return DEFAULT_RESPONSIBLE_PLAY;
+      const parsed = JSON.parse(raw);
+      return { ...DEFAULT_RESPONSIBLE_PLAY, ...parsed };
+    } catch {
+      return DEFAULT_RESPONSIBLE_PLAY;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RESPONSIBLE_PLAY_STORAGE_KEY, JSON.stringify(rp));
+    } catch {
+      // ignore
+    }
+  }, [rp]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nullspace_touch_mode', touchMode ? 'true' : 'false');
+    } catch {
+      // ignore
+    }
+    if (typeof document !== 'undefined') {
+      if (touchMode) document.documentElement.dataset.touchMode = 'true';
+      else delete document.documentElement.dataset.touchMode;
+    }
+  }, [touchMode]);
+
+  const openCommandPalette = () => {
+    track('ui.command_palette.opened', { surface: 'casino' });
+    setHelpOpen(false);
+    setHelpDetail(null);
+    setCustomBetOpen(false);
+    setSearchQuery('');
+    setCommandOpen(true);
+    setTimeout(() => inputRef.current?.focus(), 10);
+  };
+
+  const toggleHelp = () => {
+    track('ui.help.toggled', { surface: 'casino' });
+    setCommandOpen(false);
+    setCustomBetOpen(false);
+    setHelpDetail(null);
+    setHelpOpen((prev) => !prev);
+  };
+
+  const openResponsiblePlay = (mode: 'settings' | 'reality' = 'settings') => {
+    setRpMode(mode);
+    setRpOpen(true);
+  };
+
+  const currentPnl = stats.pnlHistory[stats.pnlHistory.length - 1] || 0;
+  const sessionStartMs = rp.sessionStartMs || 0;
+  const sessionMinutes = sessionStartMs > 0 ? Math.floor((Date.now() - sessionStartMs) / 60_000) : 0;
+  const netPnl = sessionStartMs > 0 ? currentPnl - (rp.pnlBaseline || 0) : 0;
+
+  const ensureSessionStarted = () => {
+    if (rp.sessionStartMs) return;
+    const now = Date.now();
+    const baseline = stats.pnlHistory[stats.pnlHistory.length - 1] || 0;
+    setRp((prev) => ({
+      ...prev,
+      sessionStartMs: now,
+      pnlBaseline: baseline,
+      nextRealityCheckMs: prev.realityCheckMinutes > 0 ? now + prev.realityCheckMinutes * 60_000 : 0,
+    }));
+  };
+
+  const setCooldownMinutes = (minutes: number) => {
+    const until = minutes > 0 ? Date.now() + minutes * 60_000 : 0;
+    setRp((prev) => ({ ...prev, cooldownUntilMs: until }));
+  };
+
+  const continueAfterRealityCheck = () => {
+    const nextAt = rp.realityCheckMinutes > 0 ? Date.now() + rp.realityCheckMinutes * 60_000 : 0;
+    setRp((prev) => ({ ...prev, nextRealityCheckMs: nextAt }));
+    setRpOpen(false);
+    setRpMode('settings');
+  };
+
+  const stopPlaying = () => {
+    setRpOpen(false);
+    setRpMode('settings');
+    setPlayMode(null);
+    setRp((prev) => ({ ...prev, sessionStartMs: 0, pnlBaseline: 0, nextRealityCheckMs: 0 }));
+  };
+
+  const safeSetBetAmount = (amount: number) => {
+    if (rp.maxWager > 0 && amount > rp.maxWager) {
+      setGameState((prev) => ({ ...prev, message: `MAX BET: ${rp.maxWager}` }));
+      actions.setBetAmount(rp.maxWager);
+      return;
+    }
+    actions.setBetAmount(amount);
+  };
+
+  const safeDeal = () => {
+    const now = Date.now();
+    const atRoundBoundary = gameState.stage === 'BETTING' || gameState.stage === 'RESULT';
+    if (atRoundBoundary) {
+      ensureSessionStarted();
+
+      const startMs = rp.sessionStartMs || now;
+      const baseline = rp.sessionStartMs ? (rp.pnlBaseline || 0) : currentPnl;
+      const net = currentPnl - baseline;
+
+      const cooldownActive = rp.cooldownUntilMs > 0 && now < rp.cooldownUntilMs;
+      const cooldownRemaining = cooldownActive ? Math.max(1, Math.ceil((rp.cooldownUntilMs - now) / 60_000)) : 0;
+      const lossLimitHit = rp.maxLoss > 0 && net <= -rp.maxLoss;
+      const sessionLimitHit =
+        rp.maxSessionMinutes > 0 && now - startMs >= rp.maxSessionMinutes * 60_000;
+      const realityDue =
+        rp.realityCheckMinutes > 0 && rp.nextRealityCheckMs > 0 && now >= rp.nextRealityCheckMs;
+
+      if (cooldownActive) {
+        track('casino.deal.blocked', { reason: 'cooldown', remainingMinutes: cooldownRemaining, game: gameState.type, mode: playMode });
+        setGameState((prev) => ({ ...prev, message: `COOLDOWN ACTIVE (${cooldownRemaining}m)` }));
+        openResponsiblePlay('settings');
+        return;
+      }
+      if (sessionLimitHit) {
+        track('casino.deal.blocked', { reason: 'session_limit', game: gameState.type, mode: playMode });
+        setGameState((prev) => ({ ...prev, message: 'SESSION LIMIT REACHED' }));
+        openResponsiblePlay('settings');
+        return;
+      }
+      if (lossLimitHit) {
+        track('casino.deal.blocked', { reason: 'loss_limit', game: gameState.type, mode: playMode, netPnl: net });
+        setGameState((prev) => ({ ...prev, message: 'LOSS LIMIT REACHED' }));
+        openResponsiblePlay('settings');
+        return;
+      }
+      if (realityDue) {
+        track('casino.deal.blocked', { reason: 'reality_check', game: gameState.type, mode: playMode });
+        openResponsiblePlay('reality');
+        return;
+      }
+    }
+
+    track('casino.deal', { game: gameState.type, mode: playMode, stage: gameState.stage, bet: gameState.bet });
+    void playSfx('deal');
+    actions.deal();
+  };
+
+  const safeStartGame = (g: GameType) => {
+    track('casino.game.started', { game: g, mode: playMode });
+    actions.startGame(g);
+  };
+
+  const safeActions = {
+    ...actions,
+    startGame: safeStartGame,
+    deal: safeDeal,
+    setBetAmount: safeSetBetAmount,
+  };
+
+  useEffect(() => {
+    if (!playMode) return;
+    if (rp.realityCheckMinutes <= 0) return;
+    if (rp.sessionStartMs <= 0 || rp.nextRealityCheckMs <= 0) return;
+    if (rpOpen) return;
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      if (rp.nextRealityCheckMs > 0 && now >= rp.nextRealityCheckMs) {
+        if (gameState.stage !== 'PLAYING') {
+          openResponsiblePlay('reality');
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [gameState.stage, playMode, rp.nextRealityCheckMs, rp.realityCheckMinutes, rp.sessionStartMs, rpOpen]);
 
   // Keyboard
   useKeyboardControls({
@@ -41,10 +295,10 @@ export default function CasinoApp() {
       uiActions: {
           setCommandOpen, setCustomBetOpen, setHelpOpen, setHelpDetail, setSearchQuery,
           setCustomBetString, setNumberInputString,
-          startGame: actions.startGame,
-          setBetAmount: actions.setBetAmount
+          startGame: safeActions.startGame,
+          setBetAmount: safeActions.setBetAmount
       },
-      gameActions: { ...actions, setGameState },
+      gameActions: { ...safeActions, setGameState },
       phase,
       playMode,
       isRegistered,
@@ -68,7 +322,7 @@ export default function CasinoApp() {
   };
   const handleCustomBetEnter = () => {
       const val = parseInt(customBetString);
-      if (!isNaN(val) && val > 0) actions.setBetAmount(val);
+      if (!isNaN(val) && val > 0) safeActions.setBetAmount(val);
       setCustomBetOpen(false); setCustomBetString("");
   };
   const handleNumberInputEnter = () => {
@@ -166,14 +420,50 @@ export default function CasinoApp() {
            focusMode={focusMode}
            setFocusMode={setFocusMode}
            showTimer={playMode === 'FREEROLL'}
+           onToggleHelp={toggleHelp}
+           touchMode={touchMode}
+           onToggleTouchMode={() => setTouchMode((v) => !v)}
+           soundEnabled={soundEnabled}
+           onToggleSound={() => setSoundEnabled((v) => !v)}
+           reducedMotion={reducedMotion}
+           onToggleReducedMotion={() => setReducedMotion((v) => !v)}
        />
 
-       <div className="border-b border-gray-800 bg-terminal-black/90 backdrop-blur px-4 py-2 flex items-center justify-center">
-           <PlaySwapStakeTabs />
+       <div className="border-b border-gray-800 bg-terminal-black/90 backdrop-blur px-2 sm:px-4 py-2 flex items-center gap-2">
+           <button
+               type="button"
+               onClick={openCommandPalette}
+               className="h-11 px-3 rounded border border-gray-800 text-gray-300 text-[10px] tracking-widest uppercase hover:border-gray-600 hover:text-white flex items-center justify-center"
+           >
+               Games
+           </button>
+           <button
+               type="button"
+               onClick={() => openResponsiblePlay('settings')}
+               className="h-11 px-3 rounded border border-gray-800 text-gray-300 text-[10px] tracking-widest uppercase hover:border-gray-600 hover:text-white flex items-center justify-center"
+           >
+               Safety
+           </button>
+           <div className="flex-1 flex justify-center">
+               <PlaySwapStakeTabs />
+           </div>
+           <div className="hidden sm:flex items-center">
+               <WalletPill rng={walletRng} vusdt={walletVusdt} pubkeyHex={walletPublicKeyHex} />
+           </div>
+           <button
+               type="button"
+               onClick={toggleHelp}
+               className="h-11 px-3 rounded border border-gray-800 text-gray-300 text-[10px] tracking-widest uppercase hover:border-gray-600 hover:text-white flex items-center justify-center sm:hidden"
+           >
+               Help
+           </button>
        </div>
 
        <div className="flex flex-1 overflow-hidden relative">
           <main className={`flex-1 flex flex-col relative bg-terminal-black p-4 overflow-y-auto ${gameState.type !== GameType.NONE ? 'pb-20 md:pb-4' : ''}`}>
+             <div className="mb-4 sm:hidden">
+                 <WalletPill rng={walletRng} vusdt={walletVusdt} pubkeyHex={walletPublicKeyHex} className="w-full" />
+             </div>
              {playMode === 'CASH' && (
                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border border-gray-800 rounded bg-gray-900/30 px-3 py-2">
                      <div className="text-[10px] text-gray-500 tracking-widest">
@@ -207,9 +497,11 @@ export default function CasinoApp() {
                   gameState={gameState}
                   deck={deck}
                   numberInput={numberInputString}
-                  onToggleHold={actions.toggleHold}
+                  onToggleHold={safeActions.toggleHold}
                   aiAdvice={aiAdvice}
-                  actions={{ ...actions, setGameState }}
+                  actions={{ ...safeActions, setGameState }}
+                  onOpenCommandPalette={openCommandPalette}
+                  reducedMotion={reducedMotion}
                />
              </ErrorBoundary>
           </main>
@@ -235,11 +527,15 @@ export default function CasinoApp() {
             onSearchChange={setSearchQuery}
             sortedGames={SORTED_GAMES}
             onSelectGame={(g) => {
-                actions.startGame(g as GameType);
+                safeActions.startGame(g as GameType);
                 setCommandOpen(false);
                 setSearchQuery("");
             }}
             inputRef={inputRef}
+            onClose={() => {
+                setCommandOpen(false);
+                setSearchQuery("");
+            }}
        />
 
        <CustomBetOverlay
@@ -256,6 +552,25 @@ export default function CasinoApp() {
            }}
            gameType={gameState.type}
            detail={helpDetail}
+       />
+
+       <ResponsiblePlayOverlay
+           isOpen={rpOpen}
+           mode={rpMode}
+           onClose={() => {
+               if (rpMode === 'reality') continueAfterRealityCheck();
+               else setRpOpen(false);
+           }}
+           settings={rp}
+           onChange={setRp}
+           summary={{ sessionMinutes, netPnl, chips: stats.chips }}
+           onContinue={continueAfterRealityCheck}
+           onCooldown={(minutes) => {
+               setCooldownMinutes(minutes);
+               setRpOpen(false);
+               setRpMode('settings');
+           }}
+           onStop={stopPlaying}
        />
     </div>
   );

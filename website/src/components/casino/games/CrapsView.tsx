@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { GameState } from '../../../types';
 import { DiceRender } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
+import { GameControlBar } from '../GameControlBar';
 import { calculateCrapsExposure } from '../../../utils/gameUtils';
 
 export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ gameState, actions }) => {
@@ -43,6 +44,7 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
     }), [gameState.crapsBets]);
 
     const betTypes = useMemo(() => new Set(gameState.crapsBets.map((b) => b.type)), [gameState.crapsBets]);
+    const closeInput = () => actions?.setGameState?.((prev: any) => ({ ...prev, crapsInputMode: 'NONE' }));
 
     return (
         <>
@@ -291,7 +293,7 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
             </div>
 
             {/* CONTROLS */}
-            <div className="absolute bottom-8 left-0 right-0 h-16 bg-terminal-black/90 border-t-2 border-gray-700 flex items-center justify-start md:justify-center gap-2 p-2 z-40 overflow-x-auto">
+            <GameControlBar>
 	                    <div className="flex gap-2">
 	                        <button
 	                            type="button"
@@ -302,8 +304,8 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 	                                    : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">P</span>
-	                            <span className="text-[10px] text-gray-500">{gameState.crapsPoint ? 'COME' : 'PASS'}</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">P</span>
+	                            <span className="ns-action text-[10px] text-gray-500">{gameState.crapsPoint ? 'COME' : 'PASS'}</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -314,8 +316,8 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 	                                    : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">D</span>
-	                            <span className="text-[10px] text-gray-500">DONT</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">D</span>
+	                            <span className="ns-action text-[10px] text-gray-500">DONT</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -324,8 +326,8 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 	                                betTypes.has('FIELD') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">F</span>
-	                            <span className="text-[10px] text-gray-500">FIELD</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">F</span>
+	                            <span className="ns-action text-[10px] text-gray-500">FIELD</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -334,16 +336,16 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 	                                betTypes.has('FIRE') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">B</span>
-	                            <span className="text-[10px] text-gray-500">FIRE</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">B</span>
+	                            <span className="ns-action text-[10px] text-gray-500">FIRE</span>
 	                        </button>
 	                        <button
 	                            type="button"
 	                            onClick={() => actions?.addCrapsOdds?.()}
 	                            className="flex flex-col items-center border border-terminal-dim rounded bg-black/50 px-3 py-1"
 	                        >
-	                            <span className="text-white font-bold text-sm">O</span>
-	                            <span className="text-[10px] text-gray-500">ODDS</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">O</span>
+	                            <span className="ns-action text-[10px] text-gray-500">ODDS</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -354,8 +356,8 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 	                                    : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">H</span>
-	                            <span className="text-[10px] text-gray-500">HARD</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">H</span>
+	                            <span className="ns-action text-[10px] text-gray-500">HARD</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -366,8 +368,8 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 	                                    : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">I</span>
-	                            <span className="text-[10px] text-gray-500">BUY</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">I</span>
+	                            <span className="ns-action text-[10px] text-gray-500">BUY</span>
 	                        </button>
 	                    </div>
 	                    <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -381,8 +383,8 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 	                                    : 'border-gray-700'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">Y</span>
-	                            <span className="text-[10px] text-gray-500">YES</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">Y</span>
+	                            <span className="ns-action text-[10px] text-gray-500">YES</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -393,8 +395,8 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 	                                    : 'border-gray-700'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">N</span>
-	                            <span className="text-[10px] text-gray-500">NO</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">N</span>
+	                            <span className="ns-action text-[10px] text-gray-500">NO</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -405,8 +407,8 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 	                                    : 'border-gray-700'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">X</span>
-	                            <span className="text-[10px] text-gray-500">NEXT</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">X</span>
+	                            <span className="ns-action text-[10px] text-gray-500">NEXT</span>
 	                        </button>
 	                    </div>
 	                    <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -420,8 +422,8 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 		                                        atsSelected.small ? 'border-terminal-green bg-terminal-green/10' : 'border-gray-700'
 		                                    }`}
 		                                >
-		                                    <span className="text-white font-bold text-sm">S</span>
-		                                    <span className="text-[10px] text-gray-500">ATS S</span>
+		                                    <span className="ns-keycap text-white font-bold text-sm">S</span>
+		                                    <span className="ns-action text-[10px] text-gray-500">ATS S</span>
 		                                </button>
 		                                <button
 		                                    type="button"
@@ -430,8 +432,8 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 		                                        atsSelected.tall ? 'border-terminal-green bg-terminal-green/10' : 'border-gray-700'
 		                                    }`}
 		                                >
-		                                    <span className="text-white font-bold text-sm">L</span>
-		                                    <span className="text-[10px] text-gray-500">ATS T</span>
+		                                    <span className="ns-keycap text-white font-bold text-sm">L</span>
+		                                    <span className="ns-action text-[10px] text-gray-500">ATS T</span>
 		                                </button>
 		                                <button
 		                                    type="button"
@@ -440,8 +442,8 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 		                                        atsSelected.all ? 'border-terminal-green bg-terminal-green/10' : 'border-gray-700'
 		                                    }`}
 		                                >
-		                                    <span className="text-white font-bold text-sm">A</span>
-		                                    <span className="text-[10px] text-gray-500">ATS A</span>
+		                                    <span className="ns-keycap text-white font-bold text-sm">A</span>
+		                                    <span className="ns-action text-[10px] text-gray-500">ATS A</span>
 		                                </button>
 		                            </div>
 		                            <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -453,16 +455,16 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 	                            onClick={actions?.rebetCraps}
 	                            className="flex flex-col items-center border border-gray-700 rounded bg-black/50 px-3 py-1"
 	                        >
-	                            <span className="text-gray-500 font-bold text-sm">T</span>
-	                            <span className="text-[10px] text-gray-600">REBET</span>
+	                            <span className="ns-keycap text-gray-500 font-bold text-sm">T</span>
+	                            <span className="ns-action text-[10px] text-gray-600">REBET</span>
 	                        </button>
 	                        <button
 	                            type="button"
 	                            onClick={actions?.undoCrapsBet}
 	                            className="flex flex-col items-center border border-terminal-accent/50 rounded bg-black/50 px-3 py-1"
 	                        >
-	                            <span className="text-terminal-accent font-bold text-sm">U</span>
-	                            <span className="text-[10px] text-gray-500">UNDO</span>
+	                            <span className="ns-keycap text-terminal-accent font-bold text-sm">U</span>
+	                            <span className="ns-action text-[10px] text-gray-500">UNDO</span>
 	                        </button>
 	                    </div>
 	                     <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -472,16 +474,16 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 	                            onClick={actions?.toggleShield}
 	                            className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${gameState.activeModifiers.shield ? 'border-cyan-400 text-cyan-400' : 'border-gray-700 text-gray-500'}`}
 	                         >
-	                            <span className="font-bold text-sm">Z</span>
-	                            <span className="text-[10px]">SHIELD</span>
+	                            <span className="ns-keycap font-bold text-sm">Z</span>
+	                            <span className="ns-action text-[10px]">SHIELD</span>
 	                        </button>
 	                         <button
 	                            type="button"
 	                            onClick={actions?.toggleDouble}
 	                            className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${gameState.activeModifiers.double ? 'border-purple-400 text-purple-400' : 'border-gray-700 text-gray-500'}`}
 	                         >
-	                            <span className="font-bold text-sm">⇧X</span>
-	                            <span className="text-[10px]">DOUBLE</span>
+	                            <span className="ns-keycap font-bold text-sm">⇧X</span>
+	                            <span className="ns-action text-[10px]">DOUBLE</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -492,8 +494,8 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 	                                    : 'border-gray-700 text-gray-500'
 	                            }`}
 	                        >
-	                            <span className="font-bold text-sm">G</span>
-	                            <span className="text-[10px]">SUPER</span>
+	                            <span className="ns-keycap font-bold text-sm">G</span>
+	                            <span className="ns-action text-[10px]">SUPER</span>
 	                        </button>
 	                    </div>
 	                    <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -502,15 +504,15 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
 	                        onClick={actions?.deal}
 	                        className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1 w-24"
 	                    >
-	                        <span className="text-terminal-green font-bold text-sm">SPACE</span>
-	                        <span className="text-[10px] text-gray-500">ROLL</span>
+	                        <span className="ns-keycap text-terminal-green font-bold text-sm">SPACE</span>
+	                        <span className="ns-action text-[10px] text-gray-500">ROLL</span>
 	                    </button>
-	            </div>
+	            </GameControlBar>
 
             {/* MODAL */}
             {gameState.crapsInputMode !== 'NONE' && (
-                     <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
-                         <div className="bg-terminal-black border border-terminal-green p-6 rounded-lg shadow-xl flex flex-col items-center gap-4">
+                     <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={closeInput}>
+                         <div className="bg-terminal-black border border-terminal-green p-4 sm:p-6 rounded-lg shadow-xl flex flex-col items-center gap-4 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
                              <div className="text-sm tracking-widest text-gray-400 uppercase">SELECT {gameState.crapsInputMode} NUMBER</div>
                              <div className="grid grid-cols-4 gap-3">
                                  {(() => {
@@ -552,7 +554,12 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
                                      return numbersToRender.map(item => {
                                          if (item.num === 7) {
                                              return (
-                                                <div key={item.num} className="flex flex-col items-center gap-1">
+                                                <button
+                                                    key={item.num}
+                                                    type="button"
+                                                    onClick={() => actions?.placeCrapsBet?.(gameState.crapsInputMode, item.num)}
+                                                    className="flex flex-col items-center gap-1"
+                                                >
                                                     <div className="w-12 h-12 flex items-center justify-center border border-terminal-accent rounded bg-gray-900 text-terminal-accent font-bold text-lg relative">
                                                         7
                                                         <span className="absolute bottom-0.5 text-[8px] text-terminal-gold">{item.payout}</span>
@@ -560,12 +567,17 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
                                                     <div className="text-[10px] text-gray-500 bg-gray-800 px-1 rounded uppercase">
                                                         KEY 7
                                                     </div>
-                                                </div>
+                                                </button>
                                              );
                                          }
 
                                          return (
-                                            <div key={item.num} className="flex flex-col items-center gap-1">
+                                            <button
+                                                key={item.num}
+                                                type="button"
+                                                onClick={() => actions?.placeCrapsBet?.(gameState.crapsInputMode, item.num)}
+                                                className="flex flex-col items-center gap-1"
+                                            >
                                                 <div className="w-12 h-12 flex items-center justify-center border border-gray-700 rounded bg-gray-900 text-white font-bold text-lg relative">
                                                     {item.num}
                                                     {item.payout && <span className="absolute bottom-0.5 text-[8px] text-terminal-gold">({item.payout})</span>}
@@ -573,12 +585,12 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any }>(({ g
                                                 <div className="text-[10px] text-gray-500 bg-gray-800 px-1 rounded uppercase">
                                                     KEY {item.label}
                                                 </div>
-                                            </div>
+                                            </button>
                                          );
                                      });
                                  })()}
                              </div>
-                             <div className="text-xs text-gray-500 mt-2">[ESC] CANCEL</div>
+                             <div className="text-xs text-gray-500 mt-2 text-center">Tap outside to cancel. Keyboard: [ESC] CANCEL</div>
                          </div>
                      </div>
                 )}

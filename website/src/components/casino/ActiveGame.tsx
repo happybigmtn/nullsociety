@@ -20,24 +20,82 @@ interface ActiveGameProps {
   onToggleHold: (index: number) => void;
   aiAdvice: string | null;
   actions: any;
+  onOpenCommandPalette?: () => void;
+  reducedMotion?: boolean;
 }
 
-export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberInput, onToggleHold, aiAdvice, actions }) => {
+export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberInput, onToggleHold, aiAdvice, actions, onOpenCommandPalette, reducedMotion = false }) => {
   if (gameState.type === GameType.NONE) {
+     const handleOpen = () => onOpenCommandPalette?.();
      return (
          <div className="flex-1 flex flex-col items-center justify-center gap-4">
-             <div className="text-[12rem] font-bold text-terminal-green leading-none animate-pulse cursor-pointer select-none" style={{ textShadow: '0 0 40px rgba(0, 255, 136, 0.5), 0 0 80px rgba(0, 255, 136, 0.3)' }}>
-                 /
-             </div>
-             <div className="text-sm text-gray-600 tracking-[0.3em] uppercase">
-                 press to play
-             </div>
+             <button
+                 type="button"
+                 onClick={handleOpen}
+                 onKeyDown={(e) => {
+                     if (e.key === 'Enter' || e.key === ' ') {
+                         e.preventDefault();
+                         handleOpen();
+                     }
+                 }}
+                 className="flex flex-col items-center justify-center gap-4 focus:outline-none focus:ring-2 focus:ring-terminal-green/40 rounded"
+             >
+                 <div
+                     className="text-[12rem] font-bold text-terminal-green leading-none animate-pulse cursor-pointer select-none"
+                     style={{ textShadow: '0 0 40px rgba(0, 255, 136, 0.5), 0 0 80px rgba(0, 255, 136, 0.3)' }}
+                 >
+                     /
+                 </div>
+                 <div className="text-sm text-gray-600 tracking-[0.3em] uppercase">press to play</div>
+             </button>
          </div>
      );
   }
 
+  const primaryActionLabel = () => {
+    if (gameState.type === GameType.ROULETTE) return 'SPIN';
+    if (gameState.type === GameType.SIC_BO || gameState.type === GameType.CRAPS) return 'ROLL';
+    if (gameState.type === GameType.VIDEO_POKER) return gameState.stage === 'PLAYING' ? 'DRAW' : 'DEAL';
+    return 'DEAL';
+  };
+
+  const nextActionLabel = () => {
+    const primary = primaryActionLabel();
+    const msg = (gameState.message ?? '').toString().toUpperCase();
+
+    if (gameState.stage === 'BETTING') return `PLACE BETS → ${primary}`;
+    if (gameState.stage === 'RESULT') return `NEXT ROUND → ${primary}`;
+
+    // PLAYING
+    if (gameState.type === GameType.BLACKJACK) {
+      if (msg.includes('INSURANCE')) return 'INSURANCE: YES / NO';
+      return 'HIT / STAND / DOUBLE / SPLIT';
+    }
+    if (gameState.type === GameType.HILO) return 'HIGHER / LOWER / CASHOUT';
+    if (gameState.type === GameType.VIDEO_POKER) return 'HOLD CARDS → DRAW';
+    if (gameState.type === GameType.THREE_CARD) return msg.includes('REVEAL') ? 'REVEAL' : 'PLAY OR FOLD';
+    if (gameState.type === GameType.ULTIMATE_HOLDEM) {
+      if (msg.includes('REVEAL')) return 'REVEAL';
+      if (gameState.communityCards.length === 0) return 'CHECK or BET 3X/4X';
+      if (gameState.communityCards.length === 3) return 'CHECK or BET 2X';
+      if (gameState.communityCards.length === 5) return 'FOLD or BET 1X';
+      return 'CHOOSE ACTION';
+    }
+    if (gameState.type === GameType.CASINO_WAR && msg.includes('WAR')) return 'WAR OR SURRENDER';
+    if (gameState.type === GameType.ROULETTE || gameState.type === GameType.SIC_BO || gameState.type === GameType.CRAPS)
+      return `TAP ${primary}`;
+
+    return 'CHOOSE ACTION';
+  };
+
   return (
     <>
+         <div className="absolute top-8 left-1/2 -translate-x-1/2 z-30 pointer-events-none select-none">
+             <div className="px-3 py-1 rounded border border-gray-800 bg-black/60 text-[10px] tracking-widest uppercase text-gray-300">
+                 NEXT: <span className="text-white">{nextActionLabel()}</span>
+             </div>
+         </div>
+
          {gameState.superMode?.isActive && (
              <div className="absolute top-4 left-4 max-w-sm bg-terminal-black/90 border border-terminal-gold/50 p-3 rounded shadow-lg z-40 text-xs">
                  <div className="font-bold text-terminal-gold mb-1">SUPER MODE</div>
@@ -62,6 +120,7 @@ export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberI
 	            amount={gameState.lastResult} 
 	            show={gameState.stage === 'RESULT' && gameState.lastResult > 0} 
 	            durationMs={gameState.type === GameType.BLACKJACK ? 1000 : undefined}
+              reducedMotion={reducedMotion}
 	         />
 
          {gameState.type === GameType.BLACKJACK && <BlackjackView gameState={gameState} actions={actions} />}
@@ -69,9 +128,9 @@ export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberI
          {gameState.type === GameType.BACCARAT && <BaccaratView gameState={gameState} actions={actions} />}
          {gameState.type === GameType.ROULETTE && <RouletteView gameState={gameState} numberInput={numberInput} actions={actions} />}
          {gameState.type === GameType.SIC_BO && <SicBoView gameState={gameState} numberInput={numberInput} actions={actions} />}
-         {gameState.type === GameType.HILO && <HiLoView gameState={gameState} deck={deck} />}
+         {gameState.type === GameType.HILO && <HiLoView gameState={gameState} deck={deck} actions={actions} />}
          {gameState.type === GameType.VIDEO_POKER && (
-             <VideoPokerView gameState={gameState} onToggleHold={onToggleHold} />
+             <VideoPokerView gameState={gameState} onToggleHold={onToggleHold} actions={actions} />
          )}
          {gameState.type === GameType.THREE_CARD && <ThreeCardPokerView gameState={gameState} actions={actions} />}
          {gameState.type === GameType.ULTIMATE_HOLDEM && <UltimateHoldemView gameState={gameState} actions={actions} />}

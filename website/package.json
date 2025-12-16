@@ -10,7 +10,8 @@
     "build:wasm-test": "cd wasm && wasm-pack build --target web --out-dir pkg -- --features testing",
     "copy:data": "mkdir -p public && cp ../economy_log.json public/ || echo 'No economy log found, skipping copy'",
     "pretest": "cd .. && cargo build --release --bin nullspace-simulator",
-    "test": "npm run build:wasm-test && node --test test/*.test.js"
+    "test": "npm run build:wasm-test && node --test test/*.test.js",
+    "smoke": "node scripts/smoke-playwright.mjs"
   },
   "keywords": [],
   "author": "",

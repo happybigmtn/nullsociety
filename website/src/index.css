@@ -13,6 +13,7 @@
     --text-5xl: 2.25rem;
     --text-6xl: 2.5rem;
     --text-7xl: 3rem;
+    --bottom-nav-h: 56px;
   }
 }
 
@@ -20,6 +21,31 @@ body {
   background-color: #050505;
   color: #e5e5e5;
   font-family: 'JetBrains Mono', monospace;
+}
+
+@media (max-width: 639px) {
+  .pb-bottom-nav {
+    padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom));
+  }
+}
+
+:root[data-touch-mode="true"] .ns-keycap {
+  display: none;
+}
+
+:root[data-touch-mode="true"] .ns-action {
+  color: #e5e5e5;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  line-height: 1;
+}
+
+.ns-controlbar button {
+  min-height: 44px;
+  min-width: 44px;
+  justify-content: center;
+  touch-action: manipulation;
 }
 
 /* Custom scrollbar */
@@ -220,10 +246,19 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-card-deal,
-  .animate-dice-roll,
-  .animate-roulette-spin,
-  .card-shimmer {
+  *,
+  *::before,
+  *::after {
     animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
+}
+
+:root[data-reduced-motion="true"] *,
+:root[data-reduced-motion="true"] *::before,
+:root[data-reduced-motion="true"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
 }

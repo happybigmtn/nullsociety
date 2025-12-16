@@ -3,6 +3,7 @@ import React, { useMemo, useCallback, useEffect, useState } from 'react';
 import { GameState, RouletteBet } from '../../../types';
 import { getRouletteColor, calculateRouletteExposure } from '../../../utils/gameUtils';
 import { MobileDrawer } from '../MobileDrawer';
+import { GameControlBar } from '../GameControlBar';
 
 export const RouletteView = React.memo<{ gameState: GameState; numberInput?: string; actions: any }>(({ gameState, numberInput = "", actions }) => {
     const lastNum = useMemo(() =>
@@ -11,6 +12,47 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
     );
     const [spinKey, setSpinKey] = useState(0);
     const betTypes = useMemo(() => new Set(gameState.rouletteBets.map((b) => b.type)), [gameState.rouletteBets]);
+
+    const insideBet = useMemo(() => {
+        const mode = gameState.rouletteInputMode;
+        if (mode === 'NONE') return null;
+
+        let betType: Parameters<typeof actions.placeRouletteBet>[0] | null = null;
+        let label = '';
+        const targets: number[] = [];
+
+        if (mode === 'STRAIGHT') {
+            betType = 'STRAIGHT'; label = 'STRAIGHT (0–36)';
+            for (let n = 0; n <= 36; n++) targets.push(n);
+        } else if (mode === 'SPLIT_H') {
+            betType = 'SPLIT_H'; label = 'SPLIT H (left #)';
+            for (let n = 1; n <= 35; n++) if (n % 3 !== 0) targets.push(n);
+        } else if (mode === 'SPLIT_V') {
+            betType = 'SPLIT_V'; label = 'SPLIT V (top #)';
+            for (let n = 1; n <= 33; n++) targets.push(n);
+        } else if (mode === 'STREET') {
+            betType = 'STREET'; label = 'STREET (row start)';
+            for (let n = 1; n <= 34; n += 3) targets.push(n);
+        } else if (mode === 'CORNER') {
+            betType = 'CORNER'; label = 'CORNER (top-left)';
+            for (let n = 1; n <= 32; n++) if (n % 3 !== 0) targets.push(n);
+        } else if (mode === 'SIX_LINE') {
+            betType = 'SIX_LINE'; label = 'SIX LINE (row start)';
+            for (let n = 1; n <= 31; n += 3) targets.push(n);
+        }
+
+        if (!betType) return null;
+        return { betType, targets, label };
+    }, [actions.placeRouletteBet, gameState.rouletteInputMode]);
+
+    const closeInsideBet = useCallback(() => {
+        actions?.setGameState?.((prev: any) => ({ ...prev, rouletteInputMode: 'NONE' }));
+    }, [actions]);
+
+    const placeInsideBet = useCallback((target: number) => {
+        if (!insideBet?.betType) return;
+        actions?.placeRouletteBet?.(insideBet.betType, target);
+    }, [actions, insideBet?.betType]);
 
     useEffect(() => {
         if (lastNum !== null) setSpinKey((k) => k + 1);
@@ -165,17 +207,17 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
             </div>
 
             {/* CONTROLS */}
-            <div className="absolute bottom-8 left-0 right-0 h-16 bg-terminal-black/90 border-t-2 border-gray-700 flex items-center justify-start md:justify-center gap-2 p-2 z-40 overflow-x-auto">
-	                    <div className="flex gap-2">
-	                        <button
-	                            type="button"
-	                            onClick={() => actions?.placeRouletteBet?.('RED')}
+            <GameControlBar>
+                    <div className="flex gap-2">
+	                    <button
+	                        type="button"
+	                        onClick={() => actions?.placeRouletteBet?.('RED')}
 	                            className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${
 	                                betTypes.has('RED') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-accent'
 	                            }`}
 	                        >
-	                            <span className="text-terminal-accent font-bold text-sm">R</span>
-	                            <span className="text-[10px] text-gray-500">RED</span>
+	                            <span className="ns-keycap text-terminal-accent font-bold text-sm">R</span>
+	                            <span className="ns-action text-[10px] text-gray-500">RED</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -184,8 +226,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                betTypes.has('BLACK') ? 'border-terminal-green bg-terminal-green/10' : 'border-gray-500'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">B</span>
-	                            <span className="text-[10px] text-gray-500">BLACK</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">B</span>
+	                            <span className="ns-action text-[10px] text-gray-500">BLACK</span>
 	                        </button>
 	                    </div>
 	                    <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -197,8 +239,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                betTypes.has('EVEN') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
 	                            }`}
 	                         >
-	                            <span className="text-white font-bold text-sm">E</span>
-	                            <span className="text-[10px] text-gray-500">EVEN</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">E</span>
+	                            <span className="ns-action text-[10px] text-gray-500">EVEN</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -207,8 +249,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                betTypes.has('ODD') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">O</span>
-	                            <span className="text-[10px] text-gray-500">ODD</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">O</span>
+	                            <span className="ns-action text-[10px] text-gray-500">ODD</span>
 	                        </button>
 	                    </div>
 	                    <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -220,8 +262,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                betTypes.has('LOW') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
 	                            }`}
 	                         >
-	                            <span className="text-white font-bold text-sm">L</span>
-	                            <span className="text-[10px] text-gray-500">1-18</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">L</span>
+	                            <span className="ns-action text-[10px] text-gray-500">1-18</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -230,8 +272,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                betTypes.has('HIGH') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">H</span>
-	                            <span className="text-[10px] text-gray-500">19-36</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">H</span>
+	                            <span className="ns-action text-[10px] text-gray-500">19-36</span>
 	                        </button>
 	                    </div>
 	                    <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -243,8 +285,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                betTypes.has('DOZEN_1') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">1</span>
-	                            <span className="text-[10px] text-gray-500">1-12</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">1</span>
+	                            <span className="ns-action text-[10px] text-gray-500">1-12</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -253,8 +295,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                betTypes.has('DOZEN_2') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">2</span>
-	                            <span className="text-[10px] text-gray-500">13-24</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">2</span>
+	                            <span className="ns-action text-[10px] text-gray-500">13-24</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -263,8 +305,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                betTypes.has('DOZEN_3') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">3</span>
-	                            <span className="text-[10px] text-gray-500">25-36</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">3</span>
+	                            <span className="ns-action text-[10px] text-gray-500">25-36</span>
 	                        </button>
 	                    </div>
 	                    <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -276,8 +318,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                betTypes.has('COL_1') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">A</span>
-	                            <span className="text-[10px] text-gray-500">COL 1</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">A</span>
+	                            <span className="ns-action text-[10px] text-gray-500">COL 1</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -286,8 +328,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                betTypes.has('COL_2') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">D</span>
-	                            <span className="text-[10px] text-gray-500">COL 2</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">D</span>
+	                            <span className="ns-action text-[10px] text-gray-500">COL 2</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -296,8 +338,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                betTypes.has('COL_3') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">F</span>
-	                            <span className="text-[10px] text-gray-500">COL 3</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">F</span>
+	                            <span className="ns-action text-[10px] text-gray-500">COL 3</span>
 	                        </button>
 	                    </div>
 	                     <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -309,8 +351,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                betTypes.has('ZERO') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className={`${betTypes.has('ZERO') ? 'text-terminal-green' : 'text-white'} font-bold text-sm`}>0</span>
-	                            <span className="text-[10px] text-gray-500">ZERO</span>
+	                            <span className={`${betTypes.has('ZERO') ? 'text-terminal-green' : 'text-white'} ns-keycap font-bold text-sm`}>0</span>
+	                            <span className="ns-action text-[10px] text-gray-500">ZERO</span>
 	                        </button>
 	                         <button
 	                            type="button"
@@ -319,10 +361,10 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                gameState.rouletteInputMode === 'STRAIGHT' || betTypes.has('STRAIGHT')
 	                                    ? 'border-terminal-green bg-terminal-green/10'
 	                                    : 'border-terminal-dim'
-	                            }`}
+	                         }`}
 	                         >
-	                            <span className="text-white font-bold text-sm">N</span>
-	                            <span className="text-[10px] text-gray-500">STRAIGHT</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">N</span>
+	                            <span className="ns-action text-[10px] text-gray-500">STRAIGHT</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -333,8 +375,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                    : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">S</span>
-	                            <span className="text-[10px] text-gray-500">SPLIT</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">S</span>
+	                            <span className="ns-action text-[10px] text-gray-500">SPLIT</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -345,8 +387,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                    : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">V</span>
-	                            <span className="text-[10px] text-gray-500">VSPLIT</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">V</span>
+	                            <span className="ns-action text-[10px] text-gray-500">VSPLIT</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -357,8 +399,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                    : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">W</span>
-	                            <span className="text-[10px] text-gray-500">STREET</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">W</span>
+	                            <span className="ns-action text-[10px] text-gray-500">STREET</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -369,8 +411,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                    : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">C</span>
-	                            <span className="text-[10px] text-gray-500">CORNER</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">C</span>
+	                            <span className="ns-action text-[10px] text-gray-500">CORNER</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -381,8 +423,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                    : 'border-terminal-dim'
 	                            }`}
 	                        >
-	                            <span className="text-white font-bold text-sm">6</span>
-	                            <span className="text-[10px] text-gray-500">SIX</span>
+	                            <span className="ns-keycap text-white font-bold text-sm">6</span>
+	                            <span className="ns-action text-[10px] text-gray-500">SIX</span>
 	                        </button>
 	                     </div>
 	                    <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -392,16 +434,16 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                            onClick={actions?.rebetRoulette}
 	                            className="flex flex-col items-center border border-gray-700 rounded bg-black/50 px-3 py-1"
 	                        >
-	                            <span className="text-gray-500 font-bold text-sm">T</span>
-	                            <span className="text-[10px] text-gray-600">REBET</span>
+	                            <span className="ns-keycap text-gray-500 font-bold text-sm">T</span>
+	                            <span className="ns-action text-[10px] text-gray-600">REBET</span>
 	                        </button>
 	                        <button
 	                            type="button"
 	                            onClick={actions?.undoRouletteBet}
 	                            className="flex flex-col items-center border border-gray-700 rounded bg-black/50 px-3 py-1"
 	                        >
-	                            <span className="text-gray-500 font-bold text-sm">U</span>
-	                            <span className="text-[10px] text-gray-600">UNDO</span>
+	                            <span className="ns-keycap text-gray-500 font-bold text-sm">U</span>
+	                            <span className="ns-action text-[10px] text-gray-600">UNDO</span>
 	                        </button>
 	                    </div>
 	                    <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -410,8 +452,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                        onClick={actions?.cycleRouletteZeroRule}
 	                        className="flex flex-col items-center border border-gray-700 rounded bg-black/50 px-3 py-1"
 	                    >
-	                        <span className="text-gray-500 font-bold text-sm">P</span>
-	                        <span className="text-[10px] text-gray-600">RULE</span>
+	                        <span className="ns-keycap text-gray-500 font-bold text-sm">P</span>
+	                        <span className="ns-action text-[10px] text-gray-600">RULE</span>
 	                    </button>
 	                    <div className="w-px h-8 bg-gray-800 mx-2"></div>
 	                    <div className="flex gap-2">
@@ -420,16 +462,16 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                            onClick={actions?.toggleShield}
 	                            className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${gameState.activeModifiers.shield ? 'border-cyan-400 text-cyan-400' : 'border-gray-700 text-gray-500'}`}
 	                         >
-	                            <span className="font-bold text-sm">Z</span>
-	                            <span className="text-[10px]">SHIELD</span>
+	                            <span className="ns-keycap font-bold text-sm">Z</span>
+	                            <span className="ns-action text-[10px]">SHIELD</span>
 	                        </button>
 	                         <button
 	                            type="button"
 	                            onClick={actions?.toggleDouble}
 	                            className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${gameState.activeModifiers.double ? 'border-purple-400 text-purple-400' : 'border-gray-700 text-gray-500'}`}
 	                         >
-	                            <span className="font-bold text-sm">X</span>
-	                            <span className="text-[10px]">DOUBLE</span>
+	                            <span className="ns-keycap font-bold text-sm">X</span>
+	                            <span className="ns-action text-[10px]">DOUBLE</span>
 	                        </button>
 	                        <button
 	                            type="button"
@@ -440,8 +482,8 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                                    : 'border-gray-700 text-gray-500'
 	                            }`}
 	                        >
-	                            <span className="font-bold text-sm">G</span>
-	                            <span className="text-[10px]">SUPER</span>
+	                            <span className="ns-keycap font-bold text-sm">G</span>
+	                            <span className="ns-action text-[10px]">SUPER</span>
 	                        </button>
 	                    </div>
 	                    <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -450,29 +492,54 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 	                        onClick={actions?.deal}
 	                        className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1 w-24"
 	                    >
-	                        <span className="text-terminal-green font-bold text-sm">SPACE</span>
-	                        <span className="text-[10px] text-gray-500">SPIN</span>
+	                        <span className="ns-keycap text-terminal-green font-bold text-sm">SPACE</span>
+	                        <span className="ns-action text-[10px] text-gray-500">SPIN</span>
 	                    </button>
-	            </div>
+	            </GameControlBar>
 
             {/* NUM INPUT MODAL */}
             {gameState.rouletteInputMode !== 'NONE' && (
-                 <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
-                     <div className="bg-terminal-black border border-terminal-green p-6 rounded-lg shadow-xl flex flex-col items-center gap-4">
-                         <div className="text-sm tracking-widest text-gray-400 uppercase">
-                             {gameState.rouletteInputMode === 'STRAIGHT' && "TYPE NUMBER (0-36)"}
-                             {gameState.rouletteInputMode === 'SPLIT_H' && "TYPE LEFT NUMBER (1-35, NOT 3N)"}
-                             {gameState.rouletteInputMode === 'SPLIT_V' && "TYPE TOP NUMBER (1-33)"}
-                             {gameState.rouletteInputMode === 'STREET' && "TYPE ROW START (1,4,...,34)"}
-                             {gameState.rouletteInputMode === 'CORNER' && "TYPE TOP-LEFT (1-32, NOT 3N)"}
-                             {gameState.rouletteInputMode === 'SIX_LINE' && "TYPE ROW START (1,4,...,31)"}
+                 <div
+                     className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                     onClick={closeInsideBet}
+                 >
+                     <div
+                         className="bg-terminal-black border border-terminal-green p-4 sm:p-6 rounded-lg shadow-xl flex flex-col items-center gap-4 w-full max-w-lg"
+                         onClick={(e) => e.stopPropagation()}
+                     >
+                         <div className="text-sm tracking-widest text-gray-400 uppercase text-center">
+                             {insideBet?.label ? `TAP A NUMBER — ${insideBet.label}` : 'TAP A NUMBER'}
                          </div>
-                         <div className="text-4xl text-white font-bold font-mono h-12 flex items-center justify-center border-b border-gray-700 w-32">
+
+                         <div className="text-xs text-gray-500 text-center">
+                             Keyboard fallback: type digits → [ENTER] confirm, [ESC] cancel
+                         </div>
+
+                         <div className="text-3xl text-white font-bold font-mono h-12 flex items-center justify-center border-b border-gray-700 w-32">
                              {numberInput}
                              <span className="animate-pulse">_</span>
                          </div>
-                         <div className="text-xs text-gray-500">[ENTER] CONFIRM</div>
-                         <div className="text-xs text-gray-500">[ESC] CANCEL</div>
+
+                         <div className="grid grid-cols-6 sm:grid-cols-8 gap-2 w-full">
+                             {(insideBet?.targets ?? []).map((n) => (
+                                 <button
+                                     key={n}
+                                     type="button"
+                                     onClick={() => placeInsideBet(n)}
+                                     className="h-11 rounded border border-gray-800 bg-gray-900/50 text-white text-sm font-bold hover:border-gray-600"
+                                 >
+                                     {n}
+                                 </button>
+                             ))}
+                         </div>
+
+                         <button
+                             type="button"
+                             onClick={closeInsideBet}
+                             className="h-10 px-4 rounded border border-gray-700 text-gray-300 text-[10px] tracking-widest uppercase hover:border-gray-500"
+                         >
+                             Close
+                         </button>
                      </div>
                  </div>
             )}

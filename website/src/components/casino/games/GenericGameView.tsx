@@ -2,6 +2,8 @@
 import React, { useMemo } from 'react';
 import { GameState, GameType } from '../../../types';
 import { Hand } from '../GameComponents';
+import { MobileDrawer } from '../MobileDrawer';
+import { GameControlBar } from '../GameControlBar';
 import { getVisibleHandValue } from '../../../utils/gameUtils';
 
 export const GenericGameView = React.memo<{ gameState: GameState; actions: any }>(({ gameState, actions }) => {
@@ -15,6 +17,18 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any }
         <>
             <div className="flex-1 w-full flex flex-col items-center justify-center gap-8 relative z-10 pb-20">
                 <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">{gameTitle}</h1>
+                <div className="absolute top-2 right-2 z-40">
+                    <MobileDrawer label="INFO" title={gameTitle}>
+                        <div className="space-y-3">
+                            <div className="text-[11px] text-gray-300 leading-relaxed">
+                                Higher card wins. On a tie you can choose WAR (risk more for a second draw) or SURRENDER (take a smaller loss).
+                            </div>
+                            <div className="text-[10px] text-gray-600 leading-relaxed">
+                                Controls: DEAL (Space). If tie: WAR (W) or SURRENDER (S). Optional TIE side bet (T).
+                            </div>
+                        </div>
+                    </MobileDrawer>
+                </div>
                 {/* Dealer/Opponent */}
                 <div className="min-h-[120px] flex items-center justify-center opacity-75">
                     {gameState.dealerCards.length > 0 ? (
@@ -58,8 +72,36 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any }
                 </div>
             </div>
 
+            {isWarState ? (
+                <div className="absolute inset-0 z-[60] flex items-center justify-center px-4">
+                    <div className="w-full max-w-md border border-terminal-gold/40 bg-terminal-black/90 backdrop-blur rounded-lg p-4 shadow-2xl">
+                        <div className="text-[10px] text-gray-500 tracking-widest uppercase">Tie</div>
+                        <div className="mt-1 text-lg font-bold text-terminal-gold tracking-widest">WAR OR SURRENDER?</div>
+                        <div className="mt-4 grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                onClick={actions?.casinoWarGoToWar}
+                                className="h-12 rounded border border-terminal-green/60 bg-terminal-green/10 text-terminal-green font-bold tracking-widest uppercase hover:bg-terminal-green/20"
+                            >
+                                WAR
+                            </button>
+                            <button
+                                type="button"
+                                onClick={actions?.casinoWarSurrender}
+                                className="h-12 rounded border border-terminal-accent/60 bg-terminal-accent/10 text-terminal-accent font-bold tracking-widest uppercase hover:bg-terminal-accent/20"
+                            >
+                                SURRENDER
+                            </button>
+                        </div>
+                        <div className="mt-3 text-[10px] text-gray-600 leading-relaxed">
+                            War usually requires an additional wager; surrender ends the hand with a smaller loss.
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
             {/* CONTROLS */}
-             <div className="absolute bottom-8 left-0 right-0 h-16 bg-terminal-black/90 border-t-2 border-gray-700 flex items-center justify-start md:justify-center gap-2 p-2 z-40 overflow-x-auto">
+             <GameControlBar>
                  {isWarState ? (
                     <>
                         <button
@@ -67,16 +109,16 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any }
                             onClick={actions?.casinoWarGoToWar}
                             className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-terminal-green font-bold text-sm">W</span>
-                            <span className="text-[10px] text-gray-500">WAR</span>
+                            <span className="ns-keycap text-terminal-green font-bold text-sm">W</span>
+                            <span className="ns-action text-[10px] text-gray-500">WAR</span>
                         </button>
                         <button
                             type="button"
                             onClick={actions?.casinoWarSurrender}
                             className="flex flex-col items-center border border-terminal-accent/50 rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-terminal-accent font-bold text-sm">S</span>
-                            <span className="text-[10px] text-gray-500">SURRENDER</span>
+                            <span className="ns-keycap text-terminal-accent font-bold text-sm">S</span>
+                            <span className="ns-action text-[10px] text-gray-500">SURRENDER</span>
                         </button>
                     </>
                  ) : (
@@ -92,8 +134,8 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any }
 	                                            : 'border-gray-700 text-gray-500'
 	                                    }`}
 	                                >
-	                                    <span className="font-bold text-sm">T</span>
-	                                    <span className="text-[10px]">TIE</span>
+	                                    <span className="ns-keycap font-bold text-sm">T</span>
+	                                    <span className="ns-action text-[10px]">TIE</span>
 	                                </button>
                                 <div className="w-px h-8 bg-gray-800 mx-2"></div>
                             </>
@@ -109,8 +151,8 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any }
                                         : 'border-gray-700 text-gray-500'
                                 }`}
                             >
-                                <span className="font-bold text-sm">Z</span>
-                                <span className="text-[10px]">SHIELD</span>
+                                <span className="ns-keycap font-bold text-sm">Z</span>
+                                <span className="ns-action text-[10px]">SHIELD</span>
                             </button>
                             <button
                                 type="button"
@@ -121,8 +163,8 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any }
                                         : 'border-gray-700 text-gray-500'
                                 }`}
                             >
-                                <span className="font-bold text-sm">X</span>
-                                <span className="text-[10px]">DOUBLE</span>
+                                <span className="ns-keycap font-bold text-sm">X</span>
+                                <span className="ns-action text-[10px]">DOUBLE</span>
                             </button>
                             <button
                                 type="button"
@@ -133,8 +175,8 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any }
                                         : 'border-gray-700 text-gray-500'
                                 }`}
                             >
-                                <span className="font-bold text-sm">G</span>
-                                <span className="text-[10px]">SUPER</span>
+                                <span className="ns-keycap font-bold text-sm">G</span>
+                                <span className="ns-action text-[10px]">SUPER</span>
                             </button>
                         </div>
 
@@ -144,12 +186,14 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any }
                             onClick={actions?.deal}
                             className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1 w-24"
                         >
-                            <span className="text-terminal-green font-bold text-sm">SPACE</span>
-                            <span className="text-[10px] text-gray-500">{gameState.stage === 'RESULT' ? 'NEW HAND' : 'DEAL'}</span>
+                            <span className="ns-keycap text-terminal-green font-bold text-sm">SPACE</span>
+                            <span className="ns-action text-[10px] text-gray-500">
+                              {gameState.stage === 'RESULT' ? 'NEW HAND' : 'DEAL'}
+                            </span>
                         </button>
                     </>
                  )}
-             </div>
+            </GameControlBar>
         </>
     );
 });
