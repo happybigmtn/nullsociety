@@ -6,7 +6,7 @@ import { getBaccaratValue } from '../../../utils/gameUtils';
 import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
 
-export const BaccaratView = React.memo<{ gameState: GameState; actions: any }>(({ gameState, actions }) => {
+export const BaccaratView = React.memo<{ gameState: GameState; actions: any; lastWin?: number }>(({ gameState, actions, lastWin }) => {
     // Consolidate main bet and side bets for display
     const allBets = useMemo(() => [
         { type: gameState.baccaratSelection, amount: gameState.bet },
@@ -92,7 +92,7 @@ export const BaccaratView = React.memo<{ gameState: GameState; actions: any }>((
                 {/* Center Info */}
                 <div className="text-center space-y-2 relative z-20 py-2 sm:py-4">
                     <div className="text-lg sm:text-2xl font-bold text-terminal-gold tracking-widest leading-tight animate-pulse">
-                        {gameState.message}
+                        {gameState.message}{lastWin && lastWin > 0 ? ` (+$${lastWin})` : ''}
                     </div>
                     <div className="flex flex-wrap items-center justify-center gap-2 text-[11px]">
                         <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass(gameState.baccaratSelection)}`}>

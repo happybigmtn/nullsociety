@@ -140,20 +140,20 @@ export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberI
                 reducedMotion={reducedMotion}
 	         />
 
-         {gameState.type === GameType.BLACKJACK && <BlackjackView gameState={gameState} actions={actions} />}
+         {gameState.type === GameType.BLACKJACK && <BlackjackView gameState={gameState} actions={actions} lastWin={transientWin} />}
          {gameState.type === GameType.CRAPS && <CrapsView gameState={gameState} actions={actions} lastWin={transientWin} />}
-         {gameState.type === GameType.BACCARAT && <BaccaratView gameState={gameState} actions={actions} />}
+         {gameState.type === GameType.BACCARAT && <BaccaratView gameState={gameState} actions={actions} lastWin={transientWin} />}
          {gameState.type === GameType.ROULETTE && <RouletteView gameState={gameState} numberInput={numberInput} actions={actions} lastWin={transientWin} />}
-         {gameState.type === GameType.SIC_BO && <SicBoView gameState={gameState} numberInput={numberInput} actions={actions} />}
-         {gameState.type === GameType.HILO && <HiLoView gameState={gameState} deck={deck} actions={actions} />}
+         {gameState.type === GameType.SIC_BO && <SicBoView gameState={gameState} numberInput={numberInput} actions={actions} lastWin={transientWin} />}
+         {gameState.type === GameType.HILO && <HiLoView gameState={gameState} deck={deck} actions={actions} lastWin={transientWin} />}
          {gameState.type === GameType.VIDEO_POKER && (
-             <VideoPokerView gameState={gameState} onToggleHold={onToggleHold} actions={actions} />
+             <VideoPokerView gameState={gameState} onToggleHold={onToggleHold} actions={actions} lastWin={transientWin} />
          )}
-         {gameState.type === GameType.THREE_CARD && <ThreeCardPokerView gameState={gameState} actions={actions} />}
-         {gameState.type === GameType.ULTIMATE_HOLDEM && <UltimateHoldemView gameState={gameState} actions={actions} />}
+         {gameState.type === GameType.THREE_CARD && <ThreeCardPokerView gameState={gameState} actions={actions} lastWin={transientWin} />}
+         {gameState.type === GameType.ULTIMATE_HOLDEM && <UltimateHoldemView gameState={gameState} actions={actions} lastWin={transientWin} />}
 
          {gameState.type === GameType.CASINO_WAR && (
-             <GenericGameView gameState={gameState} actions={actions} />
+             <GenericGameView gameState={gameState} actions={actions} lastWin={transientWin} />
          )}
          
          {aiAdvice && (
