@@ -143,7 +143,7 @@ export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberI
          {gameState.type === GameType.BLACKJACK && <BlackjackView gameState={gameState} actions={actions} />}
          {gameState.type === GameType.CRAPS && <CrapsView gameState={gameState} actions={actions} lastWin={transientWin} />}
          {gameState.type === GameType.BACCARAT && <BaccaratView gameState={gameState} actions={actions} />}
-         {gameState.type === GameType.ROULETTE && <RouletteView gameState={gameState} numberInput={numberInput} actions={actions} />}
+         {gameState.type === GameType.ROULETTE && <RouletteView gameState={gameState} numberInput={numberInput} actions={actions} lastWin={transientWin} />}
          {gameState.type === GameType.SIC_BO && <SicBoView gameState={gameState} numberInput={numberInput} actions={actions} />}
          {gameState.type === GameType.HILO && <HiLoView gameState={gameState} deck={deck} actions={actions} />}
          {gameState.type === GameType.VIDEO_POKER && (

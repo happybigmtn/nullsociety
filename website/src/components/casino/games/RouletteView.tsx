@@ -5,13 +5,15 @@ import { getRouletteColor, calculateRouletteExposure } from '../../../utils/game
 import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
 
-export const RouletteView = React.memo<{ gameState: GameState; numberInput?: string; actions: any }>(({ gameState, numberInput = "", actions }) => {
+export const RouletteView = React.memo<{ gameState: GameState; numberInput?: string; actions: any; lastWin?: number }>(({ gameState, numberInput = "", actions, lastWin }) => {
     const lastNum = useMemo(() =>
         gameState.rouletteHistory.length > 0 ? gameState.rouletteHistory[gameState.rouletteHistory.length - 1] : null,
         [gameState.rouletteHistory]
     );
     const [spinKey, setSpinKey] = useState(0);
     const betTypes = useMemo(() => new Set(gameState.rouletteBets.map((b) => b.type)), [gameState.rouletteBets]);
+
+    const totalBet = useMemo(() => gameState.rouletteBets.reduce((acc, b) => acc + b.amount, 0), [gameState.rouletteBets]);
 
     const insideBet = useMemo(() => {
         const mode = gameState.rouletteInputMode;
@@ -69,7 +71,7 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 
     const renderExposureRow = useCallback((num: number) => {
         const pnl = calculateRouletteExposure(num, gameState.rouletteBets);
-        const maxScale = 5000; 
+        const maxScale = Math.max(100, totalBet * 36); 
         const barPercent = Math.min(Math.abs(pnl) / maxScale * 50, 50);
         const color = getRouletteColor(num);
         const colorClass = color === 'RED' ? 'text-terminal-accent' : color === 'BLACK' ? 'text-white' : 'text-terminal-green';
@@ -91,7 +93,7 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
                 </div>
             </div>
         );
-    }, [gameState.rouletteBets]);
+    }, [gameState.rouletteBets, totalBet]);
 
     return (
         <>
@@ -161,7 +163,7 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
                 {/* Center Info */}
                 <div className="text-center space-y-3 relative z-20">
                     <div className="text-lg sm:text-2xl font-bold text-terminal-gold tracking-widest leading-tight animate-pulse">
-                        {gameState.message}
+                        {gameState.message}{lastWin && lastWin > 0 ? ` (+$${lastWin})` : ''}
                     </div>
                     <div className="text-[10px] text-gray-500 uppercase tracking-widest">
                         ZERO RULE: {gameState.rouletteZeroRule.split('_').join(' ')}
