@@ -4,6 +4,7 @@ import { GameState } from '../../../types';
 import { Hand } from '../GameComponents';
 import { getVisibleHandValue } from '../../../utils/gameUtils';
 import { MobileDrawer } from '../MobileDrawer';
+import { GameControlBar } from '../GameControlBar';
 
 interface ThreeCardPokerViewProps {
     gameState: GameState;
@@ -54,6 +55,20 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameSta
         gameState.dealerCards.every(c => c && !c.isHidden) &&
         getVisibleHandValue(gameState.dealerCards.slice(0, 1)) >= 10,
         [gameState.dealerCards]
+    );
+
+    const totalBet = useMemo(
+        () =>
+            (gameState.bet || 0) +
+            (gameState.threeCardPairPlusBet || 0) +
+            (gameState.threeCardSixCardBonusBet || 0) +
+            (gameState.threeCardProgressiveBet || 0),
+        [
+            gameState.bet,
+            gameState.threeCardPairPlusBet,
+            gameState.threeCardSixCardBonusBet,
+            gameState.threeCardProgressiveBet,
+        ]
     );
 
     return (
@@ -121,6 +136,12 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameSta
 
                 {/* Center Info */}
                 <div className="text-center space-y-3 relative z-20">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded border bg-black/40 text-[10px] tracking-widest uppercase border-gray-800 text-gray-400">
+                        <span className="text-gray-500">{gameState.stage}</span>
+                        <span className="text-gray-700">•</span>
+                        <span className="text-gray-500">TOTAL</span>
+                        <span className="text-terminal-gold">${totalBet.toLocaleString()}</span>
+                    </div>
                     <div className="text-2xl font-bold text-terminal-gold tracking-widest animate-pulse">
                         {gameState.message}
                     </div>
@@ -196,7 +217,7 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameSta
             </div>
 
             {/* Controls */}
-            <div className="absolute bottom-8 left-0 right-0 h-16 bg-terminal-black/90 border-t-2 border-gray-700 flex items-center justify-start md:justify-center gap-2 p-2 z-40 overflow-x-auto">
+            <GameControlBar>
                 {gameState.stage === 'BETTING' && (
                     <>
 	                        <button
@@ -208,8 +229,8 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameSta
 	                                    : 'border-gray-700 text-gray-500'
 	                            }`}
 	                        >
-                            <span className="font-bold text-sm">P</span>
-                            <span className="text-[10px]">PAIR+</span>
+                            <span className="ns-keycap font-bold text-sm">P</span>
+                            <span className="ns-action text-[10px]">PAIR+</span>
                         </button>
 	                        <button
 	                            type="button"
@@ -220,8 +241,8 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameSta
 	                                    : 'border-gray-700 text-gray-500'
 	                            }`}
 	                        >
-                            <span className="font-bold text-sm">6</span>
-                            <span className="text-[10px]">6-CARD</span>
+                            <span className="ns-keycap font-bold text-sm">6</span>
+                            <span className="ns-action text-[10px]">6-CARD</span>
                         </button>
 	                        <button
 	                            type="button"
@@ -232,8 +253,8 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameSta
 	                                    : 'border-gray-700 text-gray-500'
 	                            }`}
 	                        >
-                            <span className="font-bold text-sm">J</span>
-                            <span className="text-[10px]">PROG</span>
+                            <span className="ns-keycap font-bold text-sm">J</span>
+                            <span className="ns-action text-[10px]">PROG</span>
                         </button>
                         <div className="w-px h-8 bg-gray-800 mx-2"></div>
                         <div className="flex gap-2">
@@ -246,8 +267,8 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameSta
                                         : 'border-gray-700 text-gray-500'
                                 }`}
                             >
-                                <span className="font-bold text-sm">Z</span>
-                                <span className="text-[10px]">SHIELD</span>
+                                <span className="ns-keycap font-bold text-sm">Z</span>
+                                <span className="ns-action text-[10px]">SHIELD</span>
                             </button>
                             <button
                                 type="button"
@@ -258,8 +279,8 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameSta
                                         : 'border-gray-700 text-gray-500'
                                 }`}
                             >
-                                <span className="font-bold text-sm">X</span>
-                                <span className="text-[10px]">DOUBLE</span>
+                                <span className="ns-keycap font-bold text-sm">X</span>
+                                <span className="ns-action text-[10px]">DOUBLE</span>
                             </button>
                             <button
                                 type="button"
@@ -270,8 +291,8 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameSta
                                         : 'border-gray-700 text-gray-500'
                                 }`}
                             >
-                                <span className="font-bold text-sm">G</span>
-                                <span className="text-[10px]">SUPER</span>
+                                <span className="ns-keycap font-bold text-sm">G</span>
+                                <span className="ns-action text-[10px]">SUPER</span>
                             </button>
                         </div>
                         <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -280,8 +301,8 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameSta
                             onClick={actions?.deal}
                             className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1 w-24"
                         >
-                            <span className="text-terminal-green font-bold text-sm">SPACE</span>
-                            <span className="text-[10px] text-gray-500">DEAL</span>
+                            <span className="ns-keycap text-terminal-green font-bold text-sm">SPACE</span>
+                            <span className="ns-action text-[10px] text-gray-500">DEAL</span>
                         </button>
                     </>
                 )}
@@ -291,8 +312,8 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameSta
                         onClick={actions?.deal}
                         className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1 w-24"
                     >
-                        <span className="text-terminal-green font-bold text-sm">SPACE</span>
-                        <span className="text-[10px] text-gray-500">REVEAL</span>
+                        <span className="ns-keycap text-terminal-green font-bold text-sm">SPACE</span>
+                        <span className="ns-action text-[10px] text-gray-500">REVEAL</span>
                     </button>
                 )}
                 {gameState.stage === 'PLAYING' && !gameState.message.includes('REVEAL') && (
@@ -302,16 +323,16 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameSta
                             onClick={actions?.threeCardPlay}
                             className="flex flex-col items-center border border-terminal-green rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-terminal-green font-bold text-sm">P</span>
-                            <span className="text-[10px] text-gray-500">PLAY</span>
+                            <span className="ns-keycap text-terminal-green font-bold text-sm">P</span>
+                            <span className="ns-action text-[10px] text-gray-500">PLAY</span>
                         </button>
                         <button
                             type="button"
                             onClick={actions?.threeCardFold}
                             className="flex flex-col items-center border border-terminal-accent rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-terminal-accent font-bold text-sm">F</span>
-                            <span className="text-[10px] text-gray-500">FOLD</span>
+                            <span className="ns-keycap text-terminal-accent font-bold text-sm">F</span>
+                            <span className="ns-action text-[10px] text-gray-500">FOLD</span>
                         </button>
                     </>
                 )}
@@ -321,11 +342,11 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps>(({ gameSta
                         onClick={actions?.deal}
                         className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1 w-24"
                     >
-                        <span className="text-terminal-green font-bold text-sm">SPACE</span>
-                        <span className="text-[10px] text-gray-500">NEW HAND</span>
+                        <span className="ns-keycap text-terminal-green font-bold text-sm">SPACE</span>
+                        <span className="ns-action text-[10px] text-gray-500">NEW HAND</span>
                     </button>
                 )}
-            </div>
+            </GameControlBar>
         </>
     );
 });

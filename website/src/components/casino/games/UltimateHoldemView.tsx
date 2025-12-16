@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { GameState } from '../../../types';
 import { Hand } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
+import { GameControlBar } from '../GameControlBar';
 
 interface UltimateHoldemViewProps {
     gameState: GameState;
@@ -22,6 +23,15 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
     const stageDesc = useMemo(() =>
         getStageDescription(gameState.stage, gameState.communityCards.length),
         [gameState.stage, gameState.communityCards.length]
+    );
+
+    const baseTotalBet = useMemo(
+        () =>
+            (gameState.bet || 0) * 2 +
+            (gameState.uthTripsBet || 0) +
+            (gameState.uthSixCardBonusBet || 0) +
+            (gameState.uthProgressiveBet || 0),
+        [gameState.bet, gameState.uthTripsBet, gameState.uthSixCardBonusBet, gameState.uthProgressiveBet]
     );
 
     const showDealerCards = useMemo(() =>
@@ -126,16 +136,27 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
 
                 {/* Center Info */}
                 <div className="text-center space-y-2 relative z-20">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded border bg-black/40 text-[10px] tracking-widest uppercase border-gray-800 text-gray-400">
+                        <span className="text-gray-500">{gameState.stage}</span>
+                        {stageDesc ? (
+                            <>
+                                <span className="text-gray-700">•</span>
+                                <span className="text-terminal-gold">{stageDesc}</span>
+                            </>
+                        ) : null}
+                        <span className="text-gray-700">•</span>
+                        <span className="text-gray-500">TOTAL</span>
+                        <span className="text-terminal-gold">${baseTotalBet.toLocaleString()}</span>
+                    </div>
                     <div className="text-xl font-bold text-terminal-gold tracking-widest animate-pulse">
                         {gameState.message}
                     </div>
-                    <div className="text-xs text-gray-500 flex gap-4 justify-center">
-                        <span>ANTE: ${gameState.bet}</span>
-                        <span>BLIND: ${gameState.bet}</span>
-                        {gameState.uthTripsBet > 0 && <span>TRIPS: ${gameState.uthTripsBet}</span>}
-                        {gameState.uthSixCardBonusBet > 0 && <span>6-CARD: ${gameState.uthSixCardBonusBet}</span>}
-                        {gameState.uthProgressiveBet > 0 && <span>PROG: ${gameState.uthProgressiveBet}</span>}
-                        <span className="text-terminal-gold">{stageDesc}</span>
+                    <div className="text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-1 justify-center">
+                        <span>ANTE: ${gameState.bet.toLocaleString()}</span>
+                        <span>BLIND: ${gameState.bet.toLocaleString()}</span>
+                        {gameState.uthTripsBet > 0 && <span>TRIPS: ${gameState.uthTripsBet.toLocaleString()}</span>}
+                        {gameState.uthSixCardBonusBet > 0 && <span>6-CARD: ${gameState.uthSixCardBonusBet.toLocaleString()}</span>}
+                        {gameState.uthProgressiveBet > 0 && <span>PROG: ${gameState.uthProgressiveBet.toLocaleString()}</span>}
                     </div>
                     <div
                         className={`inline-flex items-center gap-2 px-3 py-1 rounded border bg-black/40 text-[10px] tracking-widest ${
@@ -211,7 +232,7 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
             </div>
 
             {/* Controls */}
-            <div className="absolute bottom-8 left-0 right-0 h-16 bg-terminal-black/90 border-t-2 border-gray-700 flex items-center justify-start md:justify-center gap-2 p-2 z-40 overflow-x-auto">
+            <GameControlBar>
                 {gameState.stage === 'BETTING' && (
                     <>
 	                        <button
@@ -223,8 +244,8 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
 	                                    : 'border-gray-700 text-gray-500'
 	                            }`}
 	                        >
-                            <span className="font-bold text-sm">T</span>
-                            <span className="text-[10px]">TRIPS</span>
+                            <span className="ns-keycap font-bold text-sm">T</span>
+                            <span className="ns-action text-[10px]">TRIPS</span>
                         </button>
 	                        <button
 	                            type="button"
@@ -235,8 +256,8 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
 	                                    : 'border-gray-700 text-gray-500'
 	                            }`}
 	                        >
-                            <span className="font-bold text-sm">6</span>
-                            <span className="text-[10px]">6-CARD</span>
+                            <span className="ns-keycap font-bold text-sm">6</span>
+                            <span className="ns-action text-[10px]">6-CARD</span>
                         </button>
 	                        <button
 	                            type="button"
@@ -247,8 +268,8 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
 	                                    : 'border-gray-700 text-gray-500'
 	                            }`}
 	                        >
-                            <span className="font-bold text-sm">J</span>
-                            <span className="text-[10px]">PROG</span>
+                            <span className="ns-keycap font-bold text-sm">J</span>
+                            <span className="ns-action text-[10px]">PROG</span>
                         </button>
                         <div className="w-px h-8 bg-gray-800 mx-2"></div>
                         <div className="flex gap-2">
@@ -259,8 +280,8 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
                                     gameState.activeModifiers.shield ? 'border-cyan-400 text-cyan-400' : 'border-gray-700 text-gray-500'
                                 }`}
                             >
-                                <span className="font-bold text-sm">Z</span>
-                                <span className="text-[10px]">SHIELD</span>
+                                <span className="ns-keycap font-bold text-sm">Z</span>
+                                <span className="ns-action text-[10px]">SHIELD</span>
                             </button>
                             <button
                                 type="button"
@@ -269,8 +290,8 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
                                     gameState.activeModifiers.double ? 'border-purple-400 text-purple-400' : 'border-gray-700 text-gray-500'
                                 }`}
                             >
-                                <span className="font-bold text-sm">X</span>
-                                <span className="text-[10px]">DOUBLE</span>
+                                <span className="ns-keycap font-bold text-sm">X</span>
+                                <span className="ns-action text-[10px]">DOUBLE</span>
                             </button>
                             <button
                                 type="button"
@@ -279,10 +300,10 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
                                     gameState.activeModifiers.super
                                         ? 'border-terminal-gold text-terminal-gold'
                                         : 'border-gray-700 text-gray-500'
-                                }`}
+                                    }`}
                             >
-                                <span className="font-bold text-sm">G</span>
-                                <span className="text-[10px]">SUPER</span>
+                                <span className="ns-keycap font-bold text-sm">G</span>
+                                <span className="ns-action text-[10px]">SUPER</span>
                             </button>
                         </div>
                         <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -291,8 +312,8 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
                             onClick={actions?.deal}
                             className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1 w-24"
                         >
-                            <span className="text-terminal-green font-bold text-sm">SPACE</span>
-                            <span className="text-[10px] text-gray-500">DEAL</span>
+                            <span className="ns-keycap text-terminal-green font-bold text-sm">SPACE</span>
+                            <span className="ns-action text-[10px] text-gray-500">DEAL</span>
                         </button>
                     </>
                 )}
@@ -303,8 +324,8 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
                             onClick={actions?.uhCheck}
                             className="flex flex-col items-center border border-gray-700 rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-white font-bold text-sm">C</span>
-                            <span className="text-[10px] text-gray-500">CHECK</span>
+                            <span className="ns-keycap text-white font-bold text-sm">C</span>
+                            <span className="ns-action text-[10px] text-gray-500">CHECK</span>
                         </button>
                         <div className="w-px h-8 bg-gray-800 mx-2"></div>
                         <button
@@ -312,16 +333,16 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
                             onClick={() => actions?.uhBet?.(4)}
                             className="flex flex-col items-center border border-terminal-gold rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-terminal-gold font-bold text-sm">4</span>
-                            <span className="text-[10px] text-gray-500">BET 4X</span>
+                            <span className="ns-keycap text-terminal-gold font-bold text-sm">4</span>
+                            <span className="ns-action text-[10px] text-gray-500">BET 4X</span>
                         </button>
                         <button
                             type="button"
                             onClick={() => actions?.uhBet?.(3)}
                             className="flex flex-col items-center border border-terminal-gold rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-terminal-gold font-bold text-sm">3</span>
-                            <span className="text-[10px] text-gray-500">BET 3X</span>
+                            <span className="ns-keycap text-terminal-gold font-bold text-sm">3</span>
+                            <span className="ns-action text-[10px] text-gray-500">BET 3X</span>
                         </button>
                     </>
                 )}
@@ -332,8 +353,8 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
                             onClick={actions?.uhCheck}
                             className="flex flex-col items-center border border-gray-700 rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-white font-bold text-sm">C</span>
-                            <span className="text-[10px] text-gray-500">CHECK</span>
+                            <span className="ns-keycap text-white font-bold text-sm">C</span>
+                            <span className="ns-action text-[10px] text-gray-500">CHECK</span>
                         </button>
                         <div className="w-px h-8 bg-gray-800 mx-2"></div>
                         <button
@@ -341,8 +362,8 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
                             onClick={() => actions?.uhBet?.(2)}
                             className="flex flex-col items-center border border-terminal-gold rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-terminal-gold font-bold text-sm">2</span>
-                            <span className="text-[10px] text-gray-500">BET 2X</span>
+                            <span className="ns-keycap text-terminal-gold font-bold text-sm">2</span>
+                            <span className="ns-action text-[10px] text-gray-500">BET 2X</span>
                         </button>
                     </>
                 )}
@@ -352,8 +373,8 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
                         onClick={actions?.deal}
                         className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1 w-24"
                     >
-                        <span className="text-terminal-green font-bold text-sm">SPACE</span>
-                        <span className="text-[10px] text-gray-500">REVEAL</span>
+                        <span className="ns-keycap text-terminal-green font-bold text-sm">SPACE</span>
+                        <span className="ns-action text-[10px] text-gray-500">REVEAL</span>
                     </button>
                 )}
                 {gameState.stage === 'PLAYING' && gameState.communityCards.length === 5 && !gameState.message.includes('REVEAL') && (
@@ -363,8 +384,8 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
                             onClick={actions?.uhFold}
                             className="flex flex-col items-center border border-terminal-accent rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-terminal-accent font-bold text-sm">F</span>
-                            <span className="text-[10px] text-gray-500">FOLD</span>
+                            <span className="ns-keycap text-terminal-accent font-bold text-sm">F</span>
+                            <span className="ns-action text-[10px] text-gray-500">FOLD</span>
                         </button>
                         <div className="w-px h-8 bg-gray-800 mx-2"></div>
                         <button
@@ -372,8 +393,8 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
                             onClick={() => actions?.uhBet?.(1)}
                             className="flex flex-col items-center border border-terminal-gold rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-terminal-gold font-bold text-sm">1</span>
-                            <span className="text-[10px] text-gray-500">BET 1X</span>
+                            <span className="ns-keycap text-terminal-gold font-bold text-sm">1</span>
+                            <span className="ns-action text-[10px] text-gray-500">BET 1X</span>
                         </button>
                     </>
                 )}
@@ -383,11 +404,11 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps>(({ gameSta
                         onClick={actions?.deal}
                         className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1 w-24"
                     >
-                        <span className="text-terminal-green font-bold text-sm">SPACE</span>
-                        <span className="text-[10px] text-gray-500">NEW HAND</span>
+                        <span className="ns-keycap text-terminal-green font-bold text-sm">SPACE</span>
+                        <span className="ns-action text-[10px] text-gray-500">NEW HAND</span>
                     </button>
                 )}
-            </div>
+            </GameControlBar>
         </>
     );
 });

@@ -1,33 +1,36 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 type TabsProps = {
   className?: string;
 };
 
 export const PlaySwapStakeTabs: React.FC<TabsProps> = ({ className }) => {
-  const tabClass = ({ isActive }: { isActive: boolean }) =>
+  const pathname = useLocation().pathname;
+  const economyActive = pathname.startsWith('/swap') || pathname.startsWith('/borrow') || pathname.startsWith('/liquidity');
+
+  const tabClass = (active: boolean) =>
     [
-      'px-3 py-1 rounded border text-[10px] tracking-widest uppercase transition-colors',
-      isActive
+      'inline-flex items-center justify-center h-11 px-3 rounded border text-[10px] tracking-widest uppercase transition-colors',
+      active
         ? 'border-terminal-green text-terminal-green bg-terminal-green/10'
         : 'border-gray-800 text-gray-400 hover:border-gray-600 hover:text-white',
     ].join(' ');
 
   return (
     <nav className={['flex items-center gap-2', className ?? ''].join(' ').trim()}>
-      <NavLink to="/" end className={tabClass}>
+      <Link to="/" className={tabClass(pathname === '/')}>
         Play
-      </NavLink>
-      <NavLink to="/swap" className={tabClass}>
+      </Link>
+      <Link to="/swap" className={tabClass(economyActive)}>
         Swap
-      </NavLink>
-      <NavLink to="/stake" className={tabClass}>
+      </Link>
+      <Link to="/stake" className={tabClass(pathname.startsWith('/stake'))}>
         Stake
-      </NavLink>
-      <NavLink to="/security" className={tabClass}>
+      </Link>
+      <Link to="/security" className={tabClass(pathname.startsWith('/security'))}>
         Vault
-      </NavLink>
+      </Link>
     </nav>
   );
 };

@@ -4,6 +4,7 @@ import { GameState } from '../../../types';
 import { Hand } from '../GameComponents';
 import { getBaccaratValue } from '../../../utils/gameUtils';
 import { MobileDrawer } from '../MobileDrawer';
+import { GameControlBar } from '../GameControlBar';
 
 export const BaccaratView = React.memo<{ gameState: GameState; actions: any }>(({ gameState, actions }) => {
     // Consolidate main bet and side bets for display
@@ -22,6 +23,21 @@ export const BaccaratView = React.memo<{ gameState: GameState; actions: any }>((
     const hasPlayerPair = useMemo(() => gameState.baccaratBets.some(b => b.type === 'P_PAIR'), [gameState.baccaratBets]);
     const hasBankerPair = useMemo(() => gameState.baccaratBets.some(b => b.type === 'B_PAIR'), [gameState.baccaratBets]);
     const hasLucky6 = useMemo(() => gameState.baccaratBets.some(b => b.type === 'LUCKY6'), [gameState.baccaratBets]);
+
+    const sideBetAmounts = useMemo(() => {
+        const amt = (type: string) => gameState.baccaratBets.find(b => b.type === type)?.amount ?? 0;
+        return {
+            TIE: amt('TIE'),
+            P_PAIR: amt('P_PAIR'),
+            B_PAIR: amt('B_PAIR'),
+            LUCKY6: amt('LUCKY6'),
+        };
+    }, [gameState.baccaratBets]);
+
+    const totalBet = useMemo(
+        () => allBets.reduce((sum, b) => sum + (Number.isFinite(b.amount) ? b.amount : 0), 0),
+        [allBets]
+    );
 
     const sideBetButtonClass = (active: boolean) =>
         `flex flex-col items-center border rounded bg-black/50 px-3 py-1 transition-colors ${
@@ -73,10 +89,41 @@ export const BaccaratView = React.memo<{ gameState: GameState; actions: any }>((
                 </div>
 
                 {/* Center Info */}
-                <div className="text-center space-y-3 relative z-20 py-4">
-                     <div className="text-2xl font-bold text-terminal-gold tracking-widest animate-pulse">
-                         {gameState.message}
-                     </div>
+                <div className="text-center space-y-2 relative z-20 py-4">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded border bg-black/40 text-[10px] tracking-widest uppercase border-gray-800 text-gray-400">
+                        <span className="text-gray-500">{gameState.stage}</span>
+                        <span className="text-gray-700">•</span>
+                        <span className="text-gray-500">TOTAL</span>
+                        <span className="text-terminal-gold">${totalBet.toLocaleString()}</span>
+                    </div>
+                    <div className="text-2xl font-bold text-terminal-gold tracking-widest animate-pulse">
+                        {gameState.message}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-gray-500">
+                        <span className="px-2 py-0.5 rounded border border-gray-800 bg-black/40">
+                            MAIN <span className="text-white">{gameState.baccaratSelection}</span> ${gameState.bet.toLocaleString()}
+                        </span>
+                        {sideBetAmounts.TIE > 0 && (
+                            <span className="px-2 py-0.5 rounded border border-gray-800 bg-black/40">
+                                TIE ${sideBetAmounts.TIE.toLocaleString()}
+                            </span>
+                        )}
+                        {sideBetAmounts.P_PAIR > 0 && (
+                            <span className="px-2 py-0.5 rounded border border-gray-800 bg-black/40">
+                                P.PAIR ${sideBetAmounts.P_PAIR.toLocaleString()}
+                            </span>
+                        )}
+                        {sideBetAmounts.B_PAIR > 0 && (
+                            <span className="px-2 py-0.5 rounded border border-gray-800 bg-black/40">
+                                B.PAIR ${sideBetAmounts.B_PAIR.toLocaleString()}
+                            </span>
+                        )}
+                        {sideBetAmounts.LUCKY6 > 0 && (
+                            <span className="px-2 py-0.5 rounded border border-gray-800 bg-black/40">
+                                LUCKY6 ${sideBetAmounts.LUCKY6.toLocaleString()}
+                            </span>
+                        )}
+                    </div>
                 </div>
 
                 {/* Player Area */}
@@ -110,60 +157,78 @@ export const BaccaratView = React.memo<{ gameState: GameState; actions: any }>((
             </div>
 
             {/* CONTROLS */}
-            <div className="absolute bottom-8 left-0 right-0 h-16 bg-terminal-black/90 border-t-2 border-gray-700 flex items-center justify-start md:justify-center gap-2 p-2 z-40 overflow-x-auto">
+            <GameControlBar>
                     <div className="flex gap-2">
-                        <button
-                            type="button"
-                            onClick={() => actions?.baccaratActions?.toggleSelection?.('PLAYER')}
-                            className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${isPlayerSelected ? 'border-terminal-green' : 'border-terminal-dim'}`}
-                        >
-                            <span className={`font-bold text-sm ${isPlayerSelected ? 'text-terminal-green' : 'text-white'}`}>P</span>
-                            <span className="text-[10px] text-gray-500">PLAYER</span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => actions?.baccaratActions?.toggleSelection?.('BANKER')}
-                            className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${isBankerSelected ? 'border-terminal-green' : 'border-terminal-dim'}`}
-                        >
-                            <span className={`font-bold text-sm ${isBankerSelected ? 'text-terminal-green' : 'text-white'}`}>B</span>
-                            <span className="text-[10px] text-gray-500">BANKER</span>
-                        </button>
-                    </div>
-                    <div className="w-px h-8 bg-gray-800 mx-2"></div>
-	                    <div className="flex gap-2">
 	                        <button
 	                            type="button"
-	                            onClick={() => actions?.baccaratActions?.placeBet?.('TIE')}
-	                            className={sideBetButtonClass(hasTie)}
+	                            onClick={() => actions?.baccaratActions?.toggleSelection?.('PLAYER')}
+	                            className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${isPlayerSelected ? 'border-terminal-green' : 'border-terminal-dim'}`}
 	                        >
-	                            <span className={`font-bold text-sm ${hasTie ? 'text-terminal-green' : 'text-white'}`}>E</span>
-	                            <span className={`text-[10px] ${hasTie ? 'text-terminal-green/80' : 'text-gray-500'}`}>TIE</span>
+	                            <span className={`ns-keycap font-bold text-sm ${isPlayerSelected ? 'text-terminal-green' : 'text-white'}`}>P</span>
+	                            <span className="ns-action text-[10px] text-gray-500">PLAYER</span>
+                                <span className="text-[9px] text-gray-600">${gameState.bet.toLocaleString()}</span>
 	                        </button>
 	                        <button
 	                            type="button"
-	                            onClick={() => actions?.baccaratActions?.placeBet?.('P_PAIR')}
-	                            className={sideBetButtonClass(hasPlayerPair)}
+	                            onClick={() => actions?.baccaratActions?.toggleSelection?.('BANKER')}
+	                            className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${isBankerSelected ? 'border-terminal-green' : 'border-terminal-dim'}`}
 	                        >
-	                            <span className={`font-bold text-sm ${hasPlayerPair ? 'text-terminal-green' : 'text-white'}`}>Q</span>
-	                            <span className={`text-[10px] ${hasPlayerPair ? 'text-terminal-green/80' : 'text-gray-500'}`}>P.PAIR</span>
-	                        </button>
-	                        <button
-	                            type="button"
-	                            onClick={() => actions?.baccaratActions?.placeBet?.('B_PAIR')}
-	                            className={sideBetButtonClass(hasBankerPair)}
-	                        >
-	                            <span className={`font-bold text-sm ${hasBankerPair ? 'text-terminal-green' : 'text-white'}`}>W</span>
-	                            <span className={`text-[10px] ${hasBankerPair ? 'text-terminal-green/80' : 'text-gray-500'}`}>B.PAIR</span>
-	                        </button>
-	                        <button
-	                            type="button"
-	                            onClick={() => actions?.baccaratActions?.placeBet?.('LUCKY6')}
-	                            className={sideBetButtonClass(hasLucky6)}
-	                        >
-	                            <span className={`font-bold text-sm ${hasLucky6 ? 'text-terminal-green' : 'text-white'}`}>6</span>
-	                            <span className={`text-[10px] ${hasLucky6 ? 'text-terminal-green/80' : 'text-gray-500'}`}>LUCKY6</span>
+	                            <span className={`ns-keycap font-bold text-sm ${isBankerSelected ? 'text-terminal-green' : 'text-white'}`}>B</span>
+	                            <span className="ns-action text-[10px] text-gray-500">BANKER</span>
+                                <span className="text-[9px] text-gray-600">${gameState.bet.toLocaleString()}</span>
 	                        </button>
 	                    </div>
+	                    <div className="w-px h-8 bg-gray-800 mx-2"></div>
+		                    <div className="flex gap-2">
+		                        <button
+		                            type="button"
+		                            onClick={() => actions?.baccaratActions?.placeBet?.('TIE')}
+		                            className={sideBetButtonClass(hasTie)}
+		                        >
+		                            <span className={`ns-keycap font-bold text-sm ${hasTie ? 'text-terminal-green' : 'text-white'}`}>E</span>
+		                            <span className={`ns-action text-[10px] ${hasTie ? 'text-terminal-green/80' : 'text-gray-500'}`}>TIE</span>
+                                    <span className={`text-[9px] ${hasTie ? 'text-terminal-gold/80' : 'text-gray-800 opacity-0'}`}>
+                                        ${sideBetAmounts.TIE.toLocaleString()}
+                                    </span>
+		                        </button>
+		                        <button
+		                            type="button"
+		                            onClick={() => actions?.baccaratActions?.placeBet?.('P_PAIR')}
+		                            className={sideBetButtonClass(hasPlayerPair)}
+		                        >
+		                            <span className={`ns-keycap font-bold text-sm ${hasPlayerPair ? 'text-terminal-green' : 'text-white'}`}>Q</span>
+		                            <span className={`ns-action text-[10px] ${hasPlayerPair ? 'text-terminal-green/80' : 'text-gray-500'}`}>P.PAIR</span>
+                                    <span
+                                        className={`text-[9px] ${hasPlayerPair ? 'text-terminal-gold/80' : 'text-gray-800 opacity-0'}`}
+                                    >
+                                        ${sideBetAmounts.P_PAIR.toLocaleString()}
+                                    </span>
+		                        </button>
+		                        <button
+		                            type="button"
+		                            onClick={() => actions?.baccaratActions?.placeBet?.('B_PAIR')}
+		                            className={sideBetButtonClass(hasBankerPair)}
+		                        >
+		                            <span className={`ns-keycap font-bold text-sm ${hasBankerPair ? 'text-terminal-green' : 'text-white'}`}>W</span>
+		                            <span className={`ns-action text-[10px] ${hasBankerPair ? 'text-terminal-green/80' : 'text-gray-500'}`}>B.PAIR</span>
+                                    <span
+                                        className={`text-[9px] ${hasBankerPair ? 'text-terminal-gold/80' : 'text-gray-800 opacity-0'}`}
+                                    >
+                                        ${sideBetAmounts.B_PAIR.toLocaleString()}
+                                    </span>
+		                        </button>
+		                        <button
+		                            type="button"
+		                            onClick={() => actions?.baccaratActions?.placeBet?.('LUCKY6')}
+		                            className={sideBetButtonClass(hasLucky6)}
+		                        >
+		                            <span className={`ns-keycap font-bold text-sm ${hasLucky6 ? 'text-terminal-green' : 'text-white'}`}>6</span>
+		                            <span className={`ns-action text-[10px] ${hasLucky6 ? 'text-terminal-green/80' : 'text-gray-500'}`}>LUCKY6</span>
+                                    <span className={`text-[9px] ${hasLucky6 ? 'text-terminal-gold/80' : 'text-gray-800 opacity-0'}`}>
+                                        ${sideBetAmounts.LUCKY6.toLocaleString()}
+                                    </span>
+		                        </button>
+		                    </div>
                     <div className="w-px h-8 bg-gray-800 mx-2"></div>
                      <div className="flex gap-2">
                         <button
@@ -171,16 +236,16 @@ export const BaccaratView = React.memo<{ gameState: GameState; actions: any }>((
                             onClick={actions?.baccaratActions?.rebet}
                             className="flex flex-col items-center border border-gray-700 rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-gray-500 font-bold text-sm">T</span>
-                            <span className="text-[10px] text-gray-600">REBET</span>
+                            <span className="ns-keycap text-gray-500 font-bold text-sm">T</span>
+                            <span className="ns-action text-[10px] text-gray-600">REBET</span>
                         </button>
                         <button
                             type="button"
                             onClick={actions?.baccaratActions?.undo}
                             className="flex flex-col items-center border border-gray-700 rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-gray-500 font-bold text-sm">U</span>
-                            <span className="text-[10px] text-gray-600">UNDO</span>
+                            <span className="ns-keycap text-gray-500 font-bold text-sm">U</span>
+                            <span className="ns-action text-[10px] text-gray-600">UNDO</span>
                         </button>
                     </div>
                     <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -190,16 +255,16 @@ export const BaccaratView = React.memo<{ gameState: GameState; actions: any }>((
                             onClick={actions?.toggleShield}
                             className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${gameState.activeModifiers.shield ? 'border-cyan-400 text-cyan-400' : 'border-gray-700 text-gray-500'}`}
                          >
-                            <span className="font-bold text-sm">Z</span>
-                            <span className="text-[10px]">SHIELD</span>
+                            <span className="ns-keycap font-bold text-sm">Z</span>
+                            <span className="ns-action text-[10px]">SHIELD</span>
                         </button>
                          <button
                             type="button"
                             onClick={actions?.toggleDouble}
                             className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${gameState.activeModifiers.double ? 'border-purple-400 text-purple-400' : 'border-gray-700 text-gray-500'}`}
                          >
-                            <span className="font-bold text-sm">X</span>
-                            <span className="text-[10px]">DOUBLE</span>
+                            <span className="ns-keycap font-bold text-sm">X</span>
+                            <span className="ns-action text-[10px]">DOUBLE</span>
                         </button>
                         <button
                             type="button"
@@ -210,8 +275,8 @@ export const BaccaratView = React.memo<{ gameState: GameState; actions: any }>((
                                     : 'border-gray-700 text-gray-500'
                             }`}
                         >
-                            <span className="font-bold text-sm">G</span>
-                            <span className="text-[10px]">SUPER</span>
+                            <span className="ns-keycap font-bold text-sm">G</span>
+                            <span className="ns-action text-[10px]">SUPER</span>
                         </button>
                     </div>
                     <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -220,10 +285,10 @@ export const BaccaratView = React.memo<{ gameState: GameState; actions: any }>((
                         onClick={actions?.deal}
                         className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1 w-24"
                     >
-                        <span className="text-terminal-green font-bold text-sm">SPACE</span>
-                        <span className="text-[10px] text-gray-500">DEAL</span>
+                        <span className="ns-keycap text-terminal-green font-bold text-sm">SPACE</span>
+                        <span className="ns-action text-[10px] text-gray-500">DEAL</span>
                     </button>
-            </div>
+            </GameControlBar>
         </>
     );
 });

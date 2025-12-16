@@ -5,7 +5,7 @@ use commonware_consensus::threshold_simplex::types::{seed_namespace, view_messag
 use commonware_cryptography::bls12381::primitives::ops;
 #[cfg(feature = "testing")]
 use commonware_cryptography::bls12381::primitives::variant::MinSig;
-use commonware_cryptography::{ed25519, Hasher, PrivateKeyExt, Sha256, Signer as _};
+use commonware_cryptography::{ed25519, Digestible, Hasher, PrivateKeyExt, Sha256, Signer as _};
 #[cfg(feature = "testing")]
 use commonware_runtime::{deterministic::Runner, Runner as _};
 use commonware_storage::store::operation::{Keyless, Variable};
@@ -514,6 +514,18 @@ impl Transaction {
         let tx = ExecutionTransaction::sign(&signer.private_key, nonce, instruction);
         Ok(Transaction { inner: tx })
     }
+}
+
+/// Compute the explorer transaction digest (signature excluded).
+///
+/// Matches `types/src/execution.rs` `Transaction::digest()`:
+/// `sha256(nonce_be || instruction.encode() || public_key_bytes)`.
+#[wasm_bindgen]
+pub fn digest_transaction(tx_bytes: &[u8]) -> Result<String, JsValue> {
+    let mut buf = tx_bytes;
+    let tx = ExecutionTransaction::read(&mut buf)
+        .map_err(|e| JsValue::from_str(&format!("Failed to decode transaction: {e:?}")))?;
+    Ok(hex(tx.digest().as_ref()))
 }
 
 /// Encode an account key.

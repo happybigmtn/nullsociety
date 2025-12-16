@@ -25,6 +25,10 @@ yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
 
+# Runtime artifacts
+*.pid
+simulator.log
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -1,8 +1,9 @@
 
-import React, { useMemo, useCallback } from 'react';
+import React, { useEffect, useMemo, useCallback, useState } from 'react';
 import { GameState, SicBoBet } from '../../../types';
 import { DiceRender } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
+import { GameControlBar } from '../GameControlBar';
 import { getSicBoTotalItems, getSicBoCombinationItems, calculateSicBoTotalExposure, calculateSicBoCombinationExposure } from '../../../utils/gameUtils';
 
 export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string; actions: any }>(({ gameState, numberInput = "", actions }) => {
@@ -10,6 +11,11 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
     const totalItems = useMemo(() => getSicBoTotalItems(), []);
     const combinationItems = useMemo(() => getSicBoCombinationItems(), []);
     const betTypes = useMemo(() => new Set(gameState.sicBoBets.map((b) => b.type)), [gameState.sicBoBets]);
+    const [tapPicks, setTapPicks] = useState<number[]>([]);
+
+    useEffect(() => {
+        setTapPicks([]);
+    }, [gameState.sicBoInputMode]);
 
     const renderBetItem = useCallback((bet: SicBoBet, i: number) => {
         const targetLabel = (() => {
@@ -39,6 +45,61 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
             </div>
         );
     }, []);
+
+    const closeInput = useCallback(() => {
+        setTapPicks([]);
+        actions?.setGameState?.((prev: any) => ({ ...prev, sicBoInputMode: 'NONE' }));
+    }, [actions]);
+
+    const handleTapPick = useCallback((n: number) => {
+        const mode = gameState.sicBoInputMode;
+        if (mode === 'NONE') return;
+
+        const place = (type: SicBoBet['type'], target?: number) => {
+            actions?.placeSicBoBet?.(type, target);
+            setTapPicks([]);
+        };
+
+        if (mode === 'SINGLE') return place('SINGLE_DIE', n);
+        if (mode === 'DOUBLE') return place('DOUBLE_SPECIFIC', n);
+        if (mode === 'TRIPLE') return place('TRIPLE_SPECIFIC', n);
+        if (mode === 'SUM') return place('SUM', n);
+
+        if (mode === 'HOP3_HARD') {
+            if (tapPicks.length === 0) return setTapPicks([n]);
+            const doubled = tapPicks[0];
+            if (n === doubled) return setTapPicks([]);
+            return place('HOP3_HARD', (doubled << 4) | n);
+        }
+
+        if (mode === 'DOMINO') {
+            const next = tapPicks.includes(n) ? tapPicks.filter((x) => x !== n) : [...tapPicks, n].slice(0, 2);
+            if (next.length < 2) {
+                setTapPicks(next);
+                return;
+            }
+            const [a, b] = next;
+            if (a === b) {
+                setTapPicks([a]);
+                return;
+            }
+            const min = Math.min(a, b);
+            const max = Math.max(a, b);
+            return place('DOMINO', (min << 4) | max);
+        }
+
+        if (mode === 'HOP3_EASY' || mode === 'HOP4_EASY') {
+            const maxCount = mode === 'HOP3_EASY' ? 3 : 4;
+            const next = tapPicks.includes(n) ? tapPicks.filter((x) => x !== n) : [...tapPicks, n];
+            if (next.length > maxCount) return;
+            if (next.length < maxCount) {
+                setTapPicks(next);
+                return;
+            }
+            const mask = next.reduce((m, v) => m | (1 << (v - 1)), 0);
+            return place(mode, mask);
+        }
+    }, [actions, gameState.sicBoInputMode, tapPicks]);
 
     // Render a single exposure row for TOTALS column
     const renderTotalRow = useCallback((entry: { total: number; isTriple: boolean; label: string }, idx: number) => {
@@ -230,7 +291,7 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
             </div>
 
             {/* CONTROLS */}
-            <div className="absolute bottom-8 left-0 right-0 h-16 bg-terminal-black/90 border-t-2 border-gray-700 flex items-center justify-start md:justify-center gap-2 p-2 z-40 overflow-x-auto">
+            <GameControlBar>
                     <div className="flex gap-2">
                         <button
                             type="button"
@@ -239,8 +300,8 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                                 betTypes.has('SMALL') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
                             }`}
                         >
-                            <span className="text-white font-bold text-sm">S</span>
-                            <span className="text-[10px] text-gray-500">SMALL</span>
+                            <span className="ns-keycap text-white font-bold text-sm">S</span>
+                            <span className="ns-action text-[10px] text-gray-500">SMALL</span>
                         </button>
                         <button
                             type="button"
@@ -249,8 +310,8 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                                 betTypes.has('BIG') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
                             }`}
                         >
-                            <span className="text-white font-bold text-sm">B</span>
-                            <span className="text-[10px] text-gray-500">BIG</span>
+                            <span className="ns-keycap text-white font-bold text-sm">B</span>
+                            <span className="ns-action text-[10px] text-gray-500">BIG</span>
                         </button>
                         <button
                             type="button"
@@ -259,8 +320,8 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                                 betTypes.has('ODD') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
                             }`}
                         >
-                            <span className="text-white font-bold text-sm">O</span>
-                            <span className="text-[10px] text-gray-500">ODD</span>
+                            <span className="ns-keycap text-white font-bold text-sm">O</span>
+                            <span className="ns-action text-[10px] text-gray-500">ODD</span>
                         </button>
                         <button
                             type="button"
@@ -269,8 +330,8 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                                 betTypes.has('EVEN') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
                             }`}
                         >
-                            <span className="text-white font-bold text-sm">V</span>
-                            <span className="text-[10px] text-gray-500">EVEN</span>
+                            <span className="ns-keycap text-white font-bold text-sm">V</span>
+                            <span className="ns-action text-[10px] text-gray-500">EVEN</span>
                         </button>
                     </div>
                     <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -283,9 +344,9 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                                     ? 'border-terminal-green bg-terminal-green/10'
                                     : 'border-terminal-dim'
                             }`}
-                         >
-                            <span className="text-white font-bold text-sm">N</span>
-                            <span className="text-[10px] text-gray-500">DIE</span>
+	                         >
+                            <span className="ns-keycap text-white font-bold text-sm">N</span>
+                            <span className="ns-action text-[10px] text-gray-500">DIE</span>
                         </button>
                         <button
                             type="button"
@@ -296,8 +357,8 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                                     : 'border-terminal-dim'
                             }`}
                         >
-                            <span className="text-white font-bold text-sm">D</span>
-                            <span className="text-[10px] text-gray-500">DOUBLE</span>
+                            <span className="ns-keycap text-white font-bold text-sm">D</span>
+                            <span className="ns-action text-[10px] text-gray-500">DOUBLE</span>
                         </button>
                         <button
                             type="button"
@@ -308,8 +369,8 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                                     : 'border-terminal-dim'
                             }`}
                         >
-                            <span className="text-white font-bold text-sm">T</span>
-                            <span className="text-[10px] text-gray-500">TRIPLE</span>
+                            <span className="ns-keycap text-white font-bold text-sm">T</span>
+                            <span className="ns-action text-[10px] text-gray-500">TRIPLE</span>
                         </button>
                         <button
                             type="button"
@@ -320,8 +381,8 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                                     : 'border-terminal-dim'
                             }`}
                         >
-                            <span className="text-white font-bold text-sm">C</span>
-                            <span className="text-[10px] text-gray-500">DOMINO</span>
+                            <span className="ns-keycap text-white font-bold text-sm">C</span>
+                            <span className="ns-action text-[10px] text-gray-500">DOMINO</span>
                         </button>
                         <button
                             type="button"
@@ -332,8 +393,8 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                                     : 'border-terminal-dim'
                             }`}
                         >
-                            <span className="text-white font-bold text-sm">E</span>
-                            <span className="text-[10px] text-gray-500">3-HOP</span>
+                            <span className="ns-keycap text-white font-bold text-sm">E</span>
+                            <span className="ns-action text-[10px] text-gray-500">3-HOP</span>
                         </button>
                         <button
                             type="button"
@@ -344,8 +405,8 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                                     : 'border-terminal-dim'
                             }`}
                         >
-                            <span className="text-white font-bold text-sm">H</span>
-                            <span className="text-[10px] text-gray-500">HARD</span>
+                            <span className="ns-keycap text-white font-bold text-sm">H</span>
+                            <span className="ns-action text-[10px] text-gray-500">HARD</span>
                         </button>
                         <button
                             type="button"
@@ -356,8 +417,8 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                                     : 'border-terminal-dim'
                             }`}
                         >
-                            <span className="text-white font-bold text-sm">F</span>
-                            <span className="text-[10px] text-gray-500">4-HOP</span>
+                            <span className="ns-keycap text-white font-bold text-sm">F</span>
+                            <span className="ns-action text-[10px] text-gray-500">4-HOP</span>
                         </button>
                          <button
                             type="button"
@@ -368,8 +429,8 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                                     : 'border-terminal-dim'
                             }`}
                         >
-                            <span className="text-white font-bold text-sm">M</span>
-                            <span className="text-[10px] text-gray-500">SUM</span>
+                            <span className="ns-keycap text-white font-bold text-sm">M</span>
+                            <span className="ns-action text-[10px] text-gray-500">SUM</span>
                         </button>
                     </div>
                     <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -381,24 +442,24 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                                 betTypes.has('TRIPLE_ANY') ? 'border-terminal-green bg-terminal-green/10' : 'border-terminal-dim'
                             }`}
                         >
-                            <span className="text-white font-bold text-sm">A</span>
-                            <span className="text-[10px] text-gray-500">ANY 3</span>
+                            <span className="ns-keycap text-white font-bold text-sm">A</span>
+                            <span className="ns-action text-[10px] text-gray-500">ANY 3</span>
                         </button>
                         <button
                             type="button"
                             onClick={actions?.rebetSicBo}
                             className="flex flex-col items-center border border-gray-700 rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-gray-500 font-bold text-sm">R</span>
-                            <span className="text-[10px] text-gray-600">REBET</span>
+                            <span className="ns-keycap text-gray-500 font-bold text-sm">R</span>
+                            <span className="ns-action text-[10px] text-gray-600">REBET</span>
                         </button>
                         <button
                             type="button"
                             onClick={actions?.undoSicBoBet}
                             className="flex flex-col items-center border border-gray-700 rounded bg-black/50 px-3 py-1"
                         >
-                            <span className="text-gray-500 font-bold text-sm">U</span>
-                            <span className="text-[10px] text-gray-600">UNDO</span>
+                            <span className="ns-keycap text-gray-500 font-bold text-sm">U</span>
+                            <span className="ns-action text-[10px] text-gray-600">UNDO</span>
                         </button>
                     </div>
                     <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -408,16 +469,16 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                             onClick={actions?.toggleShield}
                             className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${gameState.activeModifiers.shield ? 'border-cyan-400 text-cyan-400' : 'border-gray-700 text-gray-500'}`}
                          >
-                            <span className="font-bold text-sm">Z</span>
-                            <span className="text-[10px]">SHIELD</span>
+                            <span className="ns-keycap font-bold text-sm">Z</span>
+                            <span className="ns-action text-[10px]">SHIELD</span>
                         </button>
                          <button
                             type="button"
                             onClick={actions?.toggleDouble}
                             className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${gameState.activeModifiers.double ? 'border-purple-400 text-purple-400' : 'border-gray-700 text-gray-500'}`}
                          >
-                            <span className="font-bold text-sm">X</span>
-                            <span className="text-[10px]">DOUBLE</span>
+                            <span className="ns-keycap font-bold text-sm">X</span>
+                            <span className="ns-action text-[10px]">DOUBLE</span>
                         </button>
                         <button
                             type="button"
@@ -428,8 +489,8 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                                     : 'border-gray-700 text-gray-500'
                             }`}
                         >
-                            <span className="font-bold text-sm">G</span>
-                            <span className="text-[10px]">SUPER</span>
+                            <span className="ns-keycap font-bold text-sm">G</span>
+                            <span className="ns-action text-[10px]">SUPER</span>
                         </button>
                     </div>
                     <div className="w-px h-8 bg-gray-800 mx-2"></div>
@@ -438,58 +499,88 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                         onClick={actions?.deal}
                         className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1 w-24"
                     >
-                        <span className="text-terminal-green font-bold text-sm">SPACE</span>
-                        <span className="text-[10px] text-gray-500">ROLL</span>
+                        <span className="ns-keycap text-terminal-green font-bold text-sm">SPACE</span>
+                        <span className="ns-action text-[10px] text-gray-500">ROLL</span>
                     </button>
-            </div>
+            </GameControlBar>
 
             {/* SIC BO MODAL */}
             {gameState.sicBoInputMode !== 'NONE' && (
-                 <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
-                     <div className="bg-terminal-black border border-terminal-green p-6 rounded-lg shadow-xl flex flex-col items-center gap-4">
-                         <div className="text-sm tracking-widest text-gray-400 uppercase">
-                             {gameState.sicBoInputMode === 'SINGLE' && "SELECT NUMBER (1-6)"}
-                             {gameState.sicBoInputMode === 'DOUBLE' && "SELECT DOUBLE (1-6)"}
-                             {gameState.sicBoInputMode === 'TRIPLE' && "SELECT TRIPLE (1-6)"}
-                             {gameState.sicBoInputMode === 'DOMINO' && "SELECT 2 NUMBERS (1-6)"}
-                             {gameState.sicBoInputMode === 'HOP3_EASY' && "SELECT 3 NUMBERS (1-6)"}
-                             {gameState.sicBoInputMode === 'HOP3_HARD' && "SELECT DOUBLE THEN SINGLE (1-6)"}
-                             {gameState.sicBoInputMode === 'HOP4_EASY' && "SELECT 4 NUMBERS (1-6)"}
-                             {gameState.sicBoInputMode === 'SUM' && "TYPE TOTAL (4-17)"}
+                 <div
+                     className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                     onClick={closeInput}
+                 >
+                     <div
+                         className="bg-terminal-black border border-terminal-green p-4 sm:p-6 rounded-lg shadow-xl flex flex-col items-center gap-4 w-full max-w-lg"
+                         onClick={(e) => e.stopPropagation()}
+                     >
+                         <div className="text-sm tracking-widest text-gray-400 uppercase text-center">
+                             {gameState.sicBoInputMode === 'SINGLE' && "TAP NUMBER (1-6)"}
+                             {gameState.sicBoInputMode === 'DOUBLE' && "TAP DOUBLE (1-6)"}
+                             {gameState.sicBoInputMode === 'TRIPLE' && "TAP TRIPLE (1-6)"}
+                             {gameState.sicBoInputMode === 'DOMINO' && "TAP 2 NUMBERS (1-6)"}
+                             {gameState.sicBoInputMode === 'HOP3_EASY' && "TAP 3 NUMBERS (1-6)"}
+                             {gameState.sicBoInputMode === 'HOP3_HARD' && "TAP DOUBLE THEN SINGLE (1-6)"}
+                             {gameState.sicBoInputMode === 'HOP4_EASY' && "TAP 4 NUMBERS (1-6)"}
+                             {gameState.sicBoInputMode === 'SUM' && "TAP TOTAL (3-18) OR TYPE (ENTER)"}
                          </div>
-                         
+
                          {gameState.sicBoInputMode === 'SUM' ? (
-                              <div className="text-4xl text-white font-bold font-mono h-12 flex items-center justify-center border-b border-gray-700 w-32">
-                                 {numberInput}
-                                 <span className="animate-pulse">_</span>
-                              </div>
+                              <>
+                                  <div className="text-3xl text-white font-bold font-mono h-12 flex items-center justify-center border-b border-gray-700 w-32">
+                                     {numberInput}
+                                     <span className="animate-pulse">_</span>
+                                  </div>
+                                  <div className="grid grid-cols-8 gap-2 w-full">
+                                      {Array.from({ length: 16 }, (_, i) => i + 3).map((t) => (
+                                          <button
+                                              key={t}
+                                              type="button"
+                                              onClick={() => handleTapPick(t)}
+                                              className="h-11 rounded border border-gray-800 bg-gray-900/50 text-white text-sm font-bold hover:border-gray-600"
+                                          >
+                                              {t}
+                                          </button>
+                                      ))}
+                                  </div>
+                              </>
                          ) : (
                              <div className="flex gap-2">
-                                 {[1,2,3,4,5,6].map(n => (
-                                     <div key={n} className="flex flex-col items-center gap-1">
-                                         <div className="w-10 h-10 flex items-center justify-center border border-gray-700 rounded bg-gray-900 text-white font-bold">
-                                             {n}
-                                         </div>
-                                          <div className="text-[9px] text-gray-500">[{n}]</div>
-                                     </div>
-                                 ))}
+                                 {[1,2,3,4,5,6].map(n => {
+                                     const selected = tapPicks.includes(n);
+                                     return (
+                                         <button
+                                             key={n}
+                                             type="button"
+                                             onClick={() => handleTapPick(n)}
+                                             className={`flex flex-col items-center gap-1 rounded border px-2 py-2 ${
+                                                 selected ? 'border-terminal-green bg-terminal-green/10' : 'border-gray-700 bg-gray-900'
+                                             }`}
+                                         >
+                                             <div className="w-10 h-10 flex items-center justify-center rounded text-white font-bold">
+                                                 {n}
+                                             </div>
+                                             <div className="text-[9px] text-gray-500">[{n}]</div>
+                                         </button>
+                                     );
+                                 })}
                              </div>
                          )}
 
-                         {gameState.sicBoInputMode === 'DOMINO' && numberInput && (
-                             <div className="text-xs text-gray-500">FIRST: {numberInput}</div>
+                         {gameState.sicBoInputMode === 'DOMINO' && tapPicks.length > 0 && (
+                             <div className="text-xs text-gray-500">SELECTED: {tapPicks.join('-')}</div>
                          )}
 
-                         {gameState.sicBoInputMode === 'HOP3_HARD' && numberInput && (
-                             <div className="text-xs text-gray-500">DOUBLE: {numberInput}</div>
+                         {gameState.sicBoInputMode === 'HOP3_HARD' && tapPicks.length === 1 && (
+                             <div className="text-xs text-gray-500">DOUBLE: {tapPicks[0]}</div>
                          )}
 
-                         {(gameState.sicBoInputMode === 'HOP3_EASY' || gameState.sicBoInputMode === 'HOP4_EASY') && numberInput && (
-                             <div className="text-xs text-gray-500">SELECTED: {numberInput.split('').join('-')}</div>
+                         {(gameState.sicBoInputMode === 'HOP3_EASY' || gameState.sicBoInputMode === 'HOP4_EASY') && tapPicks.length > 0 && (
+                             <div className="text-xs text-gray-500">SELECTED: {tapPicks.join('-')}</div>
                          )}
 
-                         <div className="text-xs text-gray-500 mt-2">
-                             [ESC] CANCEL {gameState.sicBoInputMode === 'SUM' && "[ENTER] CONFIRM"}
+                         <div className="text-xs text-gray-500 mt-2 text-center">
+                             Tap outside to cancel. Keyboard: [ESC] CANCEL {gameState.sicBoInputMode === 'SUM' && "[ENTER] CONFIRM"}
                          </div>
                      </div>
                  </div>

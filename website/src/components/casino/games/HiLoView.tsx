@@ -2,14 +2,23 @@
 import React, { useCallback } from 'react';
 import { GameState, Card } from '../../../types';
 import { Hand } from '../GameComponents';
+import { MobileDrawer } from '../MobileDrawer';
+import { GameControlBar } from '../GameControlBar';
 import { getHiLoRank } from '../../../utils/gameUtils';
 
 interface HiLoViewProps {
     gameState: GameState;
     deck: Card[];
+    actions?: {
+        deal?: () => void;
+        toggleShield?: () => void;
+        toggleDouble?: () => void;
+        hiloPlay?: (guess: 'HIGHER' | 'LOWER') => void;
+        hiloCashout?: () => void;
+    };
 }
 
-export const HiLoView = React.memo<HiLoViewProps>(({ gameState, deck }) => {
+export const HiLoView = React.memo<HiLoViewProps>(({ gameState, deck, actions }) => {
     // Keep the prop for compatibility (other games use the shared deck), but HiLo projections
     // must not depend on the local deck (on-chain play doesn't have a local deck).
     void deck;
@@ -33,8 +42,21 @@ export const HiLoView = React.memo<HiLoViewProps>(({ gameState, deck }) => {
 
     return (
         <>
-            <div className="flex-1 w-full flex flex-col items-center justify-center gap-8 relative z-10 pb-20">
+            <div className="flex-1 w-full flex flex-col items-center justify-center gap-8 relative z-10 pb-32">
                 <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">HILO</h1>
+                <div className="absolute top-2 right-2 z-40">
+                    <MobileDrawer label="INFO" title="HILO">
+                        <div className="space-y-3">
+                            <div className="text-[11px] text-gray-300 leading-relaxed">
+                                Guess whether the next card is higher or lower than the current card. Cash out anytime to
+                                lock in the pot.
+                            </div>
+                            <div className="text-[10px] text-gray-600 leading-relaxed">
+                                Multipliers shown are based on remaining winning ranks (A is low, K is high).
+                            </div>
+                        </div>
+                    </MobileDrawer>
+                </div>
                 
                 {/* TOP: POT */}
                 <div className="min-h-[80px] flex flex-col items-center justify-center w-full max-w-md">
@@ -94,42 +116,71 @@ export const HiLoView = React.memo<HiLoViewProps>(({ gameState, deck }) => {
             </div>
 
             {/* CONTROLS */}
-            <div className="absolute bottom-8 left-0 right-0 h-16 bg-terminal-black/90 border-t-2 border-gray-700 flex items-center justify-start md:justify-center gap-2 p-2 z-40 overflow-x-auto">
-                {(gameState.stage === 'BETTING' || gameState.stage === 'RESULT') ? (
+            {(gameState.stage === 'BETTING' || gameState.stage === 'RESULT') ? (
+                <GameControlBar>
                     <>
                          <div className="flex gap-2">
-                             <div className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${gameState.activeModifiers.shield ? 'border-cyan-400 text-cyan-400' : 'border-gray-700 text-gray-500'}`}>
-                                <span className="font-bold text-sm">Z</span>
-                                <span className="text-[10px]">SHIELD</span>
-                            </div>
-                             <div className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${gameState.activeModifiers.double ? 'border-purple-400 text-purple-400' : 'border-gray-700 text-gray-500'}`}>
-                                <span className="font-bold text-sm">X</span>
-                                <span className="text-[10px]">DOUBLE</span>
-                            </div>
+                             <button
+                                 type="button"
+                                 onClick={actions?.toggleShield}
+                                 className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${gameState.activeModifiers.shield ? 'border-cyan-400 text-cyan-400' : 'border-gray-700 text-gray-500'}`}
+                             >
+                                <span className="ns-keycap font-bold text-sm">Z</span>
+                                <span className="ns-action text-[10px]">SHIELD</span>
+                             </button>
+                             <button
+                                 type="button"
+                                 onClick={actions?.toggleDouble}
+                                 className={`flex flex-col items-center border rounded bg-black/50 px-3 py-1 ${gameState.activeModifiers.double ? 'border-purple-400 text-purple-400' : 'border-gray-700 text-gray-500'}`}
+                             >
+                                <span className="ns-keycap font-bold text-sm">X</span>
+                                <span className="ns-action text-[10px]">DOUBLE</span>
+                             </button>
                         </div>
                         <div className="w-px h-8 bg-gray-800 mx-2"></div>
-                        <div className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1 w-24">
-                            <span className="text-terminal-green font-bold text-sm">SPACE</span>
-                            <span className="text-[10px] text-gray-500">DEAL</span>
-                        </div>
+                        <button
+                            type="button"
+                            onClick={actions?.deal}
+                            className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1 w-24"
+                        >
+                            <span className="ns-keycap text-terminal-green font-bold text-sm">SPACE</span>
+                            <span className="ns-action text-[10px] text-gray-500">DEAL</span>
+                        </button>
                     </>
-                ) : (
-                    <div className="flex gap-2">
-                        <div className="flex flex-col items-center border border-terminal-green/50 rounded bg-black/50 px-3 py-1">
-                            <span className="text-terminal-green font-bold text-sm">H</span>
-                            <span className="text-[10px] text-gray-500">HIGHER</span>
-                        </div>
-                        <div className="flex flex-col items-center border border-terminal-accent/50 rounded bg-black/50 px-3 py-1">
-                            <span className="text-terminal-accent font-bold text-sm">L</span>
-                            <span className="text-[10px] text-gray-500">LOWER</span>
-                        </div>
-                        <div className="flex flex-col items-center border border-terminal-gold/50 rounded bg-black/50 px-3 py-1">
-                            <span className="text-terminal-gold font-bold text-sm">C</span>
-                            <span className="text-[10px] text-gray-500">CASHOUT</span>
-                        </div>
+                </GameControlBar>
+            ) : (
+                <GameControlBar variant="stack">
+                    <button
+                        type="button"
+                        onClick={actions?.hiloCashout}
+                        className="w-full h-12 rounded border border-terminal-gold/60 bg-terminal-gold/10 text-terminal-gold font-bold tracking-widest uppercase hover:bg-terminal-gold/20"
+                    >
+                        <span className="ns-keycap">C</span> CASHOUT · LOCK POT
+                    </button>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                        <button
+                            type="button"
+                            onClick={() => actions?.hiloPlay?.('LOWER')}
+                            className="h-16 rounded border border-terminal-accent/60 bg-black/50 hover:bg-terminal-accent/10 flex flex-col items-center justify-center"
+                        >
+                            <div className="text-[10px] text-gray-500 tracking-widest uppercase">
+                                <span className="ns-keycap text-terminal-accent font-bold">L</span> LOWER
+                            </div>
+                            <div className="text-terminal-accent font-bold text-sm">{nextGuessMultiplier('LOWER')}</div>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => actions?.hiloPlay?.('HIGHER')}
+                            className="h-16 rounded border border-terminal-green/60 bg-black/50 hover:bg-terminal-green/10 flex flex-col items-center justify-center"
+                        >
+                            <div className="text-[10px] text-gray-500 tracking-widest uppercase">
+                                <span className="ns-keycap text-terminal-green font-bold">H</span> HIGHER
+                            </div>
+                            <div className="text-terminal-green font-bold text-sm">{nextGuessMultiplier('HIGHER')}</div>
+                        </button>
                     </div>
-                )}
-            </div>
+                </GameControlBar>
+            )}
         </>
     );
 });
