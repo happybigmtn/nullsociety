@@ -20,6 +20,7 @@ interface HeaderProps {
     onToggleSound?: () => void;
     reducedMotion?: boolean;
     onToggleReducedMotion?: () => void;
+    children?: React.ReactNode;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,6 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
     onToggleSound,
     reducedMotion = false,
     onToggleReducedMotion,
+    children,
 }) => (
     <header className="h-12 border-b-2 border-gray-700 flex items-center justify-between px-2 sm:px-4 z-10 bg-terminal-black/90 backdrop-blur">
     <div className="flex items-center gap-2 sm:gap-4">
@@ -171,66 +173,10 @@ export const Header: React.FC<HeaderProps> = ({
                 <span className="text-gray-500 hidden sm:inline">CHIPS</span>
                 <span className="text-white font-bold text-sm sm:text-lg">${stats.chips.toLocaleString()}</span>
             </div>
-            {(onToggleTouchMode || onToggleSound || onToggleReducedMotion) ? (
-                <MobileDrawer label="SET" title="SETTINGS" className="sm:hidden">
-                    <div className="space-y-3">
-                        {onToggleSound ? (
-                            <div className="flex items-center justify-between border border-gray-800 rounded bg-black/40 p-3">
-                                <div>
-                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest">Sound</div>
-                                    <div className="text-[11px] text-gray-400 mt-1">SFX for deal/win</div>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={onToggleSound}
-                                    className={`text-[10px] px-2 py-1 rounded border ${
-                                        soundEnabled ? 'border-terminal-green text-terminal-green' : 'border-gray-800 text-gray-500'
-                                    }`}
-                                >
-                                    {soundEnabled ? 'ON' : 'OFF'}
-                                </button>
-                            </div>
-                        ) : null}
-                        {onToggleReducedMotion ? (
-                            <div className="flex items-center justify-between border border-gray-800 rounded bg-black/40 p-3">
-                                <div>
-                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest">Motion</div>
-                                    <div className="text-[11px] text-gray-400 mt-1">Reduce animations</div>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={onToggleReducedMotion}
-                                    className={`text-[10px] px-2 py-1 rounded border ${
-                                        reducedMotion ? 'border-terminal-green text-terminal-green' : 'border-gray-800 text-gray-500'
-                                    }`}
-                                >
-                                    {reducedMotion ? 'LOW' : 'FULL'}
-                                </button>
-                            </div>
-                        ) : null}
-                        {onToggleTouchMode ? (
-                            <div className="flex items-center justify-between border border-gray-800 rounded bg-black/40 p-3">
-                                <div>
-                                    <div className="text-[10px] text-gray-500 uppercase tracking-widest">Touch Mode</div>
-                                    <div className="text-[11px] text-gray-400 mt-1">Hide key hints</div>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={onToggleTouchMode}
-                                    className={`text-[10px] px-2 py-1 rounded border ${
-                                        touchMode ? 'border-terminal-green text-terminal-green' : 'border-gray-800 text-gray-500'
-                                    }`}
-                                >
-                                    {touchMode ? 'ON' : 'OFF'}
-                                </button>
-                            </div>
-                        ) : null}
-                    </div>
-                </MobileDrawer>
-            ) : null}
+            {children}
     </div>
     </header>
-);
+);;
 
 export const TournamentAlert: React.FC<{ tournamentTime: number }> = ({ tournamentTime }) => {
     // 60s warning (display for 3s), 30s warning (display for 3s), 5s countdown

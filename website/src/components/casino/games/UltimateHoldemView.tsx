@@ -19,7 +19,7 @@ const getStageDescription = (stage: string, communityCards: number): string => {
     return '';
 };
 
-export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin?: number }>(({ gameState, actions, lastWin }) => {
+export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
     const stageDesc = useMemo(() =>
         getStageDescription(gameState.stage, gameState.communityCards.length),
         [gameState.stage, gameState.communityCards.length]
@@ -262,6 +262,7 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
                                 onClick: actions?.uthToggleProgressive,
                                 active: (gameState.uthProgressiveBet || 0) > 0,
                             },
+                            ...(playMode !== 'CASH' ? [
                             {
                                 label: 'SHIELD',
                                 onClick: actions?.toggleShield,
@@ -272,6 +273,7 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
                                 onClick: actions?.toggleDouble,
                                 active: gameState.activeModifiers.double,
                             },
+                            ] : []),
                             {
                                 label: 'SUPER',
                                 onClick: actions?.toggleSuper,

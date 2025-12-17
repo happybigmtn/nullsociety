@@ -6,7 +6,7 @@ import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
 import { getSicBoTotalItems, getSicBoCombinationItems, calculateSicBoTotalExposure, calculateSicBoCombinationExposure } from '../../../utils/gameUtils';
 
-export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string; actions: any; lastWin?: number }>(({ gameState, numberInput = "", actions, lastWin }) => {
+export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string; actions: any; lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, numberInput = "", actions, lastWin, playMode }) => {
 
     const totalItems = useMemo(() => getSicBoTotalItems(), []);
     const combinationItems = useMemo(() => getSicBoCombinationItems(), []);
@@ -319,8 +319,10 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                     { label: 'REBET', onClick: actions?.rebetSicBo },
                     { label: 'UNDO', onClick: actions?.undoSicBoBet },
                     // Modifiers
+                    ...(playMode !== 'CASH' ? [
                     { label: 'SHIELD', onClick: actions?.toggleShield, active: gameState.activeModifiers.shield },
                     { label: 'DOUBLE', onClick: actions?.toggleDouble, active: gameState.activeModifiers.double },
+                    ] : []),
                     { label: 'SUPER', onClick: actions?.toggleSuper, active: gameState.activeModifiers.super },
                 ]}
             />

@@ -6,7 +6,7 @@ import { getBaccaratValue } from '../../../utils/gameUtils';
 import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
 
-export const BaccaratView = React.memo<{ gameState: GameState; actions: any; lastWin?: number }>(({ gameState, actions, lastWin }) => {
+export const BaccaratView = React.memo<{ gameState: GameState; actions: any; lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
     // Consolidate main bet and side bets for display
     const allBets = useMemo(() => [
         { type: gameState.baccaratSelection, amount: gameState.bet },
@@ -206,6 +206,7 @@ export const BaccaratView = React.memo<{ gameState: GameState; actions: any; las
                         label: 'UNDO',
                         onClick: actions?.baccaratActions?.undo,
                     },
+                    ...(playMode !== 'CASH' ? [
                     {
                         label: 'SHIELD',
                         onClick: actions?.toggleShield,
@@ -216,6 +217,7 @@ export const BaccaratView = React.memo<{ gameState: GameState; actions: any; las
                         onClick: actions?.toggleDouble,
                         active: gameState.activeModifiers.double,
                     },
+                    ] : []),
                     {
                         label: 'SUPER',
                         onClick: actions?.toggleSuper,

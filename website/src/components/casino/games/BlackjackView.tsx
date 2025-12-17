@@ -6,7 +6,7 @@ import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
 import { getVisibleHandValue } from '../../../utils/gameUtils';
 
-export const BlackjackView = React.memo<{ gameState: GameState; actions: any; lastWin?: number }>(({ gameState, actions, lastWin }) => {
+export const BlackjackView = React.memo<{ gameState: GameState; actions: any; lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
     const dealerValue = useMemo(() => getVisibleHandValue(gameState.dealerCards), [gameState.dealerCards]);
     const playerValue = useMemo(() => getVisibleHandValue(gameState.playerCards), [gameState.playerCards]);
     const showInsurancePrompt = useMemo(() => {
@@ -160,6 +160,7 @@ export const BlackjackView = React.memo<{ gameState: GameState; actions: any; la
                                 onClick: actions?.bjToggle21Plus3,
                                 active: (gameState.blackjack21Plus3Bet || 0) > 0,
                             }] : []),
+                            ...(playMode !== 'CASH' ? [
                             {
                                 label: 'SHIELD',
                                 onClick: actions?.toggleShield,
@@ -170,6 +171,7 @@ export const BlackjackView = React.memo<{ gameState: GameState; actions: any; la
                                 onClick: actions?.toggleDouble,
                                 active: gameState.activeModifiers.double,
                             },
+                            ] : []),
                             {
                                 label: 'SUPER',
                                 onClick: actions?.toggleSuper,

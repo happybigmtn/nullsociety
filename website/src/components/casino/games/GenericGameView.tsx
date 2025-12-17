@@ -6,7 +6,7 @@ import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
 import { getVisibleHandValue } from '../../../utils/gameUtils';
 
-export const GenericGameView = React.memo<{ gameState: GameState; actions: any; lastWin?: number }>(({ gameState, actions, lastWin }) => {
+export const GenericGameView = React.memo<{ gameState: GameState; actions: any; lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
     const dealerValue = useMemo(() => getVisibleHandValue(gameState.dealerCards), [gameState.dealerCards]);
     const playerValue = useMemo(() => getVisibleHandValue(gameState.playerCards), [gameState.playerCards]);
     const gameTitle = useMemo(() => gameState.type.replace(/_/g, ' '), [gameState.type]);
@@ -118,6 +118,7 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any; 
                                  onClick: actions?.casinoWarToggleTieBet,
                                  active: casinoWarTieBet > 0,
                              }] : []),
+                             ...(playMode !== 'CASH' ? [
                              {
                                  label: 'SHIELD',
                                  onClick: actions?.toggleShield,
@@ -128,6 +129,7 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any; 
                                  onClick: actions?.toggleDouble,
                                  active: gameState.activeModifiers.double,
                              },
+                             ] : []),
                              {
                                  label: 'SUPER',
                                  onClick: actions?.toggleSuper,

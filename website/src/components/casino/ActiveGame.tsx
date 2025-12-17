@@ -23,9 +23,10 @@ interface ActiveGameProps {
   onOpenCommandPalette?: () => void;
   reducedMotion?: boolean;
   chips?: number;
+  playMode: 'CASH' | 'FREEROLL' | null;
 }
 
-export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberInput, onToggleHold, aiAdvice, actions, onOpenCommandPalette, reducedMotion = false, chips }) => {
+export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberInput, onToggleHold, aiAdvice, actions, onOpenCommandPalette, reducedMotion = false, chips, playMode }) => {
   if (gameState.type === GameType.NONE) {
      const handleOpen = () => onOpenCommandPalette?.();
      return (
@@ -104,6 +105,8 @@ export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberI
     prevChipsRef.current = chips;
   }, [chips]);
 
+  const displayWin = gameState.stage === 'RESULT' ? gameState.lastResult : transientWin;
+
   return (
     <>
          <div className="flex justify-center z-30 pointer-events-none select-none mb-2">
@@ -140,20 +143,20 @@ export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberI
                 reducedMotion={reducedMotion}
 	         />
 
-         {gameState.type === GameType.BLACKJACK && <BlackjackView gameState={gameState} actions={actions} lastWin={transientWin} />}
-         {gameState.type === GameType.CRAPS && <CrapsView gameState={gameState} actions={actions} lastWin={transientWin} />}
-         {gameState.type === GameType.BACCARAT && <BaccaratView gameState={gameState} actions={actions} lastWin={transientWin} />}
-         {gameState.type === GameType.ROULETTE && <RouletteView gameState={gameState} numberInput={numberInput} actions={actions} lastWin={transientWin} />}
-         {gameState.type === GameType.SIC_BO && <SicBoView gameState={gameState} numberInput={numberInput} actions={actions} lastWin={transientWin} />}
-         {gameState.type === GameType.HILO && <HiLoView gameState={gameState} deck={deck} actions={actions} lastWin={transientWin} />}
+         {gameState.type === GameType.BLACKJACK && <BlackjackView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} />}
+         {gameState.type === GameType.CRAPS && <CrapsView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} />}
+         {gameState.type === GameType.BACCARAT && <BaccaratView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} />}
+         {gameState.type === GameType.ROULETTE && <RouletteView gameState={gameState} numberInput={numberInput} actions={actions} lastWin={displayWin} playMode={playMode} />}
+         {gameState.type === GameType.SIC_BO && <SicBoView gameState={gameState} numberInput={numberInput} actions={actions} lastWin={displayWin} playMode={playMode} />}
+         {gameState.type === GameType.HILO && <HiLoView gameState={gameState} deck={deck} actions={actions} lastWin={displayWin} playMode={playMode} />}
          {gameState.type === GameType.VIDEO_POKER && (
-             <VideoPokerView gameState={gameState} onToggleHold={onToggleHold} actions={actions} lastWin={transientWin} />
+             <VideoPokerView gameState={gameState} onToggleHold={onToggleHold} actions={actions} lastWin={displayWin} playMode={playMode} />
          )}
-         {gameState.type === GameType.THREE_CARD && <ThreeCardPokerView gameState={gameState} actions={actions} lastWin={transientWin} />}
-         {gameState.type === GameType.ULTIMATE_HOLDEM && <UltimateHoldemView gameState={gameState} actions={actions} lastWin={transientWin} />}
+         {gameState.type === GameType.THREE_CARD && <ThreeCardPokerView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} />}
+         {gameState.type === GameType.ULTIMATE_HOLDEM && <UltimateHoldemView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} />}
 
          {gameState.type === GameType.CASINO_WAR && (
-             <GenericGameView gameState={gameState} actions={actions} lastWin={transientWin} />
+             <GenericGameView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} />
          )}
          
          {aiAdvice && (

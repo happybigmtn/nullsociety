@@ -57,18 +57,22 @@ export const WalletPill: React.FC<WalletPillProps> = ({ rng, vusdt, pubkeyHex, c
         .join(' ')
         .trim()}
     >
-      <Link
-        to="/security"
-        className={[
-          'inline-flex items-center gap-1 rounded border px-2 py-1 text-[10px] tracking-widest uppercase hover:bg-gray-900/60',
-          vault.className,
-        ].join(' ')}
-      >
-        <span className="text-gray-500">Vault</span>
-        <span className="font-bold">{vault.label}</span>
-      </Link>
+      {vaultStatus.supported && (
+        <>
+          <Link
+            to="/security"
+            className={[
+              'inline-flex items-center gap-1 rounded border px-2 py-1 text-[10px] tracking-widest uppercase hover:bg-gray-900/60',
+              vault.className,
+            ].join(' ')}
+          >
+            <span className="text-gray-500">Vault</span>
+            <span className="font-bold">{vault.label}</span>
+          </Link>
 
-      <div className="h-4 w-px bg-gray-800" />
+          <div className="h-4 w-px bg-gray-800" />
+        </>
+      )}
 
       <div className="flex items-center gap-2 text-[10px] tracking-widest uppercase text-gray-400 whitespace-nowrap">
         <span>

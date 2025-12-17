@@ -39,7 +39,7 @@ const getHandRankName = (cards: { rank: string }[]): string => {
     return 'HIGH CARD';
 };
 
-export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps & { lastWin?: number }>(({ gameState, actions, lastWin }) => {
+export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
     const playerRank = useMemo(() =>
         gameState.playerCards.length === 3 ? getHandRankName(gameState.playerCards) : '',
         [gameState.playerCards]
@@ -245,6 +245,7 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps & { lastWin
                                 onClick: actions?.threeCardToggleProgressive,
                                 active: (gameState.threeCardProgressiveBet || 0) > 0,
                             },
+                            ...(playMode !== 'CASH' ? [
                             {
                                 label: 'SHIELD',
                                 onClick: actions?.toggleShield,
@@ -255,6 +256,7 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps & { lastWin
                                 onClick: actions?.toggleDouble,
                                 active: gameState.activeModifiers.double,
                             },
+                            ] : []),
                             {
                                 label: 'SUPER',
                                 onClick: actions?.toggleSuper,
