@@ -18,6 +18,7 @@ import {
   type ResponsiblePlaySettings,
 } from './components/casino/Layout';
 import { MobileChipSelector } from './components/casino/MobileChipSelector';
+import { HamburgerMenu } from './components/casino/HamburgerMenu';
 import { ModeSelectView, type PlayMode } from './components/casino/ModeSelectView';
 import { RegistrationView } from './components/casino/RegistrationView';
 import { ActiveGame } from './components/casino/ActiveGame';
@@ -428,36 +429,50 @@ export default function CasinoApp() {
            onToggleSound={() => setSoundEnabled((v) => !v)}
            reducedMotion={reducedMotion}
            onToggleReducedMotion={() => setReducedMotion((v) => !v)}
-       />
+       >
+           <div className="flex sm:hidden items-center gap-2">
+               <MobileChipSelector 
+                   currentBet={gameState.bet} 
+                   onSelectBet={safeActions.setBetAmount} 
+                   fixedMode 
+                   className="border-none bg-transparent"
+               />
+               <HamburgerMenu
+                   playMode={playMode}
+                   onSetPlayMode={setPlayMode}
+                   onOpenSafety={() => openResponsiblePlay('settings')}
+                   onToggleHelp={toggleHelp}
+                   soundEnabled={soundEnabled}
+                   onToggleSound={() => setSoundEnabled((v) => !v)}
+                   touchMode={touchMode}
+                   onToggleTouchMode={() => setTouchMode((v) => !v)}
+                   reducedMotion={reducedMotion}
+                   onToggleReducedMotion={() => setReducedMotion((v) => !v)}
+               />
+           </div>
+       </Header>
 
        <div className="border-b border-gray-800 bg-terminal-black/90 backdrop-blur px-2 sm:px-4 py-2 flex items-center gap-2">
            <button
                type="button"
                onClick={openCommandPalette}
-               className="h-11 px-3 rounded border border-gray-800 text-gray-300 text-[10px] tracking-widest uppercase hover:border-gray-600 hover:text-white flex items-center justify-center"
+               className="h-11 px-3 rounded border border-gray-800 text-gray-300 text-[10px] tracking-widest uppercase hover:border-gray-600 hover:text-white flex items-center justify-center w-full sm:w-auto"
            >
                Games
            </button>
            <button
                type="button"
                onClick={() => openResponsiblePlay('settings')}
-               className="h-11 px-3 rounded border border-gray-800 text-gray-300 text-[10px] tracking-widest uppercase hover:border-gray-600 hover:text-white flex items-center justify-center"
+               className="hidden sm:flex h-11 px-3 rounded border border-gray-800 text-gray-300 text-[10px] tracking-widest uppercase hover:border-gray-600 hover:text-white items-center justify-center"
            >
                Safety
            </button>
-           <div className="flex-1 min-w-0 flex justify-center">
+           <div className="hidden sm:flex flex-1 min-w-0 justify-center">
                <PlaySwapStakeTabs />
            </div>
            <div className="hidden sm:flex items-center">
                <WalletPill rng={walletRng} vusdt={walletVusdt} pubkeyHex={walletPublicKeyHex} />
            </div>
-           <button
-               type="button"
-               onClick={toggleHelp}
-               className="h-11 px-3 rounded border border-gray-800 text-gray-300 text-[10px] tracking-widest uppercase hover:border-gray-600 hover:text-white flex items-center justify-center sm:hidden"
-           >
-               Help
-           </button>
        </div>
 
 	       <div className="flex flex-1 overflow-hidden relative">
@@ -507,6 +522,7 @@ export default function CasinoApp() {
                     actions={{ ...safeActions, setGameState }}
                     onOpenCommandPalette={openCommandPalette}
                     reducedMotion={reducedMotion}
+                    playMode={playMode}
                  />
                </ErrorBoundary>
              </div>
@@ -525,10 +541,7 @@ export default function CasinoApp() {
        </div>
 
        {gameState.type !== GameType.NONE && (
-           <>
-               <Footer currentBet={gameState.bet} />
-               <MobileChipSelector currentBet={gameState.bet} onSelectBet={safeActions.setBetAmount} />
-           </>
+           <Footer currentBet={gameState.bet} />
        )}
 
        {/* MODALS */}

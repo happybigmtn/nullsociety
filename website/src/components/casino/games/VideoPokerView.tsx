@@ -27,7 +27,7 @@ const VIDEO_POKER_PAYTABLE: Array<{ rank: string; multiplier: number }> = [
     { rank: 'JACKS OR BETTER', multiplier: 1 },
 ];
 
-export const VideoPokerView = React.memo<VideoPokerViewProps & { lastWin?: number }>(({ gameState, onToggleHold, actions, lastWin }) => {
+export const VideoPokerView = React.memo<VideoPokerViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, onToggleHold, actions, lastWin, playMode }) => {
     const handleToggleHold = useCallback((index: number) => {
         onToggleHold(index);
     }, [onToggleHold]);

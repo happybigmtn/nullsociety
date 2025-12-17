@@ -6,7 +6,7 @@ import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
 import { calculateCrapsExposure } from '../../../utils/gameUtils';
 
-export const CrapsView = React.memo<{ gameState: GameState; actions: any; lastWin?: number }>(({ gameState, actions, lastWin }) => {
+export const CrapsView = React.memo<{ gameState: GameState; actions: any; lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
     // Get current roll (last dice sum)
     const currentRoll = useMemo(() =>
         gameState.dice.length === 2 ? gameState.dice[0] + gameState.dice[1] : null,
@@ -358,8 +358,10 @@ export const CrapsView = React.memo<{ gameState: GameState; actions: any; lastWi
                     { label: 'REBET', onClick: actions?.rebetCraps },
                     { label: 'UNDO', onClick: actions?.undoCrapsBet },
                     // Modifiers
+                    ...(playMode !== 'CASH' ? [
                     { label: 'SHIELD', onClick: actions?.toggleShield, active: gameState.activeModifiers.shield },
                     { label: 'DOUBLE', onClick: actions?.toggleDouble, active: gameState.activeModifiers.double },
+                    ] : []),
                     { label: 'SUPER', onClick: actions?.toggleSuper, active: gameState.activeModifiers.super },
                 ]}
             />

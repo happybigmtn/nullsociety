@@ -18,7 +18,7 @@ interface HiLoViewProps {
     };
 }
 
-export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number }>(({ gameState, deck, actions, lastWin }) => {
+export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, deck, actions, lastWin, playMode }) => {
     // Keep the prop for compatibility (other games use the shared deck), but HiLo projections
     // must not depend on the local deck (on-chain play doesn't have a local deck).
     void deck;
@@ -123,7 +123,7 @@ export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number }>(({ game
                         onClick: actions?.deal,
                         className: 'w-full sm:w-auto',
                     }}
-                    secondaryActions={[
+                    secondaryActions={playMode !== 'CASH' ? [
                         {
                             label: 'SHIELD',
                             onClick: actions?.toggleShield,
@@ -134,7 +134,7 @@ export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number }>(({ game
                             onClick: actions?.toggleDouble,
                             active: gameState.activeModifiers.double,
                         },
-                    ]}
+                    ] : []}
                 />
             ) : (
                 <GameControlBar variant="stack">
