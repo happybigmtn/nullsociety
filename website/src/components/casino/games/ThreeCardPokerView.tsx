@@ -217,63 +217,254 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps & { lastWin
             </div>
 
             {/* Controls */}
-            <GameControlBar
-                primaryAction={
-                    gameState.stage === 'BETTING'
-                        ? { label: 'DEAL', onClick: actions?.deal, className: 'w-full sm:w-auto' }
-                        : gameState.stage === 'RESULT'
-                            ? { label: 'NEW HAND', onClick: actions?.deal, className: 'w-full sm:w-auto' }
-                            : gameState.message.includes('REVEAL')
-                                ? { label: 'REVEAL', onClick: actions?.deal, className: 'w-full sm:w-auto' }
-                                : { label: 'PLAY', onClick: actions?.threeCardPlay, className: 'border-terminal-green bg-terminal-green text-black hover:bg-white' }
-                }
-                secondaryActions={
-                    gameState.stage === 'BETTING'
-                        ? [
-                            {
-                                label: `PAIR+${(gameState.threeCardPairPlusBet || 0) > 0 ? ` $${gameState.threeCardPairPlusBet}` : ''}`,
-                                onClick: actions?.threeCardTogglePairPlus,
-                                active: (gameState.threeCardPairPlusBet || 0) > 0,
-                            },
-                            {
-                                label: `6-CARD${(gameState.threeCardSixCardBonusBet || 0) > 0 ? ` $${gameState.threeCardSixCardBonusBet}` : ''}`,
-                                onClick: actions?.threeCardToggleSixCardBonus,
-                                active: (gameState.threeCardSixCardBonusBet || 0) > 0,
-                            },
-                            {
-                                label: `PROG${(gameState.threeCardProgressiveBet || 0) > 0 ? ` $${gameState.threeCardProgressiveBet}` : ''}`,
-                                onClick: actions?.threeCardToggleProgressive,
-                                active: (gameState.threeCardProgressiveBet || 0) > 0,
-                            },
-                            ...(playMode !== 'CASH' ? [
-                            {
-                                label: 'SHIELD',
-                                onClick: actions?.toggleShield,
-                                active: gameState.activeModifiers.shield,
-                            },
-                            {
-                                label: 'DOUBLE',
-                                onClick: actions?.toggleDouble,
-                                active: gameState.activeModifiers.double,
-                            },
-                            ] : []),
-                            {
-                                label: 'SUPER',
-                                onClick: actions?.toggleSuper,
-                                active: gameState.activeModifiers.super,
-                            },
-                        ]
-                        : gameState.stage === 'PLAYING' && !gameState.message.includes('REVEAL')
-                            ? [
-                                {
-                                    label: 'FOLD',
-                                    onClick: actions?.threeCardFold,
-                                    className: 'border-terminal-accent text-terminal-accent hover:bg-terminal-accent/10',
+            <div className="ns-controlbar fixed bottom-0 left-0 right-0 sm:sticky sm:bottom-0 bg-terminal-black/95 backdrop-blur border-t-2 border-gray-700 z-50 pb-[env(safe-area-inset-bottom)] sm:pb-0">
+                <div className="h-auto sm:h-20 flex flex-col sm:flex-row items-stretch sm:items-center justify-between sm:justify-center gap-2 p-2 sm:px-4">
+                    {/* Desktop: Grouped Controls */}
+                    <div className="hidden sm:flex items-center gap-4 flex-1">
+                        {gameState.stage === 'BETTING' ? (
+                            <>
+                                {/* NORMAL BETS GROUP */}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-terminal-green font-bold tracking-widest uppercase font-mono">NORMAL:</span>
+                                    <div className="h-6 w-px bg-gray-700" />
+                                    <span className="text-xs text-gray-500 font-mono">Ante + Play</span>
+                                </div>
+
+                                {/* Spacer */}
+                                <div className="h-8 w-px bg-gray-700" />
+
+                                {/* BONUS BETS GROUP */}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-terminal-amber font-bold tracking-widest uppercase font-mono">BONUS:</span>
+                                    <button
+                                        onClick={actions?.threeCardTogglePairPlus}
+                                        className={`px-3 py-1 rounded border-2 text-xs font-bold font-mono tracking-wider transition-colors ${
+                                            (gameState.threeCardPairPlusBet || 0) > 0
+                                                ? 'border-terminal-amber bg-terminal-amber/20 text-terminal-amber'
+                                                : 'border-gray-700 bg-black/50 text-gray-400 hover:bg-gray-800'
+                                        }`}
+                                    >
+                                        PAIR+{(gameState.threeCardPairPlusBet || 0) > 0 ? ` $${gameState.threeCardPairPlusBet}` : ''}
+                                    </button>
+                                    <button
+                                        onClick={actions?.threeCardToggleSixCardBonus}
+                                        className={`px-3 py-1 rounded border-2 text-xs font-bold font-mono tracking-wider transition-colors ${
+                                            (gameState.threeCardSixCardBonusBet || 0) > 0
+                                                ? 'border-terminal-amber bg-terminal-amber/20 text-terminal-amber'
+                                                : 'border-gray-700 bg-black/50 text-gray-400 hover:bg-gray-800'
+                                        }`}
+                                    >
+                                        6-CARD{(gameState.threeCardSixCardBonusBet || 0) > 0 ? ` $${gameState.threeCardSixCardBonusBet}` : ''}
+                                    </button>
+                                    <button
+                                        onClick={actions?.threeCardToggleProgressive}
+                                        className={`px-3 py-1 rounded border-2 text-xs font-bold font-mono tracking-wider transition-colors ${
+                                            (gameState.threeCardProgressiveBet || 0) > 0
+                                                ? 'border-terminal-gold bg-terminal-gold/20 text-terminal-gold'
+                                                : 'border-gray-700 bg-black/50 text-gray-400 hover:bg-gray-800'
+                                        }`}
+                                    >
+                                        PROG{(gameState.threeCardProgressiveBet || 0) > 0 ? ` $${gameState.threeCardProgressiveBet}` : ''}
+                                    </button>
+                                </div>
+
+                                {/* Spacer */}
+                                {(playMode !== 'CASH' || gameState.activeModifiers.super) && <div className="h-8 w-px bg-gray-700" />}
+
+                                {/* MODIFIERS GROUP */}
+                                {playMode !== 'CASH' && (
+                                    <>
+                                        <button
+                                            onClick={actions?.toggleShield}
+                                            className={`px-3 py-1 rounded border-2 text-xs font-bold font-mono tracking-wider transition-colors ${
+                                                gameState.activeModifiers.shield
+                                                    ? 'border-blue-400 bg-blue-500/20 text-blue-300'
+                                                    : 'border-gray-700 bg-black/50 text-gray-400 hover:bg-gray-800'
+                                            }`}
+                                        >
+                                            SHIELD
+                                        </button>
+                                        <button
+                                            onClick={actions?.toggleDouble}
+                                            className={`px-3 py-1 rounded border-2 text-xs font-bold font-mono tracking-wider transition-colors ${
+                                                gameState.activeModifiers.double
+                                                    ? 'border-purple-400 bg-purple-500/20 text-purple-300'
+                                                    : 'border-gray-700 bg-black/50 text-gray-400 hover:bg-gray-800'
+                                            }`}
+                                        >
+                                            DOUBLE
+                                        </button>
+                                    </>
+                                )}
+                                <button
+                                    onClick={actions?.toggleSuper}
+                                    className={`px-3 py-1 rounded border-2 text-xs font-bold font-mono tracking-wider transition-colors ${
+                                        gameState.activeModifiers.super
+                                            ? 'border-yellow-400 bg-yellow-500/20 text-yellow-300'
+                                            : 'border-gray-700 bg-black/50 text-gray-400 hover:bg-gray-800'
+                                    }`}
+                                >
+                                    SUPER
+                                </button>
+                            </>
+                        ) : gameState.stage === 'PLAYING' && !gameState.message.includes('REVEAL') ? (
+                            <button
+                                onClick={actions?.threeCardFold}
+                                className="px-6 py-2 rounded border-2 font-bold text-sm font-mono tracking-widest uppercase transition-all border-terminal-accent text-terminal-accent hover:bg-terminal-accent/10"
+                            >
+                                FOLD
+                            </button>
+                        ) : null}
+                    </div>
+
+                    {/* Desktop: Primary Action */}
+                    <div className="hidden sm:flex items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={
+                                gameState.stage === 'BETTING' || gameState.stage === 'RESULT'
+                                    ? actions?.deal
+                                    : gameState.message.includes('REVEAL')
+                                        ? actions?.deal
+                                        : actions?.threeCardPlay
+                            }
+                            className={`h-14 px-8 rounded border-2 font-bold text-base font-mono tracking-widest uppercase transition-all shadow-[0_0_15px_rgba(0,0,0,0.5)] ${
+                                gameState.stage === 'PLAYING' && !gameState.message.includes('REVEAL')
+                                    ? 'border-terminal-green bg-terminal-green text-black hover:bg-white hover:border-white'
+                                    : 'border-terminal-green bg-terminal-green text-black hover:bg-white hover:border-white'
+                            } hover:scale-105 active:scale-95`}
+                        >
+                            {gameState.stage === 'BETTING'
+                                ? 'DEAL'
+                                : gameState.stage === 'RESULT'
+                                    ? 'NEW HAND'
+                                    : gameState.message.includes('REVEAL')
+                                        ? 'REVEAL'
+                                        : 'PLAY'}
+                        </button>
+                    </div>
+
+                    {/* Mobile: Simplified controls */}
+                    <div className="flex sm:hidden flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                            {gameState.stage === 'BETTING' && (
+                                <MobileDrawer label="BETS" title="PLACE BETS">
+                                    <div className="space-y-4">
+                                        {/* Bonus Bets */}
+                                        <div>
+                                            <div className="text-[10px] text-amber-500 font-bold tracking-widest mb-2 border-b border-gray-800 pb-1">BONUS BETS</div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <button
+                                                    onClick={actions?.threeCardTogglePairPlus}
+                                                    className={`py-3 rounded border text-xs font-bold ${
+                                                        (gameState.threeCardPairPlusBet || 0) > 0
+                                                            ? 'border-amber-400 bg-amber-500/20 text-amber-300'
+                                                            : 'border-gray-700 bg-gray-900 text-gray-400'
+                                                    }`}
+                                                >
+                                                    PAIR+
+                                                </button>
+                                                <button
+                                                    onClick={actions?.threeCardToggleSixCardBonus}
+                                                    className={`py-3 rounded border text-xs font-bold ${
+                                                        (gameState.threeCardSixCardBonusBet || 0) > 0
+                                                            ? 'border-amber-400 bg-amber-500/20 text-amber-300'
+                                                            : 'border-gray-700 bg-gray-900 text-gray-400'
+                                                    }`}
+                                                >
+                                                    6-CARD
+                                                </button>
+                                                <button
+                                                    onClick={actions?.threeCardToggleProgressive}
+                                                    className={`py-3 rounded border text-xs font-bold ${
+                                                        (gameState.threeCardProgressiveBet || 0) > 0
+                                                            ? 'border-yellow-400 bg-yellow-500/20 text-yellow-300'
+                                                            : 'border-gray-700 bg-gray-900 text-gray-400'
+                                                    }`}
+                                                >
+                                                    PROG
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Modifiers */}
+                                        <div>
+                                            <div className="text-[10px] text-cyan-500 font-bold tracking-widest mb-2 border-b border-gray-800 pb-1">MODIFIERS</div>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {playMode !== 'CASH' && (
+                                                    <>
+                                                        <button
+                                                            onClick={actions?.toggleShield}
+                                                            className={`py-3 rounded border text-xs font-bold ${
+                                                                gameState.activeModifiers.shield
+                                                                    ? 'border-blue-400 bg-blue-500/20 text-blue-300'
+                                                                    : 'border-gray-700 bg-gray-900 text-gray-400'
+                                                            }`}
+                                                        >
+                                                            SHIELD
+                                                        </button>
+                                                        <button
+                                                            onClick={actions?.toggleDouble}
+                                                            className={`py-3 rounded border text-xs font-bold ${
+                                                                gameState.activeModifiers.double
+                                                                    ? 'border-purple-400 bg-purple-500/20 text-purple-300'
+                                                                    : 'border-gray-700 bg-gray-900 text-gray-400'
+                                                            }`}
+                                                        >
+                                                            DOUBLE
+                                                        </button>
+                                                    </>
+                                                )}
+                                                <button
+                                                    onClick={actions?.toggleSuper}
+                                                    className={`py-3 rounded border text-xs font-bold ${
+                                                        gameState.activeModifiers.super
+                                                            ? 'border-yellow-400 bg-yellow-500/20 text-yellow-300'
+                                                            : 'border-gray-700 bg-gray-900 text-gray-400'
+                                                    }`}
+                                                >
+                                                    SUPER
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </MobileDrawer>
+                            )}
+
+                            {/* Primary Button */}
+                            <button
+                                type="button"
+                                onClick={
+                                    gameState.stage === 'BETTING' || gameState.stage === 'RESULT'
+                                        ? actions?.deal
+                                        : gameState.message.includes('REVEAL')
+                                            ? actions?.deal
+                                            : actions?.threeCardPlay
                                 }
-                            ]
-                            : []
-                }
-            />
+                                className="flex-1 h-12 px-6 rounded border-2 font-bold text-sm font-mono tracking-widest uppercase transition-all shadow-[0_0_15px_rgba(0,0,0,0.5)] border-terminal-green bg-terminal-green text-black hover:bg-white hover:border-white hover:scale-105 active:scale-95"
+                            >
+                                {gameState.stage === 'BETTING'
+                                    ? 'DEAL'
+                                    : gameState.stage === 'RESULT'
+                                        ? 'NEW HAND'
+                                        : gameState.message.includes('REVEAL')
+                                            ? 'REVEAL'
+                                            : 'PLAY'}
+                            </button>
+                        </div>
+
+                        {/* Fold button when playing */}
+                        {gameState.stage === 'PLAYING' && !gameState.message.includes('REVEAL') && (
+                            <button
+                                onClick={actions?.threeCardFold}
+                                className="w-full py-3 rounded border-2 font-bold text-sm font-mono tracking-widest uppercase transition-all border-terminal-accent text-terminal-accent hover:bg-terminal-accent/10"
+                            >
+                                FOLD
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
         </>
     );
 });
