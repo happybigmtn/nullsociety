@@ -193,7 +193,7 @@ export const useCraps = ({
       placeCrapsBet(betType, num);
   }, [placeCrapsBet]);
 
-  const executeAddOdds = useCallback(async (idx: number) => {
+  const executeAddOdds = useCallback((idx: number) => {
       const targetBet = gameState.crapsBets[idx];
       // No odds on the come-out roll for Pass/Don't Pass (Point must be established)
       if ((targetBet.type === 'PASS' || targetBet.type === 'DONT_PASS') && gameState.crapsPoint === null) {
@@ -225,57 +225,28 @@ export const useCraps = ({
           return;
       }
 
-      // Update localOddsAmount (pending) - NOT oddsAmount (confirmed)
-      // The confirmed oddsAmount will be updated from chain state
+      // Stage odds locally - will be sent to chain with roll
+      // The confirmed oddsAmount will be updated from chain state after roll
       setGameState(prev => {
           const bets = [...prev.crapsBets];
           bets[idx] = { ...bets[idx], localOddsAmount: pendingOdds + oddsToAdd };
           return {
               ...prev,
               crapsBets: bets,
-              message: `ADDING ODDS +$${oddsToAdd}...`,
+              message: `ODDS +$${oddsToAdd} (STAGED)`,
               sessionWager: prev.sessionWager + oddsToAdd
           };
       });
+  }, [gameState.crapsBets, gameState.crapsPoint, gameState.bet, stats.chips, totalCommittedCraps, setGameState]);
 
-      // Send to chain if we have an active session
-      if (chainService && currentSessionIdRef.current && !isPendingRef.current) {
-          isPendingRef.current = true;
-          try {
-              const payload = new Uint8Array(9);
-              payload[0] = 1; // Command: Add odds
-              const view = new DataView(payload.buffer);
-              view.setBigUint64(1, BigInt(oddsToAdd), false);
-
-              const result = await chainService.sendMove(currentSessionIdRef.current, payload);
-              if (result.txHash) setLastTxSig(result.txHash);
-
-              // Keep pending until chain confirms - don't update message here
-              // Chain state update will clear localOddsAmount and set oddsAmount
-          } catch (e) {
-              console.error('[addCrapsOdds] Failed to add odds:', e);
-              // Revert local state on failure
-              setGameState(prev => {
-                  const bets = [...prev.crapsBets];
-                  bets[idx] = { ...bets[idx], localOddsAmount: pendingOdds };
-                  return { ...prev, crapsBets: bets, message: "ODDS FAILED" };
-              });
-          } finally {
-              isPendingRef.current = false;
-          }
-      } else {
-          setGameState(prev => ({ ...prev, message: `ODDS +$${oddsToAdd} (PENDING)` }));
-      }
-  }, [gameState.crapsBets, gameState.crapsPoint, gameState.bet, stats.chips, chainService, currentSessionIdRef, isPendingRef, totalCommittedCraps, setGameState, setLastTxSig]);
-
-  const addCrapsOdds = useCallback(async (selectionIndex?: number) => {
+  const addCrapsOdds = useCallback((selectionIndex?: number) => {
       // If we have a selection index, resolve the pending selection
       if (selectionIndex !== undefined && gameState.crapsOddsCandidates) {
           if (selectionIndex < 0 || selectionIndex >= gameState.crapsOddsCandidates.length) return;
           const targetBetIndex = gameState.crapsOddsCandidates[selectionIndex];
           setGameState(prev => ({ ...prev, crapsOddsCandidates: null })); // Clear selection mode
 
-          await executeAddOdds(targetBetIndex);
+          executeAddOdds(targetBetIndex);
           return;
       }
 
@@ -293,7 +264,7 @@ export const useCraps = ({
       }
 
       if (candidates.length === 1) {
-          await executeAddOdds(candidates[0].index);
+          executeAddOdds(candidates[0].index);
           return;
       }
 
@@ -332,7 +303,7 @@ export const useCraps = ({
          return;
        }
 
-       // On-chain with session: Place any new local bets, then roll dice
+       // On-chain with session: Place any new local bets, send staged odds, then roll dice
        if (isOnChain && chainService && hasSession) {
            if (isPendingRef.current) return;
 
@@ -360,6 +331,27 @@ export const useCraps = ({
                setGameState(prev => ({
                  ...prev,
                  crapsBets: prev.crapsBets.map(b => b.local ? { ...b, local: false } : b),
+               }));
+             }
+
+             // Second, send any staged odds (command 1: add odds)
+             // Each odds is: [1, amount:u64 BE]
+             const betsWithStagedOdds = gameState.crapsBets.filter(b => (b.localOddsAmount ?? 0) > 0);
+             for (const bet of betsWithStagedOdds) {
+               const oddsAmount = bet.localOddsAmount!;
+               const payload = new Uint8Array(9);
+               payload[0] = 1; // Command 1: Add odds
+               new DataView(payload.buffer).setBigUint64(1, BigInt(oddsAmount), false);
+
+               const oddsResult = await chainService.sendMove(currentSessionIdRef.current!, payload);
+               if (oddsResult.txHash) setLastTxSig(oddsResult.txHash);
+             }
+
+             // Clear localOddsAmount after sending (chain state will update oddsAmount)
+             if (betsWithStagedOdds.length > 0) {
+               setGameState(prev => ({
+                 ...prev,
+                 crapsBets: prev.crapsBets.map(b => b.localOddsAmount ? { ...b, localOddsAmount: 0 } : b),
                }));
              }
 
