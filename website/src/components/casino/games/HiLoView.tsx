@@ -75,9 +75,9 @@ export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number; playMode?
                     </MobileDrawer>
                 </div>
                 
-                {/* TOP: POT */}
+                {/* TOP: POT with accumulator graph */}
                 <div className="min-h-[60px] sm:min-h-[80px] flex flex-col items-center justify-center w-full max-w-md">
-                     <div className="text-2xl sm:text-3xl text-terminal-gold font-bold mb-1 sm:mb-2 tracking-widest">
+                     <div className="text-2xl sm:text-3xl text-terminal-gold font-mono font-bold mb-1 sm:mb-2 tracking-widest">
                          POT: ${gameState.hiloAccumulator.toLocaleString()}
                      </div>
                 </div>
@@ -97,10 +97,10 @@ export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number; playMode?
                             <div className="flex items-center gap-4">
                                 {/* LEFT PROJECTION: Lower (normal/King) or Same (Ace) */}
                                 <div className="text-right opacity-80">
-                                    <div className="text-[10px] text-gray-500 uppercase">
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider font-mono">
                                         {isAtAce ? 'SAME' : 'LOWER'}
                                     </div>
-                                    <div className="text-terminal-green font-bold text-sm">
+                                    <div className="text-terminal-green font-mono font-bold text-sm">
                                         {isAtAce ? nextGuessMultiplier('SAME') : nextGuessMultiplier('LOWER')}
                                     </div>
                                 </div>
@@ -109,10 +109,10 @@ export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number; playMode?
 
                                 {/* RIGHT PROJECTION: Higher (normal/Ace) or Same (King) */}
                                 <div className="text-left opacity-80">
-                                    <div className="text-[10px] text-gray-500 uppercase">
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider font-mono">
                                         {isAtKing ? 'SAME' : 'HIGHER'}
                                     </div>
-                                    <div className="text-terminal-green font-bold text-sm">
+                                    <div className="text-terminal-green font-mono font-bold text-sm">
                                         {isAtKing ? nextGuessMultiplier('SAME') : nextGuessMultiplier('HIGHER')}
                                     </div>
                                 </div>
@@ -162,7 +162,7 @@ export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number; playMode?
                     <button
                         type="button"
                         onClick={actions?.hiloCashout}
-                        className="w-full h-12 rounded border border-terminal-gold/60 bg-terminal-gold/10 text-terminal-gold font-bold tracking-widest uppercase hover:bg-terminal-gold/20"
+                        className="w-full h-12 rounded border-2 border-terminal-gold bg-terminal-gold/10 text-terminal-gold font-mono font-bold tracking-widest uppercase hover:bg-terminal-gold/20 transition-all"
                     >
                         <span className="ns-keycap">C</span> CASHOUT · LOCK POT
                     </button>
@@ -171,12 +171,12 @@ export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number; playMode?
                         <button
                             type="button"
                             onClick={() => actions?.hiloPlay?.(isAtAce ? 'SAME' : 'LOWER')}
-                            className="h-16 rounded border border-terminal-accent/60 bg-black/50 hover:bg-terminal-accent/10 flex flex-col items-center justify-center"
+                            className="h-16 rounded border-2 border-terminal-accent bg-black/50 hover:bg-terminal-accent/10 transition-all flex flex-col items-center justify-center"
                         >
-                            <div className="text-[10px] text-gray-500 tracking-widest uppercase">
+                            <div className="text-[10px] text-gray-400 tracking-widest uppercase font-mono">
                                 <span className="ns-keycap text-terminal-accent font-bold">{isAtAce ? 'S' : 'L'}</span> {isAtAce ? 'SAME' : 'LOWER'}
                             </div>
-                            <div className="text-terminal-accent font-bold text-sm">
+                            <div className="text-terminal-accent font-mono font-bold text-sm">
                                 {isAtAce ? nextGuessMultiplier('SAME') : nextGuessMultiplier('LOWER')}
                             </div>
                         </button>
@@ -184,12 +184,12 @@ export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number; playMode?
                         <button
                             type="button"
                             onClick={() => actions?.hiloPlay?.(isAtKing ? 'SAME' : 'HIGHER')}
-                            className="h-16 rounded border border-terminal-green/60 bg-black/50 hover:bg-terminal-green/10 flex flex-col items-center justify-center"
+                            className="h-16 rounded border-2 border-terminal-green bg-black/50 hover:bg-terminal-green/10 transition-all flex flex-col items-center justify-center"
                         >
-                            <div className="text-[10px] text-gray-500 tracking-widest uppercase">
+                            <div className="text-[10px] text-gray-400 tracking-widest uppercase font-mono">
                                 <span className="ns-keycap text-terminal-green font-bold">{isAtKing ? 'S' : 'H'}</span> {isAtKing ? 'SAME' : 'HIGHER'}
                             </div>
-                            <div className="text-terminal-green font-bold text-sm">
+                            <div className="text-terminal-green font-mono font-bold text-sm">
                                 {isAtKing ? nextGuessMultiplier('SAME') : nextGuessMultiplier('HIGHER')}
                             </div>
                         </button>

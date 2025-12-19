@@ -58,12 +58,11 @@ export const VideoPokerView = React.memo<VideoPokerViewProps & { lastWin?: numbe
                                     return (
                                         <div
                                             key={row.rank}
-                                            className={[
-                                                'flex items-center justify-between rounded border px-2 py-1 text-[11px]',
+                                            className={`flex items-center justify-between rounded border-2 px-2 py-1 text-[11px] font-mono ${
                                                 active
                                                     ? 'border-terminal-green bg-terminal-green/10 text-terminal-green'
-                                                    : 'border-gray-800 bg-black/40 text-gray-300',
-                                            ].join(' ')}
+                                                    : 'border-gray-800 bg-black/40 text-gray-300'
+                                            }`}
                                         >
                                             <span className="truncate pr-2">{row.rank}</span>
                                             <span className="text-white">{row.multiplier}x</span>
@@ -71,7 +70,7 @@ export const VideoPokerView = React.memo<VideoPokerViewProps & { lastWin?: numbe
                                     );
                                 })}
                             </div>
-                            <div className="text-[10px] text-gray-600 leading-relaxed">
+                            <div className="text-[10px] text-gray-600 leading-relaxed font-mono">
                                 Tap cards (or press 1–5) to toggle HOLD. DRAW replaces unheld cards.
                             </div>
                         </div>
@@ -79,16 +78,13 @@ export const VideoPokerView = React.memo<VideoPokerViewProps & { lastWin?: numbe
                 </div>
                 {/* Center Info */}
                 <div className="text-center space-y-3 relative z-20">
-                    <div className="text-lg sm:text-2xl font-bold text-terminal-gold tracking-widest leading-tight animate-pulse">
+                    <div className="text-lg sm:text-2xl font-bold text-terminal-gold tracking-widest leading-tight animate-pulse font-mono">
                         {gameState.message}
                     </div>
                     {handEval && gameState.stage !== 'BETTING' ? (
-                        <div
-                            className={[
-                                'text-[10px] tracking-widest uppercase',
-                                handEval.multiplier > 0 ? 'text-terminal-green' : 'text-gray-600',
-                            ].join(' ')}
-                        >
+                        <div className={`text-[10px] tracking-widest uppercase font-mono ${
+                            handEval.multiplier > 0 ? 'text-terminal-green' : 'text-gray-600'
+                        }`}>
                             {handEval.rank}
                             {handEval.multiplier > 0 ? ` · x${handEval.multiplier}` : ''}
                         </div>
@@ -106,32 +102,85 @@ export const VideoPokerView = React.memo<VideoPokerViewProps & { lastWin?: numbe
                             className="flex flex-col gap-2 cursor-pointer transition-transform hover:-translate-y-2"
                         >
                              <Hand cards={[card]} />
-                             <div className={`text-center text-[10px] font-bold py-1 border rounded ${card.isHeld ? 'border-terminal-green text-terminal-green bg-terminal-green/10' : 'border-transparent text-transparent'}`}>
+                             <div className={`text-center text-[10px] font-bold py-1 border-2 rounded font-mono tracking-widest ${
+                                card.isHeld
+                                    ? 'border-terminal-green text-terminal-green bg-terminal-green/10'
+                                    : 'border-transparent text-transparent'
+                             }`}>
                                  HOLD
                              </div>
-                             <div className="text-center text-[10px] text-gray-600">[{i+1}]</div>
+                             <div className="text-center text-[10px] text-gray-600 font-mono">[{i+1}]</div>
                         </button>
                     ))}
                 </div>
             </div>
 
+            {/* LEFT SIDEBAR - PAY TABLE */}
+            <div className="hidden md:flex absolute top-0 left-0 bottom-24 w-56 bg-terminal-black/80 border-r-2 border-gray-700 backdrop-blur-sm z-30 flex-col">
+                <div className="flex-none border-b border-gray-800 py-2">
+                    <div className="text-[10px] font-bold tracking-widest uppercase text-center text-terminal-green">
+                        PAY TABLE
+                    </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2">
+                    <div className="space-y-1">
+                        {VIDEO_POKER_PAYTABLE.map((row) => {
+                            const active = highlightRank === row.rank;
+                            return (
+                                <div
+                                    key={row.rank}
+                                    className={`flex items-center justify-between rounded border-2 px-2 py-1.5 text-[11px] font-mono transition-colors ${
+                                        active
+                                            ? 'border-terminal-green bg-terminal-green/10 text-terminal-green'
+                                            : 'border-gray-800 bg-black/40 text-gray-300'
+                                    }`}
+                                >
+                                    <span className="truncate pr-2">{row.rank}</span>
+                                    <span className="text-white font-bold">{row.multiplier}x</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+
             {/* CONTROLS */}
-            <GameControlBar
-                primaryAction={
-                    (gameState.stage === 'BETTING' || gameState.stage === 'RESULT')
-                        ? { label: 'DEAL', onClick: actions?.deal, className: 'w-full sm:w-auto' }
-                        : { label: 'DRAW', onClick: actions?.drawVideoPoker, className: 'w-full sm:w-auto' }
-                }
-                secondaryActions={
-                    gameState.stage === 'PLAYING'
-                        ? [1, 2, 3, 4, 5].map((n) => ({
-                            label: `HOLD ${n}`,
-                            onClick: () => handleToggleHold(n - 1),
-                            active: gameState.playerCards[n - 1]?.isHeld,
-                        }))
-                        : []
-                }
-            />
+            <div className="ns-controlbar fixed bottom-0 left-0 right-0 sm:sticky sm:bottom-0 bg-terminal-black/95 backdrop-blur border-t-2 border-gray-700 z-50 pb-[env(safe-area-inset-bottom)] sm:pb-0">
+                <div className="h-16 sm:h-20 flex items-center justify-center gap-2 sm:gap-3 p-2 sm:px-4">
+                    {gameState.stage === 'PLAYING' && (
+                        <div className="hidden sm:flex items-center gap-2">
+                            {[1, 2, 3, 4, 5].map((n) => {
+                                const isHeld = gameState.playerCards[n - 1]?.isHeld;
+                                return (
+                                    <button
+                                        key={n}
+                                        type="button"
+                                        onClick={() => handleToggleHold(n - 1)}
+                                        className={`h-12 px-4 rounded border-2 font-bold text-sm tracking-widest uppercase font-mono transition-all ${
+                                            isHeld
+                                                ? 'border-terminal-green bg-terminal-green/20 text-terminal-green'
+                                                : 'border-gray-700 bg-black/50 text-gray-300 hover:bg-gray-800'
+                                        }`}
+                                    >
+                                        HOLD {n}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+                    <button
+                        type="button"
+                        onClick={
+                            (gameState.stage === 'BETTING' || gameState.stage === 'RESULT')
+                                ? actions?.deal
+                                : actions?.drawVideoPoker
+                        }
+                        className="h-12 sm:h-14 px-6 sm:px-8 rounded border-2 font-bold text-sm sm:text-base tracking-widest uppercase font-mono transition-all shadow-[0_0_15px_rgba(0,0,0,0.5)] border-terminal-green bg-terminal-green text-black hover:bg-white hover:border-white hover:scale-105 active:scale-95"
+                    >
+                        {(gameState.stage === 'BETTING' || gameState.stage === 'RESULT') ? 'DEAL' : 'DRAW'}
+                    </button>
+                </div>
+            </div>
         </>
     );
 });
