@@ -2460,8 +2460,10 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
               isSevenOut: sevenOut,
               results: rollResult.results,
             };
+            // On seven-out: clear the log for new epoch (seven-out ends current epoch)
+            // Next roll will start fresh
             newEventLog = sevenOut
-              ? [newEvent] // Reset log on seven-out, start fresh
+              ? [] // Clear log - new epoch starts fresh
               : [...prev.crapsEventLog, newEvent].slice(-MAX_GRAPH_POINTS);
           }
 
