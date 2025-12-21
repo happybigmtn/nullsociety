@@ -1,9 +1,23 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import { GameState } from '../../../types';
 import { Hand } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
+import { CardAnimationOverlay } from '../3d/CardAnimationOverlay';
+import { buildCardsById, buildRowSlots } from '../3d/cardLayouts';
+
+// Simple mobile detection hook
+const useIsMobile = () => {
+    const [isMobile, setIsMobile] = useState(false);
+    useEffect(() => {
+        const check = () => setIsMobile(window.innerWidth < 640);
+        check();
+        window.addEventListener('resize', check);
+        return () => window.removeEventListener('resize', check);
+    }, []);
+    return isMobile;
+};
 
 interface UltimateHoldemViewProps {
     gameState: GameState;
@@ -19,7 +33,8 @@ const getStageDescription = (stage: string, communityCards: number): string => {
     return '';
 };
 
-export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
+export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null; onAnimationBlockingChange?: (blocking: boolean) => void }>(({ gameState, actions, lastWin, playMode, onAnimationBlockingChange }) => {
+    const isMobile = useIsMobile();
     const stageDesc = useMemo(() =>
         getStageDescription(gameState.stage, gameState.communityCards.length),
         [gameState.stage, gameState.communityCards.length]
@@ -39,8 +54,54 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
         [gameState.stage, gameState.dealerCards]
     );
 
+    const animationActive = useMemo(
+        () => /DEALING|CHECKING|BETTING|REVEALING|WAITING FOR CHAIN/.test(gameState.message),
+        [gameState.message]
+    );
+    const dealerSlots = useMemo(() => buildRowSlots('dealer', 2, -1.6, { mirror: true, spacing: 1.5 }), []);
+    const communitySlots = useMemo(() => buildRowSlots('community', 5, 0.1, { spacing: 1.35, fan: 0.05 }), []);
+    const bonusSlots = useMemo(() => buildRowSlots('bonus', 4, 0.85, { spacing: 1.2, fan: 0.04 }), []);
+    const playerSlots = useMemo(() => buildRowSlots('player', 2, 1.75, { spacing: 1.5 }), []);
+    const slots = useMemo(
+        () => [...dealerSlots, ...communitySlots, ...bonusSlots, ...playerSlots],
+        [dealerSlots, communitySlots, bonusSlots, playerSlots]
+    );
+    const dealOrder = useMemo(
+        () => [
+            'player-0',
+            'dealer-0',
+            'player-1',
+            'dealer-1',
+            'community-0',
+            'community-1',
+            'community-2',
+            'community-3',
+            'community-4',
+            'bonus-0',
+            'bonus-1',
+            'bonus-2',
+            'bonus-3',
+        ],
+        []
+    );
+    const cardsById = useMemo(() => ({
+        ...buildCardsById('player', gameState.playerCards, 2),
+        ...buildCardsById('dealer', gameState.dealerCards, 2),
+        ...buildCardsById('community', gameState.communityCards, 5),
+        ...buildCardsById('bonus', gameState.uthBonusCards, 4),
+    }), [gameState.playerCards, gameState.dealerCards, gameState.communityCards, gameState.uthBonusCards]);
+
     return (
         <>
+            <CardAnimationOverlay
+                slots={slots}
+                dealOrder={dealOrder}
+                cardsById={cardsById}
+                isActionActive={animationActive}
+                storageKey="uth-3d-mode"
+                onAnimationBlockingChange={onAnimationBlockingChange}
+                isMobile={isMobile}
+            />
             <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-6 md:gap-4 relative z-10 pt-8 sm:pt-10 pb-24 sm:pb-20 md:px-40">
                 <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">ULTIMATE TEXAS HOLD'EM</h1>
                 <div className="absolute top-2 left-2 z-40">

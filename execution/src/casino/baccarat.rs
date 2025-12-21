@@ -848,6 +848,8 @@ impl CasinoGame for Baccarat {
                     offset += 9;
                 }
 
+                session.bet = total_wager;
+
                 // All validation passed - now execute atomically
                 state.bets = bets_to_place;
 
@@ -965,8 +967,8 @@ impl CasinoGame for Baccarat {
                         .and_then(|v| u64::try_from(v).ok())
                         .unwrap_or(total_wager);
                     if loss >= total_wager {
-                        // Total loss - use LossWithExtraDeduction since bets weren't pre-deducted
-                        GameResult::LossWithExtraDeduction(total_wager, logs)
+                        // Total loss - wager is deducted on completion for atomic batch
+                        GameResult::Loss(logs)
                     } else {
                         GameResult::Win(final_return, logs)
                     }

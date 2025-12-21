@@ -532,6 +532,25 @@ impl<'a, S: State> Layer<'a, S> {
             logs: logs.clone(),
         }];
 
+        let atomic_wager = if session.move_count == 1
+            && matches!(
+                session.game_type,
+                nullspace_types::casino::GameType::Baccarat
+                    | nullspace_types::casino::GameType::Craps
+                    | nullspace_types::casino::GameType::Roulette
+                    | nullspace_types::casino::GameType::SicBo
+            ) {
+            session.bet
+        } else {
+            0
+        };
+        let atomic_super_fee = if atomic_wager > 0 && session.super_mode.is_active {
+            crate::casino::get_super_mode_fee(atomic_wager)
+        } else {
+            0
+        };
+        let atomic_total = atomic_wager.saturating_add(atomic_super_fee);
+
         match result {
             crate::casino::GameResult::Continue(_) => {
                 self.insert(
@@ -544,6 +563,9 @@ impl<'a, S: State> Layer<'a, S> {
                 if let Some(Value::CasinoPlayer(mut player)) =
                     self.get(&Key::CasinoPlayer(public.clone())).await?
                 {
+                    let skip_super_fee = session.game_type == nullspace_types::casino::GameType::Craps
+                        && session.move_count == 1
+                        && session.bet > 0;
                     let stack = if session.is_tournament {
                         &mut player.tournament.chips
                     } else {
@@ -556,7 +578,9 @@ impl<'a, S: State> Layer<'a, S> {
                             .checked_neg()
                             .and_then(|v| u64::try_from(v).ok())
                             .unwrap_or(0);
-                        let super_fee = if session.super_mode.is_active {
+                        let super_fee = if skip_super_fee {
+                            0
+                        } else if session.super_mode.is_active {
                             crate::casino::get_super_mode_fee(deduction)
                         } else {
                             0
@@ -635,6 +659,23 @@ impl<'a, S: State> Layer<'a, S> {
                         } else {
                             &mut player.balances.chips
                         };
+                        if atomic_total > 0 {
+                            if *stack < atomic_total {
+                                return Ok(casino_error_vec(
+                                    public,
+                                    Some(session_id),
+                                    nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
+                                    format!(
+                                        "Insufficient chips for additional bet: have {}, need {}",
+                                        *stack, atomic_total
+                                    ),
+                                ));
+                            }
+                            *stack = stack.saturating_sub(atomic_total);
+                            if !session.is_tournament {
+                                self.update_house_pnl(atomic_total as i128).await?;
+                            }
+                        }
                         *stack = stack.saturating_add(addition);
                         *stack
                     };
@@ -681,6 +722,23 @@ impl<'a, S: State> Layer<'a, S> {
                         } else {
                             &mut player.balances.chips
                         };
+                        if atomic_total > 0 {
+                            if *stack < atomic_total {
+                                return Ok(casino_error_vec(
+                                    public,
+                                    Some(session_id),
+                                    nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
+                                    format!(
+                                        "Insufficient chips for additional bet: have {}, need {}",
+                                        *stack, atomic_total
+                                    ),
+                                ));
+                            }
+                            *stack = stack.saturating_sub(atomic_total);
+                            if !session.is_tournament {
+                                self.update_house_pnl(atomic_total as i128).await?;
+                            }
+                        }
                         *stack = stack.saturating_add(refund);
                         *stack
                     };
@@ -743,6 +801,23 @@ impl<'a, S: State> Layer<'a, S> {
                     } else {
                         &mut player.balances.chips
                     };
+                    if atomic_total > 0 {
+                        if *stack < atomic_total {
+                            return Ok(casino_error_vec(
+                                public,
+                                Some(session_id),
+                                nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
+                                format!(
+                                    "Insufficient chips for additional bet: have {}, need {}",
+                                    *stack, atomic_total
+                                ),
+                            ));
+                        }
+                        *stack = stack.saturating_sub(atomic_total);
+                        if !session.is_tournament {
+                            self.update_house_pnl(atomic_total as i128).await?;
+                        }
+                    }
                     let final_chips = *stack;
                     self.insert(
                         Key::CasinoPlayer(public.clone()),

@@ -3,14 +3,34 @@ import React, { useMemo, useCallback, useEffect, useState } from 'react';
 import { GameState, RouletteBet } from '../../../types';
 import { getRouletteColor, calculateRouletteExposure } from '../../../utils/gameUtils';
 import { MobileDrawer } from '../MobileDrawer';
-import { GameControlBar } from '../GameControlBar';
+import { RouletteWheel3DWrapper } from '../3d/RouletteWheel3DWrapper';
 
-export const RouletteView = React.memo<{ gameState: GameState; numberInput?: string; actions: any; lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, numberInput = "", actions, lastWin, playMode }) => {
+// Simple mobile detection hook
+const useIsMobile = () => {
+    const [isMobile, setIsMobile] = useState(false);
+    useEffect(() => {
+        const check = () => setIsMobile(window.innerWidth < 640);
+        check();
+        window.addEventListener('resize', check);
+        return () => window.removeEventListener('resize', check);
+    }, []);
+    return isMobile;
+};
+
+export const RouletteView = React.memo<{
+    gameState: GameState;
+    numberInput?: string;
+    actions: any;
+    lastWin?: number;
+    playMode?: 'CASH' | 'FREEROLL' | null;
+    onAnimationBlockingChange?: (blocking: boolean) => void;
+}>(({ gameState, numberInput = "", actions, lastWin, playMode, onAnimationBlockingChange }) => {
+    const isMobile = useIsMobile();
     const lastNum = useMemo(() =>
         gameState.rouletteHistory.length > 0 ? gameState.rouletteHistory[gameState.rouletteHistory.length - 1] : null,
         [gameState.rouletteHistory]
     );
-    const [spinKey, setSpinKey] = useState(0);
+    const isSpinning = gameState.message === 'SPINNING ON CHAIN...';
     const betTypes = useMemo(() => new Set(gameState.rouletteBets.map((b) => b.type)), [gameState.rouletteBets]);
 
     const totalBet = useMemo(() => gameState.rouletteBets.reduce((acc, b) => acc + b.amount, 0), [gameState.rouletteBets]);
@@ -56,10 +76,6 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
         actions?.placeRouletteBet?.(insideBet.betType, target);
     }, [actions, insideBet?.betType]);
 
-    useEffect(() => {
-        if (lastNum !== null) setSpinKey((k) => k + 1);
-    }, [lastNum]);
-
     const renderExposureRow = useCallback((num: number) => {
         const pnl = calculateRouletteExposure(num, gameState.rouletteBets);
         const maxScale = Math.max(100, totalBet * 36); 
@@ -88,7 +104,7 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
 
     return (
         <>
-            <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-8 relative z-10 pt-8 sm:pt-10 pb-24 sm:pb-20">
+            <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-8 relative pt-8 sm:pt-10 pb-24 sm:pb-20">
                 <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">ROULETTE</h1>
                 <div className="absolute top-2 left-2 z-40">
                     <MobileDrawer label="INFO" title="ROULETTE">
@@ -168,19 +184,15 @@ export const RouletteView = React.memo<{ gameState: GameState; numberInput?: str
                     </MobileDrawer>
                 </div>
                 {/* Last Number Display */}
-                <div className="min-h-[120px] flex flex-col items-center justify-center gap-4">
-                     {lastNum !== null ? (
-                        <div
-                            key={spinKey}
-                            className={`w-24 h-24 sm:w-32 sm:h-32 rounded-full border-4 flex items-center justify-center text-4xl sm:text-5xl font-bold shadow-[0_0_30px_rgba(0,0,0,0.5)] animate-roulette-spin ${getRouletteColor(lastNum) === 'RED' ? 'border-terminal-accent text-terminal-accent' : getRouletteColor(lastNum) === 'BLACK' ? 'border-gray-500 text-white' : 'border-terminal-green text-terminal-green'}`}
-                        >
-                            {lastNum}
-                        </div>
-                     ) : (
-                        <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full border-4 border-gray-800 flex items-center justify-center text-sm text-gray-600 animate-pulse">
-                            SPIN
-                        </div>
-                     )}
+                <div className="w-full flex-1 min-h-[320px] flex flex-col items-center justify-center gap-4">
+                     <RouletteWheel3DWrapper
+                         targetNumber={lastNum}
+                         resultId={gameState.rouletteHistory.length}
+                         isSpinning={isSpinning}
+                         onSpin={() => actions?.deal?.()}
+                         isMobile={isMobile}
+                         onAnimationBlockingChange={onAnimationBlockingChange}
+                     />
                      
                      {/* History */}
                      {gameState.rouletteHistory.length > 0 && (

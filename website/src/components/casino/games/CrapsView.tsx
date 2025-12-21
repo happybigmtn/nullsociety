@@ -3,7 +3,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { GameState } from '../../../types';
 import { DiceRender } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
-import { calculateCrapsExposure } from '../../../utils/gameUtils';
+import { calculateCrapsExposure, canPlaceCrapsBonusBets } from '../../../utils/gameUtils';
 import { CrapsBonusDashboard } from './CrapsBonusDashboard';
 import { CrapsBetMenu } from './CrapsBetMenu';
 import { CrapsDice3DWrapper } from '../3d/CrapsDice3DWrapper';
@@ -71,7 +71,9 @@ export const CrapsView = React.memo<{
     playMode?: 'CASH' | 'FREEROLL' | null;
     currentBet?: number;
     onBetChange?: (bet: number) => void;
-}>(({ gameState, actions, lastWin, playMode, currentBet, onBetChange }) => {
+    /** Callback to signal when 3D animation is blocking win effects */
+    onAnimationBlockingChange?: (blocking: boolean) => void;
+}>(({ gameState, actions, lastWin, playMode, currentBet, onBetChange, onAnimationBlockingChange }) => {
     const [showChipSelector, setShowChipSelector] = useState(false);
     const [leftSidebarView, setLeftSidebarView] = useState<'EXPOSURE' | 'SIDE_BETS'>('EXPOSURE');
     const isMobile = useIsMobile();
@@ -103,10 +105,8 @@ export const CrapsView = React.memo<{
 
     // Bonus bets can only be placed before epoch point is established
     const canPlaceBonus = useMemo(
-        () =>
-            !gameState.crapsEpochPointEstablished &&
-            (currentRoll === null || currentRoll === 7),
-        [gameState.crapsEpochPointEstablished, currentRoll]
+        () => canPlaceCrapsBonusBets(gameState.crapsEpochPointEstablished, gameState.dice),
+        [gameState.crapsEpochPointEstablished, gameState.dice]
     );
 
     const bonusBetsPlaced = useMemo(() => ({
@@ -126,7 +126,7 @@ export const CrapsView = React.memo<{
 
     return (
         <>
-            <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-6 relative z-10 pt-8 sm:pt-10 pb-24 sm:pb-20">
+            <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-6 relative pt-8 sm:pt-10 pb-24 sm:pb-20">
                 <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">CRAPS</h1>
                 <div className="absolute top-2 left-2 z-40">
                     <MobileDrawer label="INFO" title="CRAPS">
@@ -293,6 +293,7 @@ export const CrapsView = React.memo<{
                     isRolling={gameState.message === 'ROLLING...'}
                     onRoll={() => actions?.rollCraps?.()}
                     isMobile={isMobile}
+                    onAnimationBlockingChange={onAnimationBlockingChange}
                 />
 
                 {/* Super Mode Info - Animated */}
@@ -750,7 +751,7 @@ export const CrapsView = React.memo<{
                                                 <button
                                                     key={item.num}
                                                     type="button"
-                                                    onClick={() => actions?.placeCrapsBet?.(gameState.crapsInputMode, item.num)}
+                                                    onClick={() => actions?.placeCrapsNumberBet?.(gameState.crapsInputMode, item.num)}
                                                     className="flex flex-col items-center gap-1"
                                                 >
                                                     <div className="w-12 h-12 flex items-center justify-center border border-terminal-accent rounded bg-gray-900 text-terminal-accent font-bold text-lg relative">
@@ -768,7 +769,7 @@ export const CrapsView = React.memo<{
                                             <button
                                                 key={item.num}
                                                 type="button"
-                                                onClick={() => actions?.placeCrapsBet?.(gameState.crapsInputMode, item.num)}
+                                                onClick={() => actions?.placeCrapsNumberBet?.(gameState.crapsInputMode, item.num)}
                                                 className="flex flex-col items-center gap-1"
                                             >
                                                 <div className="w-12 h-12 flex items-center justify-center border border-gray-700 rounded bg-gray-900 text-white font-bold text-lg relative">

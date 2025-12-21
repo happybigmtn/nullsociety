@@ -773,6 +773,8 @@ impl CasinoGame for Roulette {
                     offset += 10;
                 }
 
+                session.bet = total_wager;
+
                 // All validation passed - now execute atomically
                 state.bets = bets_to_place;
                 state.total_wagered = total_wager;
@@ -808,9 +810,8 @@ impl CasinoGame for Roulette {
                 if total_return > 0 {
                     Ok(GameResult::Win(total_return, logs))
                 } else {
-                    // Total loss - use LossWithExtraDeduction since atomic batch
-                    // doesn't pre-deduct bets via ContinueWithUpdate
-                    Ok(GameResult::LossWithExtraDeduction(total_wager, logs))
+                    // Total loss - wager is deducted on completion for atomic batch
+                    Ok(GameResult::Loss(logs))
                 }
             }
 

@@ -175,6 +175,12 @@ async function run() {
             throw new Error('Unable to open Safety overlay');
           }
         };
+        const closeSafety = async () => {
+          if (await page.getByText(/session summary/i).isVisible().catch(() => false)) {
+            await page.keyboard.press('Escape');
+            await page.getByText(/session summary/i).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+          }
+        };
 
       await page.goto('/');
       await page.getByRole('button', { name: /cash game/i }).click();
@@ -202,18 +208,72 @@ async function run() {
       await page.getByPlaceholder(/type command or game name/i).fill('blackjack');
       await page.keyboard.press('Enter');
       await page.getByRole('heading', { name: /^blackjack$/i }).waitFor();
-      await page.getByText(/place bets/i).waitFor({ timeout: 60_000 });
+      await page.getByText(/place bets/i).first().waitFor({ timeout: 60_000 });
 
         await openSafety();
         await page.getByRole('button', { name: /^5m$/i }).click();
+        await closeSafety();
 
         await page.getByRole('button', { name: /deal/i }).click();
-        await page.getByText(/cooldown active/i).waitFor();
+        await page.getByText(/cooldown active/i).first().waitFor();
 
         await openSafety();
         await page.getByRole('button', { name: /^clear$/i }).click();
+        await closeSafety();
         await page.getByRole('button', { name: /deal/i }).click();
-        await page.getByText(/dealer \(\d+\)/i).waitFor({ timeout: 60_000 });
+        await page.locator('.animate-card-deal').first().waitFor({ timeout: 60_000 });
+
+      if (ONCHAIN) {
+        await page.getByRole('button', { name: /^games$/i }).click();
+        await page.getByPlaceholder(/type command or game name/i).fill('craps');
+        await page.keyboard.press('Enter');
+        await page.getByRole('heading', { name: /^craps$/i }).waitFor();
+        await page.getByText(/place bets/i).first().waitFor({ timeout: 60_000 });
+
+        await page.keyboard.press('Shift+3');
+        await page.keyboard.press('0');
+        await page.getByText(/placed \d+ bonus bets/i).first().waitFor({ timeout: 60_000 });
+
+        await page.keyboard.press('Shift+1');
+        await page.keyboard.press('f');
+
+        await page.keyboard.press('Shift+1');
+        await page.keyboard.press('p');
+        await page.keyboard.press('Shift+1');
+        await page.keyboard.press('d');
+
+        await page.keyboard.press('Shift+1');
+        await page.keyboard.press('h');
+        await page.getByText(/select hardway number/i).waitFor();
+        const hardwayModal = page.getByText(/select hardway number/i).locator('..');
+        await hardwayModal.getByRole('button', { name: /6/ }).first().click();
+
+        await page.keyboard.press('Shift+2');
+        await page.keyboard.press('y');
+        await page.getByText(/select yes number/i).waitFor();
+        const yesModal = page.getByText(/select yes number/i).locator('..');
+        await yesModal.getByRole('button', { name: /6/ }).first().click();
+
+        await page.keyboard.press('Shift+2');
+        await page.keyboard.press('n');
+        await page.getByText(/select no number/i).waitFor();
+        const noModal = page.getByText(/select no number/i).locator('..');
+        await noModal.getByRole('button', { name: /5/ }).first().click();
+
+        await page.keyboard.press('Shift+2');
+        await page.keyboard.press('x');
+        await page.getByText(/select next number/i).waitFor();
+        const nextModal = page.getByText(/select next number/i).locator('..');
+        await nextModal.getByRole('button', { name: /8/ }).first().click();
+
+        const rollDiceButton = page.getByRole('button', { name: /roll dice/i });
+        if (await rollDiceButton.count()) {
+          await rollDiceButton.first().click();
+        } else {
+          await page.getByRole('button', { name: /^roll$/i }).first().click();
+        }
+        await page.getByText(/^LAST:/i).first().waitFor({ timeout: 60_000 });
+      }
 
         await page.getByRole('link', { name: /^swap$/i }).click();
         await page.getByText(/economy — swap/i).waitFor();

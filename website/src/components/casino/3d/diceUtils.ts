@@ -13,14 +13,14 @@
 import * as THREE from 'three';
 
 // Euler rotations (in radians) that place each face on top (+Y)
-// These assume the die starts with face 1 on top at identity rotation
+// Starting layout per DiceModel: +X=3, -X=4, +Y=1, -Y=6, +Z=2, -Z=5
 export const FACE_ROTATIONS: Record<number, [number, number, number]> = {
-  1: [0, 0, 0],                           // Face 1 already on top
-  6: [Math.PI, 0, 0],                     // Flip 180° around X
-  2: [Math.PI / 2, 0, 0],                 // Rotate 90° around X (face 2 was on +Z)
-  5: [-Math.PI / 2, 0, 0],                // Rotate -90° around X
-  3: [0, 0, Math.PI / 2],                 // Rotate 90° around Z (face 3 was on -X)
-  4: [0, 0, -Math.PI / 2],                // Rotate -90° around Z
+  1: [0, 0, 0],                           // Face 1 on +Y - already on top
+  6: [Math.PI, 0, 0],                     // Face 6 on -Y - flip 180° around X
+  2: [-Math.PI / 2, 0, 0],                // Face 2 on +Z - rotate -90° around X
+  5: [Math.PI / 2, 0, 0],                 // Face 5 on -Z - rotate 90° around X
+  3: [0, 0, Math.PI / 2],                 // Face 3 on +X - rotate 90° around Z
+  4: [0, 0, -Math.PI / 2],                // Face 4 on -X - rotate -90° around Z
 };
 
 /**
@@ -51,7 +51,8 @@ export function getCurrentTopFace(rotation: THREE.Euler): number {
   if (absY >= absX && absY >= absZ) {
     return localUp.y > 0 ? 1 : 6;
   } else if (absX >= absZ) {
-    return localUp.x > 0 ? 4 : 3;
+    // +X face = 3, -X face = 4 (per DiceModel FACE_VALUES)
+    return localUp.x > 0 ? 3 : 4;
   } else {
     return localUp.z > 0 ? 2 : 5;
   }
@@ -59,22 +60,24 @@ export function getCurrentTopFace(rotation: THREE.Euler): number {
 
 /**
  * Calculate throw impulse based on power (0-1) and direction
+ * Moderate throws that keep dice visible on table
  */
 export function calculateThrowImpulse(
   power: number,
   direction: { x: number; z: number }
 ): { linear: THREE.Vector3; angular: THREE.Vector3 } {
-  const basePower = 3 + power * 7; // Range: 3-10 units
-  const upwardPower = 2 + power * 4; // Range: 2-6 units
+  // Slightly stronger throw for extra momentum while keeping dice contained
+  const basePower = 10 + power * 6; // Range: 10.0-16.0 units
+  const upwardPower = 1.8 + power * 1.4; // Range: 1.8-3.2 units
 
   // Normalize direction
   const len = Math.sqrt(direction.x * direction.x + direction.z * direction.z) || 1;
   const normX = direction.x / len;
   const normZ = direction.z / len;
 
-  // Add randomness for natural feel
-  const randX = (Math.random() - 0.5) * 0.3;
-  const randZ = (Math.random() - 0.5) * 0.3;
+  // Add slight randomness for natural feel
+  const randX = (Math.random() - 0.5) * 0.12;
+  const randZ = (Math.random() - 0.5) * 0.12;
 
   return {
     linear: new THREE.Vector3(
@@ -82,10 +85,11 @@ export function calculateThrowImpulse(
       upwardPower,
       normZ * basePower + randZ
     ),
+    // Good angular velocity for tumbling
     angular: new THREE.Vector3(
-      (Math.random() - 0.5) * 15 * power,
-      (Math.random() - 0.5) * 15 * power,
-      (Math.random() - 0.5) * 15 * power
+      (Math.random() - 0.5) * 16 * power,
+      (Math.random() - 0.5) * 16 * power,
+      (Math.random() - 0.5) * 16 * power
     ),
   };
 }

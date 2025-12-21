@@ -17,6 +17,9 @@ echo "=== Network Testing Setup ==="
 echo "Local IP: $LOCAL_IP"
 echo ""
 
+# Prune any leftover validator data
+"$REPO_DIR/scripts/prune-node-data.sh"
+
 # Get identity
 IDENTITY=$(grep VITE_IDENTITY "$REPO_DIR/website/.env.local" 2>/dev/null | cut -d'=' -f2)
 if [ -z "$IDENTITY" ]; then

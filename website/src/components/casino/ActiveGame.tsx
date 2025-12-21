@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { GameState, GameType, Card } from '../../types';
 import { BlackjackView } from './games/BlackjackView';
 import { CrapsView } from './games/CrapsView';
@@ -29,6 +29,17 @@ interface ActiveGameProps {
 }
 
 export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberInput, onToggleHold, aiAdvice, actions, onOpenCommandPalette, reducedMotion = false, chips, playMode, currentBet, onBetChange }) => {
+  // Track when 3D animations are active to suppress overlays/messages
+  const [animationBlocking, setAnimationBlocking] = useState(false);
+
+  const handleAnimationBlockingChange = useCallback((blocking: boolean) => {
+    setAnimationBlocking(blocking);
+  }, []);
+
+  useEffect(() => {
+    setAnimationBlocking(false);
+  }, [gameState.type]);
+
   if (gameState.type === GameType.NONE) {
      const handleOpen = () => onOpenCommandPalette?.();
      return (
@@ -99,34 +110,36 @@ export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberI
 
   return (
     <>
-         <div className="flex justify-center z-30 pointer-events-none select-none mb-2">
-             <div className="px-3 py-1 rounded border border-gray-800 bg-black/60 text-[10px] tracking-widest uppercase text-gray-300">
-                 NEXT: <span className="text-white">{nextActionLabel()}</span>
+         {!animationBlocking && (
+             <div className="flex justify-center z-30 pointer-events-none select-none mb-2">
+                 <div className="px-3 py-1 rounded border border-gray-800 bg-black/60 text-[10px] tracking-widest uppercase text-gray-300">
+                     NEXT: <span className="text-white">{nextActionLabel()}</span>
+                 </div>
              </div>
-         </div>
+         )}
 
 
 	         <BigWinEffect
 	            amount={displayWin}
-	            show={gameState.stage === 'RESULT' && displayWin > 0}
+	            show={gameState.stage === 'RESULT' && displayWin > 0 && !animationBlocking}
 	            durationMs={gameState.type === GameType.BLACKJACK ? 1000 : undefined}
                 reducedMotion={reducedMotion}
 	         />
 
-         {gameState.type === GameType.BLACKJACK && <BlackjackView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} />}
-         {gameState.type === GameType.CRAPS && <CrapsView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} currentBet={currentBet} onBetChange={onBetChange} />}
-         {gameState.type === GameType.BACCARAT && <BaccaratView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} />}
-         {gameState.type === GameType.ROULETTE && <RouletteView gameState={gameState} numberInput={numberInput} actions={actions} lastWin={displayWin} playMode={playMode} />}
-         {gameState.type === GameType.SIC_BO && <SicBoView gameState={gameState} numberInput={numberInput} actions={actions} lastWin={displayWin} playMode={playMode} />}
-         {gameState.type === GameType.HILO && <HiLoView gameState={gameState} deck={deck} actions={actions} lastWin={displayWin} playMode={playMode} />}
+         {gameState.type === GameType.BLACKJACK && <BlackjackView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} onAnimationBlockingChange={handleAnimationBlockingChange} />}
+         {gameState.type === GameType.CRAPS && <CrapsView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} currentBet={currentBet} onBetChange={onBetChange} onAnimationBlockingChange={handleAnimationBlockingChange} />}
+         {gameState.type === GameType.BACCARAT && <BaccaratView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} onAnimationBlockingChange={handleAnimationBlockingChange} />}
+         {gameState.type === GameType.ROULETTE && <RouletteView gameState={gameState} numberInput={numberInput} actions={actions} lastWin={displayWin} playMode={playMode} onAnimationBlockingChange={handleAnimationBlockingChange} />}
+         {gameState.type === GameType.SIC_BO && <SicBoView gameState={gameState} numberInput={numberInput} actions={actions} lastWin={displayWin} playMode={playMode} onAnimationBlockingChange={handleAnimationBlockingChange} />}
+         {gameState.type === GameType.HILO && <HiLoView gameState={gameState} deck={deck} actions={actions} lastWin={displayWin} playMode={playMode} onAnimationBlockingChange={handleAnimationBlockingChange} />}
          {gameState.type === GameType.VIDEO_POKER && (
-             <VideoPokerView gameState={gameState} onToggleHold={onToggleHold} actions={actions} lastWin={displayWin} playMode={playMode} />
+             <VideoPokerView gameState={gameState} onToggleHold={onToggleHold} actions={actions} lastWin={displayWin} playMode={playMode} onAnimationBlockingChange={handleAnimationBlockingChange} />
          )}
-         {gameState.type === GameType.THREE_CARD && <ThreeCardPokerView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} />}
-         {gameState.type === GameType.ULTIMATE_HOLDEM && <UltimateHoldemView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} />}
+         {gameState.type === GameType.THREE_CARD && <ThreeCardPokerView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} onAnimationBlockingChange={handleAnimationBlockingChange} />}
+         {gameState.type === GameType.ULTIMATE_HOLDEM && <UltimateHoldemView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} onAnimationBlockingChange={handleAnimationBlockingChange} />}
 
          {gameState.type === GameType.CASINO_WAR && (
-             <GenericGameView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} />
+             <GenericGameView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} onAnimationBlockingChange={handleAnimationBlockingChange} />
          )}
          
          {aiAdvice && (

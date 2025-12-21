@@ -12,6 +12,7 @@ import { CasinoChainService } from '../services/CasinoChainService';
 import { CasinoClient } from '../api/client.js';
 import { WasmWrapper } from '../api/wasm.js';
 import { BotConfig, DEFAULT_BOT_CONFIG, BotService } from '../services/BotService';
+import { playSfx } from '../services/sfx';
 
 const INITIAL_CHIPS = 1000;
 const INITIAL_SHIELDS = 3;
@@ -22,6 +23,100 @@ const MAX_GRAPH_POINTS = 100; // Limit for graph/history arrays to prevent memor
 const FREEROLL_REGISTRATION_MS = 60_000;
 const FREEROLL_TOURNAMENT_MS = 5 * 60_000;
 const FREEROLL_CYCLE_MS = FREEROLL_REGISTRATION_MS + FREEROLL_TOURNAMENT_MS;
+
+type CrapsChainBetLog = {
+  type: string;
+  target?: number;
+  wagered: number;
+  odds: number;
+  returnAmount: number;
+  outcome: 'WIN' | 'LOSS' | 'PUSH';
+};
+
+type CrapsChainRollLog = {
+  dice: [number, number];
+  total: number;
+  point: number;
+  bets: CrapsChainBetLog[];
+  totalWagered: number;
+  totalReturn: number;
+};
+
+const parseCrapsChainRollLog = (logs: string[]): CrapsChainRollLog | null => {
+  if (!logs || logs.length === 0) return null;
+
+  for (const entry of logs) {
+    if (typeof entry !== 'string' || entry.trim().length === 0) continue;
+    let data: any;
+    try {
+      data = JSON.parse(entry);
+    } catch {
+      continue;
+    }
+    if (!data || !Array.isArray(data.dice) || data.dice.length < 2) continue;
+    const d1 = Number(data.dice[0]);
+    const d2 = Number(data.dice[1]);
+    if (!Number.isFinite(d1) || !Number.isFinite(d2) || d1 <= 0 || d2 <= 0) continue;
+
+    const total = Number.isFinite(Number(data.total)) ? Number(data.total) : d1 + d2;
+    const totalWagered = Number.isFinite(Number(data.totalWagered)) ? Number(data.totalWagered) : 0;
+    const totalReturn = Number.isFinite(Number(data.totalReturn)) ? Number(data.totalReturn) : 0;
+    const point = Number.isFinite(Number(data.point)) ? Number(data.point) : 0;
+
+    const rawBets = Array.isArray(data.bets) ? data.bets : [];
+    const bets: CrapsChainBetLog[] = rawBets
+      .map((bet: any) => {
+        const type = typeof bet?.type === 'string' ? bet.type : '';
+        const target = typeof bet?.target === 'number' ? bet.target : undefined;
+        const wagered = Number(bet?.wagered ?? 0);
+        const odds = Number(bet?.odds ?? 0);
+        const returnAmount = Number(bet?.return ?? 0);
+        const rawOutcome = typeof bet?.outcome === 'string' ? bet.outcome : '';
+        const outcome: CrapsChainBetLog['outcome'] =
+          rawOutcome === 'WIN' || rawOutcome === 'LOSS' || rawOutcome === 'PUSH'
+            ? rawOutcome
+            : (returnAmount > wagered ? 'WIN' : returnAmount === wagered ? 'PUSH' : 'LOSS');
+        return { type, target, wagered, odds, returnAmount, outcome };
+      })
+      .filter((bet) => bet.type);
+
+    return {
+      dice: [d1, d2],
+      total,
+      point,
+      bets,
+      totalWagered,
+      totalReturn,
+    };
+  }
+
+  return null;
+};
+
+const formatCrapsChainBetLabel = (type: string, target?: number): string => {
+  if (type.startsWith('HARDWAY_')) {
+    const hardTarget = Number(type.split('_')[1]);
+    return Number.isFinite(hardTarget) ? `HARDWAY ${hardTarget}` : 'HARDWAY';
+  }
+
+  return target && target > 0 ? `${type} ${target}` : type;
+};
+
+const formatCrapsChainResults = (roll: CrapsChainRollLog): string[] => (
+  roll.bets.map((bet) => {
+    const label = formatCrapsChainBetLabel(bet.type, bet.target);
+    const net = bet.returnAmount - bet.wagered;
+    if (bet.outcome === 'WIN') {
+      const profit = Math.max(0, Math.floor(net));
+      return `${label} WIN (+$${profit})`;
+    }
+    if (bet.outcome === 'LOSS') {
+      const loss = bet.wagered > 0 ? bet.wagered : Math.abs(Math.floor(net));
+      return `${label} LOSS (-$${loss})`;
+    }
+    return `${label} PUSH`;
+  })
+);
 
 function getFreerollSchedule(nowMs: number) {
   const slot = Math.floor(nowMs / FREEROLL_CYCLE_MS);
@@ -244,6 +339,7 @@ const serializeSicBoAtomicBatch = (bets: SicBoBet[]): Uint8Array => {
  * Convert CrapsBet to numeric format for serialization
  */
 const crapsBetToNumeric = (bet: CrapsBet): {betType: number, target: number, amount: number} => {
+  // Base bet type map - HARDWAY is computed separately based on target
   const BET_TYPE_MAP: Record<CrapsBet['type'], number> = {
     'PASS': 0,
     'DONT_PASS': 1,
@@ -253,26 +349,43 @@ const crapsBetToNumeric = (bet: CrapsBet): {betType: number, target: number, amo
     'YES': 5,
     'NO': 6,
     'NEXT': 7,
-    'HARDWAY': 8, // target: 4, 6, 8, or 10
-    'FIRE': 9,
-    'ATS_SMALL': 10, // target: 0
-    'ATS_TALL': 10,  // target: 1
-    'ATS_ALL': 10,   // target: 2
-    'MUGGSY': 11,
-    'DIFF_DOUBLES': 12,
-    'RIDE_LINE': 13,
-    'REPLAY': 14,
-    'HOT_ROLLER': 15,
-    'REPEATER': 16, // target: 2-6 or 8-12
+    'HARDWAY': 8,    // Base value; actual value computed from target (4→8, 6→9, 8→10, 10→11)
+    'FIRE': 12,
+    'ATS_SMALL': 15,
+    'ATS_TALL': 16,
+    'ATS_ALL': 17,
+    // Side bet types
+    'MUGGSY': 18,
+    'DIFF_DOUBLES': 19,
+    'RIDE_LINE': 20,
+    'REPLAY': 21,
+    'HOT_ROLLER': 22,
+    'REPEATER': 23,
   };
 
-  const betTypeValue = BET_TYPE_MAP[bet.type];
+  // HARDWAY bets: compute actual bet type from target value
+  let betTypeValue: number;
+  if (bet.type === 'HARDWAY' && bet.target !== undefined) {
+    const hardwayMap: Record<number, number> = { 4: 8, 6: 9, 8: 10, 10: 11 };
+    betTypeValue = hardwayMap[bet.target] ?? 8;
+  } else {
+    betTypeValue = BET_TYPE_MAP[bet.type];
+  }
 
-  // Get target for backend - ATS types use special target values
+  // Get target for backend - ATS, HARDWAY, and side bets don't use target field
   let target = bet.target ?? 0;
-  if (bet.type === 'ATS_SMALL') target = 0;
-  else if (bet.type === 'ATS_TALL') target = 1;
-  else if (bet.type === 'ATS_ALL') target = 2;
+  if (bet.type === 'ATS_SMALL' || bet.type === 'ATS_TALL' || bet.type === 'ATS_ALL') {
+    target = 0;
+  } else if (bet.type === 'HARDWAY') {
+    target = 0; // Target is encoded in bet type itself
+  } else if (bet.type === 'MUGGSY'
+      || bet.type === 'DIFF_DOUBLES'
+      || bet.type === 'RIDE_LINE'
+      || bet.type === 'REPLAY'
+      || bet.type === 'HOT_ROLLER'
+      || bet.type === 'REPEATER') {
+    target = 0;
+  }
 
   return { betType: betTypeValue, target, amount: bet.amount };
 };
@@ -400,6 +513,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
   const [freerollNextStartIn, setFreerollNextStartIn] = useState(0);
   const [freerollIsJoinedNext, setFreerollIsJoinedNext] = useState(false);
   const [tournamentsPlayedToday, setTournamentsPlayedToday] = useState(0);
+  const playModeRef = useRef(playMode);
 
   // Chain service integration
   const [chainService, setChainService] = useState<CasinoChainService | null>(null);
@@ -412,6 +526,10 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
   const isPendingRef = useRef<boolean>(false); // Prevent double-submits on rapid space key presses
   const pendingMoveCountRef = useRef<number>(0); // Number of CasinoGameMoved events we're still waiting on
   const uthBackendStageRef = useRef<number>(0); // UTH backend stage (0-5) for action validation
+
+  useEffect(() => {
+    playModeRef.current = playMode;
+  }, [playMode]);
   // Baseline chips at session start (for accurate net PnL via `finalChips - startChips`).
   const sessionStartChipsRef = useRef<Map<bigint, number>>(new Map());
   const crapsPendingRollLogRef = useRef<{
@@ -419,6 +537,10 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
     prevDice: [number, number] | null;
     point: number | null;
     bets: CrapsBet[];
+  } | null>(null);
+  const crapsChainRollLogRef = useRef<{
+    sessionId: bigint;
+    roll: CrapsChainRollLog;
   } | null>(null);
   const autoPlayDraftRef = useRef<AutoPlayDraft | null>(null);
   const autoPlayPlanRef = useRef<AutoPlayPlan | null>(null);
@@ -541,6 +663,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
           isPendingRef.current = false;
           pendingMoveCountRef.current = 0;
           crapsPendingRollLogRef.current = null;
+          crapsChainRollLogRef.current = null;
           currentSessionIdRef.current = null;
           setCurrentSessionId(null);
           setGameState(prev => ({
@@ -590,6 +713,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
               isPendingRef.current = false;
               pendingMoveCountRef.current = 0;
               crapsPendingRollLogRef.current = null;
+              crapsChainRollLogRef.current = null;
               runAutoPlayPlanForSession(sessionId, frontendGameType);
               return;
             }
@@ -602,6 +726,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
         awaitingChainResponseRef.current = false;
         isPendingRef.current = false;
         crapsPendingRollLogRef.current = null;
+        crapsChainRollLogRef.current = null;
         currentSessionIdRef.current = null;
         setCurrentSessionId(null);
         setGameState(prev => ({
@@ -1467,6 +1592,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
         isPendingRef.current = false;
         pendingMoveCountRef.current = 0;
         crapsPendingRollLogRef.current = null;
+        crapsChainRollLogRef.current = null;
       }
     })();
   };
@@ -1636,11 +1762,23 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
         const stateBlob = event.newState;
         console.log('[useTerminalGame] Session ID matched! Parsing new state for game type:', gameTypeRef.current);
         // Check for backend-provided logs first (Strategic Solution)
+        if (gameTypeRef.current === GameType.CRAPS) {
+          crapsChainRollLogRef.current = null;
+        }
         if (event.logs && event.logs.length > 0) {
              setStats(prev => ({
                 ...prev,
                 history: [...prev.history, ...event.logs!],
              }));
+             if (gameTypeRef.current === GameType.CRAPS) {
+               const rollLog = parseCrapsChainRollLog(event.logs);
+               if (rollLog) {
+                 crapsChainRollLogRef.current = {
+                   sessionId: eventSessionId,
+                   roll: rollLog,
+                 };
+               }
+             }
              crapsPendingRollLogRef.current = null;
         } else {
             // Legacy fallback: Manual resolution
@@ -1679,6 +1817,35 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
 
         // Parse state and update UI using the tracked game type from ref (not stale closure)
         parseGameState(stateBlob, gameTypeRef.current);
+
+        // Refresh player balance after each move so chip display matches on-chain deductions.
+        if (clientRef.current && publicKeyBytesRef.current) {
+          void (async () => {
+            try {
+              const playerState = await clientRef.current!.getCasinoPlayer(publicKeyBytesRef.current!);
+              if (!playerState) return;
+
+              const showTournamentStack =
+                playModeRef.current === 'FREEROLL' && playerState.activeTournament != null;
+              const nextChips = Number(showTournamentStack ? playerState.tournamentChips : playerState.chips);
+              const nextShields = Number(showTournamentStack ? playerState.tournamentShields : playerState.shields);
+              const nextDoubles = Number(showTournamentStack ? playerState.tournamentDoubles : playerState.doubles);
+
+              setStats(prev => ({
+                ...prev,
+                chips: nextChips,
+                shields: nextShields,
+                doubles: nextDoubles,
+              }));
+              setWalletRng(Number(playerState.chips));
+              setWalletVusdt(Number(playerState.vusdtBalance ?? 0));
+              lastBalanceUpdateRef.current = Date.now();
+              currentChipsRef.current = nextChips;
+            } catch (e) {
+              console.debug('[useTerminalGame] Failed to refresh player state after move:', e);
+            }
+          })();
+        }
 
         // Fallback: If superMode is still null but player has super modifier active, try fetching
         // This handles cases where the initial GameStarted fetch didn't get multipliers yet
@@ -1804,7 +1971,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
           const currentGameType = gameTypeRef.current;
           const pnlEntry = { [currentGameType]: (prev.pnlByGame[currentGameType] || 0) + netPnL };
           // Use parsed details from backend logs, or fall back to locally computed details
-          const newHistory = [resultMessage, ...details];
+          const historyEntry = [resultMessage, ...details.map(detail => `  ${detail}`)].join('\n');
 
           return {
             ...prev,
@@ -1813,7 +1980,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
             shields: event.wasShielded ? prev.shields - 1 : prev.shields,
             doubles: event.wasDoubled ? prev.doubles - 1 : prev.doubles,
             // Add to history log
-            history: [...prev.history, ...newHistory],
+            history: [...prev.history, historyEntry],
             pnlByGame: { ...prev.pnlByGame, ...pnlEntry },
             pnlHistory: [...prev.pnlHistory, (prev.pnlHistory[prev.pnlHistory.length - 1] || 0) + netPnL].slice(-MAX_GRAPH_POINTS),
           };
@@ -1867,6 +2034,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
         isPendingRef.current = false;
         pendingMoveCountRef.current = 0;
         crapsPendingRollLogRef.current = null;
+        crapsChainRollLogRef.current = null;
         sessionStartChipsRef.current.delete(eventSessionId);
       }
     });
@@ -1928,6 +2096,17 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
             sessionIdRaw === null || sessionIdRaw === undefined ? null : BigInt(sessionIdRaw);
           const current = currentSessionIdRef.current ? BigInt(currentSessionIdRef.current) : null;
 
+          // Debug: Log full error details for investigation
+          console.error('[useTerminalGame] CasinoError received:', {
+            fullEvent: e,
+            message,
+            errorSessionId: errorSessionId?.toString(),
+            currentSessionId: current?.toString(),
+            sessionMatch: errorSessionId !== null && current !== null && errorSessionId === current,
+            gameType: gameTypeRef.current,
+            errorCode: e?.error_code ?? e?.errorCode,
+          });
+
           // If this error pertains to the current session, clear it so the user can retry.
           if (errorSessionId !== null && current !== null && errorSessionId === current) {
             currentSessionIdRef.current = null;
@@ -1935,6 +2114,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
             isPendingRef.current = false;
             pendingMoveCountRef.current = 0;
             crapsPendingRollLogRef.current = null;
+            crapsChainRollLogRef.current = null;
           }
 
           setGameState(prev => ({
@@ -1946,6 +2126,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
           isPendingRef.current = false;
           pendingMoveCountRef.current = 0;
           crapsPendingRollLogRef.current = null;
+          crapsChainRollLogRef.current = null;
         }
       }) ?? (() => {});
 
@@ -2397,19 +2578,25 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
         const dice = hasDice ? [d1, d2] : [];
         const total = hasDice ? d1 + d2 : 0;
 
-        // Parse bets from state blob
+        // Parse bets from state blob - maps backend BetType enum values to frontend types
         const BET_TYPE_REVERSE: Record<number, CrapsBet['type']> = {
           0: 'PASS', 1: 'DONT_PASS', 2: 'COME', 3: 'DONT_COME',
           4: 'FIELD', 5: 'YES', 6: 'NO', 7: 'NEXT',
-          8: 'HARDWAY',
-          9: 'FIRE',
-          10: 'ATS_SMALL', // Will be refined based on target
-          11: 'MUGGSY',
-          12: 'DIFF_DOUBLES',
-          13: 'RIDE_LINE',
-          14: 'REPLAY',
-          15: 'HOT_ROLLER',
-          16: 'REPEATER',
+          8: 'HARDWAY',   // Hardway4 - target will be set to 4 in parsing
+          9: 'HARDWAY',   // Hardway6 - target will be set to 6 in parsing
+          10: 'HARDWAY',  // Hardway8 - target will be set to 8 in parsing
+          11: 'HARDWAY',  // Hardway10 - target will be set to 10 in parsing
+          12: 'FIRE',
+          15: 'ATS_SMALL',
+          16: 'ATS_TALL',
+          17: 'ATS_ALL',
+          // Side bet types
+          18: 'MUGGSY',
+          19: 'DIFF_DOUBLES',
+          20: 'RIDE_LINE',
+          21: 'REPLAY',
+          22: 'HOT_ROLLER',
+          23: 'REPEATER',
         };
         const parsedBets: CrapsBet[] = [];
         let offset = betsOffset;
@@ -2422,23 +2609,30 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
 
           let betType = BET_TYPE_REVERSE[betTypeVal] || 'PASS';
 
-          const isHardway = betTypeVal === 8;
-          const isAts = betTypeVal === 10;
+          // Hardway bets: 8=Hardway4, 9=Hardway6, 10=Hardway8, 11=Hardway10
+          const isHardway = betTypeVal >= 8 && betTypeVal <= 11;
+          // ATS bets: 15=AtsSmall, 16=AtsTall, 17=AtsAll
+          const isAts = betTypeVal >= 15 && betTypeVal <= 17;
+          // Fire bet: 12
+          const isFire = betTypeVal === 12;
           // Side bets that use odds_amount for progress tracking
-          const isSideBetWithProgress = [10, 12, 13, 14, 15, 16].includes(betTypeVal);
+          const isSideBetWithProgress = isFire || isAts || (betTypeVal >= 18 && betTypeVal <= 22);
           const progressMask = isSideBetWithProgress ? oddsAmount : undefined;
 
-          // Refine ATS type based on target
-          if (isAts) {
-            if (target === 0) betType = 'ATS_SMALL';
-            else if (target === 1) betType = 'ATS_TALL';
-            else if (target === 2) betType = 'ATS_ALL';
+          // Compute HARDWAY target from bet type value
+          let parsedTarget: number | undefined = target > 0 ? target : undefined;
+          if (isHardway) {
+            // Backend hardway type encodes the target: 8→4, 9→6, 10→8, 11→10
+            const hardwayTargetMap: Record<number, number> = { 8: 4, 9: 6, 10: 8, 11: 10 };
+            parsedTarget = hardwayTargetMap[betTypeVal];
+          } else if (isSideBetWithProgress) {
+            // Progress-based side bets don't have meaningful targets
+            parsedTarget = undefined;
           }
 
           parsedBets.push({
             type: betType,
-            target: (isHardway || betTypeVal === 16) && target > 0 ? target : // HARDWAY and REPEATER use target
-                   (!isSideBetWithProgress && target > 0) ? target : undefined,
+            target: parsedTarget,
             status: statusVal === 1 ? 'PENDING' : 'ON',
             amount,
             oddsAmount: (!isHardway && !isSideBetWithProgress && oddsAmount > 0) ? oddsAmount : undefined,
@@ -2460,24 +2654,32 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
         }
 
         setGameState(prev => {
-          // Only update history if dice actually changed (avoids duplicate entries from multiple events)
+          // Only update history on a new roll (dice change or chain log) to avoid duplicates.
           const prevDice = prev.dice;
           const diceChanged =
             prevDice.length !== dice.length ||
             (dice.length === 2 && (prevDice[0] !== d1 || prevDice[1] !== d2));
+          const chainRollLogEntry = crapsChainRollLogRef.current;
+          const hasChainRollLog = !!chainRollLogEntry
+            && chainRollLogEntry.roll.dice[0] === d1
+            && chainRollLogEntry.roll.dice[1] === d2;
+          if (chainRollLogEntry && !hasChainRollLog) {
+            crapsChainRollLogRef.current = null;
+          }
+          const rollChanged = diceChanged || hasChainRollLog;
 
           // Detect seven-out: point was ON and a 7 was rolled
           // Use multiple indicators for reliability:
           // 1. prev.crapsPoint !== null && total === 7 (point was ON, rolled 7)
           // 2. prev.crapsEpochPointEstablished && !epochPointEstablished (epoch ended)
-          const sevenOut = hasDice && diceChanged && total === 7 && (
+          const sevenOut = hasDice && rollChanged && total === 7 && (
             prev.crapsPoint !== null ||
             (prev.crapsEpochPointEstablished && !epochPointEstablished)
           );
 
           // Reset roll history only on seven-out, otherwise append
           let newHistory = prev.crapsRollHistory;
-          if (hasDice && diceChanged) {
+          if (hasDice && rollChanged) {
             newHistory = sevenOut ? [total] : [...prev.crapsRollHistory, total].slice(-MAX_GRAPH_POINTS);
           }
 
@@ -2486,32 +2688,49 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
           // parsedBets = what chain has AFTER this roll (bets already resolved by chain)
           // Difference = bets that the chain resolved this roll
           let newEventLog = prev.crapsEventLog;
-          if (hasDice && diceChanged) {
-            // Get previous chain bets (excluding local staged bets - those aren't on chain yet)
-            const prevChainBets = prev.crapsBets.filter(b => b.local !== true);
+          if (hasDice && rollChanged) {
+            if (hasChainRollLog && chainRollLogEntry) {
+              const chainRoll = chainRollLogEntry.roll;
+              const chainPnl = Math.floor(chainRoll.totalReturn - chainRoll.totalWagered);
+              const newEvent = {
+                dice: [d1, d2] as [number, number],
+                total,
+                pnl: chainPnl,
+                point: prev.crapsPoint,
+                isSevenOut: sevenOut,
+                results: formatCrapsChainResults(chainRoll),
+              };
+              newEventLog = sevenOut
+                ? []
+                : [...prev.crapsEventLog, newEvent].slice(-MAX_GRAPH_POINTS);
+              crapsChainRollLogRef.current = null;
+            } else {
+              // Get previous chain bets (excluding local staged bets - those aren't on chain yet)
+              const prevChainBets = prev.crapsBets.filter(b => b.local !== true);
 
-            // Find bets that were resolved by the chain (in prev but not in new)
-            const betKey = (b: CrapsBet) => `${b.type}|${b.target ?? ''}|${b.amount}|${b.oddsAmount ?? 0}`;
-            const newBetKeys = new Set(parsedBets.map(betKey));
-            const resolvedBets = prevChainBets.filter(b => !newBetKeys.has(betKey(b)));
+              // Find bets that were resolved by the chain (in prev but not in new)
+              const betKey = (b: CrapsBet) => `${b.type}|${b.target ?? ''}|${b.amount}|${b.oddsAmount ?? 0}`;
+              const newBetKeys = new Set(parsedBets.map(betKey));
+              const resolvedBets = prevChainBets.filter(b => !newBetKeys.has(betKey(b)));
 
-            // Calculate PnL only for bets the chain actually resolved
-            // Uses deterministic craps rules (same as chain) to determine payouts
-            const rollResult = resolveCrapsBets([d1, d2], prev.crapsPoint, resolvedBets);
+              // Calculate PnL only for bets the chain actually resolved
+              // Uses deterministic craps rules (same as chain) to determine payouts
+              const rollResult = resolveCrapsBets([d1, d2], prev.crapsPoint, resolvedBets);
 
-            const newEvent = {
-              dice: [d1, d2] as [number, number],
-              total,
-              pnl: rollResult.pnl,
-              point: prev.crapsPoint,
-              isSevenOut: sevenOut,
-              results: rollResult.results,
-            };
-            // On seven-out: clear the log for new epoch (seven-out ends current epoch)
-            // Next roll will start fresh
-            newEventLog = sevenOut
-              ? [] // Clear log - new epoch starts fresh
-              : [...prev.crapsEventLog, newEvent].slice(-MAX_GRAPH_POINTS);
+              const newEvent = {
+                dice: [d1, d2] as [number, number],
+                total,
+                pnl: rollResult.pnl,
+                point: prev.crapsPoint,
+                isSevenOut: sevenOut,
+                results: rollResult.results,
+              };
+              // On seven-out: clear the log for new epoch (seven-out ends current epoch)
+              // Next roll will start fresh
+              newEventLog = sevenOut
+                ? [] // Clear log - new epoch starts fresh
+                : [...prev.crapsEventLog, newEvent].slice(-MAX_GRAPH_POINTS);
+            }
           }
 
           // SIMPLE APPROACH: Chain state is the source of truth.
@@ -2555,7 +2774,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
             stage: 'PLAYING' as const,
             // Show 7-OUT message on seven-out, otherwise normal message
             message: hasDice
-              ? (diceChanged ? (sevenOut ? '7-OUT! SHOOTER LOSES' : `ROLLED ${total}`) : prev.message)
+              ? (rollChanged ? (sevenOut ? '7-OUT! SHOOTER LOSES' : `ROLLED ${total}`) : prev.message)
               : (isPendingRef.current
                   ? prev.message
                   : (mergedBets.length > 0 ? 'BETS PLACED - SPACE TO ROLL' : 'PLACE BETS - SPACE TO ROLL')),
@@ -2889,6 +3108,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
     isPendingRef.current = false;
     pendingMoveCountRef.current = 0;
     crapsPendingRollLogRef.current = null;
+    crapsChainRollLogRef.current = null;
     autoPlayPlanRef.current = null;
     // Reset UTH stage ref when switching games (will be updated by parseGameState on first state)
     if (type === GameType.ULTIMATE_HOLDEM) {
@@ -4270,6 +4490,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
 	         try {
 	           isPendingRef.current = true;
 	           pendingMoveCountRef.current = 1; // Single atomic batch transaction
+	           void playSfx('dice');
 	           setGameState(prev => ({ ...prev, message: 'ROLLING...' }));
 
 	           // Use atomic batch: all bets + roll in single transaction
@@ -4315,26 +4536,43 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
       'YES': 5,
       'NO': 6,
       'NEXT': 7,
-      'HARDWAY': 8, // target: 4, 6, 8, or 10
-      'FIRE': 9,
-      'ATS_SMALL': 10, // target: 0
-      'ATS_TALL': 10,  // target: 1
-      'ATS_ALL': 10,   // target: 2
-      'MUGGSY': 11,
-      'DIFF_DOUBLES': 12,
-      'RIDE_LINE': 13,
-      'REPLAY': 14,
-      'HOT_ROLLER': 15,
-      'REPEATER': 16, // target: 2-6 or 8-12
+      'HARDWAY': 8,    // Base value; actual value computed from target (4→8, 6→9, 8→10, 10→11)
+      'FIRE': 12,
+      'ATS_SMALL': 15,
+      'ATS_TALL': 16,
+      'ATS_ALL': 17,
+      // Side bet types
+      'MUGGSY': 18,
+      'DIFF_DOUBLES': 19,
+      'RIDE_LINE': 20,
+      'REPLAY': 21,
+      'HOT_ROLLER': 22,
+      'REPEATER': 23,
     };
 
-    const betTypeValue = BET_TYPE_MAP[bet.type];
+    // HARDWAY bets: compute actual bet type from target value
+    let betTypeValue: number;
+    if (bet.type === 'HARDWAY' && bet.target !== undefined) {
+      const hardwayMap: Record<number, number> = { 4: 8, 6: 9, 8: 10, 10: 11 };
+      betTypeValue = hardwayMap[bet.target] ?? 8;
+    } else {
+      betTypeValue = BET_TYPE_MAP[bet.type];
+    }
 
-    // Get target for backend - ATS types use special target values
+    // Get target for backend - ATS, HARDWAY, and side bets don't use target field
     let target = bet.target ?? 0;
-    if (bet.type === 'ATS_SMALL') target = 0;
-    else if (bet.type === 'ATS_TALL') target = 1;
-    else if (bet.type === 'ATS_ALL') target = 2;
+    if (bet.type === 'ATS_SMALL' || bet.type === 'ATS_TALL' || bet.type === 'ATS_ALL') {
+      target = 0;
+    } else if (bet.type === 'HARDWAY') {
+      target = 0; // Target is encoded in bet type itself
+    } else if (bet.type === 'MUGGSY'
+        || bet.type === 'DIFF_DOUBLES'
+        || bet.type === 'RIDE_LINE'
+        || bet.type === 'REPLAY'
+        || bet.type === 'HOT_ROLLER'
+        || bet.type === 'REPEATER') {
+      target = 0;
+    }
 
     const payload = new Uint8Array(11);
     payload[0] = 0; // Command: Place bet
@@ -5100,6 +5338,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
         undoCrapsBet,
         rebetCraps,
         addCrapsOdds,
+        rollCraps,
         // Baccarat
         baccaratActions,
         // Three Card Poker

@@ -754,9 +754,135 @@ const atsPayoutTo1 = (type: CrapsBet['type']): number => {
     return 0;
 };
 
+const countBits = (value: number): number => {
+    let count = 0;
+    let v = value;
+    while (v > 0) {
+        count += v & 1;
+        v >>= 1;
+    }
+    return count;
+};
+
+const diffDoublesPayoutTo1 = (count: number): number => {
+    switch (count) {
+        case 3: return 4;
+        case 4: return 8;
+        case 5: return 15;
+        case 6: return 100;
+        default: return 0;
+    }
+};
+
+const rideLinePayoutTo1 = (wins: number): number => {
+    switch (wins) {
+        case 3: return 2;
+        case 4: return 3;
+        case 5: return 5;
+        case 6: return 8;
+        case 7: return 12;
+        case 8: return 18;
+        case 9: return 25;
+        case 10: return 40;
+        default: return wins >= 11 ? 100 : 0;
+    }
+};
+
+const replayShiftForPoint = (point: number): number | null => {
+    switch (point) {
+        case 4: return 0;
+        case 5: return 4;
+        case 6: return 8;
+        case 8: return 12;
+        case 9: return 16;
+        case 10: return 20;
+        default: return null;
+    }
+};
+
+const replayPayoutTo1 = (mask: number): number => {
+    const points: Array<[number, number]> = [
+        [4, 0],
+        [5, 4],
+        [6, 8],
+        [8, 12],
+        [9, 16],
+        [10, 20],
+    ];
+    let payout = 0;
+    for (const [point, shift] of points) {
+        const count = (mask >> shift) & 0xF;
+        let pointPayout = 0;
+        if (point === 4 || point === 10) {
+            if (count >= 4) pointPayout = 1000;
+            else if (count >= 3) pointPayout = 120;
+        } else if (point === 5 || point === 9) {
+            if (count >= 4) pointPayout = 500;
+            else if (count >= 3) pointPayout = 95;
+        } else if (point === 6 || point === 8) {
+            if (count >= 4) pointPayout = 100;
+            else if (count >= 3) pointPayout = 70;
+        }
+        payout = Math.max(payout, pointPayout);
+    }
+    return payout;
+};
+
+const hotRollerBitForRoll = (d1: number, d2: number): number => {
+    const [a, b] = d1 <= d2 ? [d1, d2] : [d2, d1];
+    if (a === 1 && b === 3) return 1 << 0;
+    if (a === 2 && b === 2) return 1 << 1;
+    if (a === 1 && b === 4) return 1 << 2;
+    if (a === 2 && b === 3) return 1 << 3;
+    if (a === 1 && b === 5) return 1 << 4;
+    if (a === 2 && b === 4) return 1 << 5;
+    if (a === 3 && b === 3) return 1 << 6;
+    if (a === 2 && b === 6) return 1 << 7;
+    if (a === 3 && b === 5) return 1 << 8;
+    if (a === 4 && b === 4) return 1 << 9;
+    if (a === 3 && b === 6) return 1 << 10;
+    if (a === 4 && b === 5) return 1 << 11;
+    if (a === 4 && b === 6) return 1 << 12;
+    if (a === 5 && b === 5) return 1 << 13;
+    return 0;
+};
+
+const hotRollerCompletedPoints = (mask: number): number => {
+    const pointMasks = [
+        (1 << 0) | (1 << 1),
+        (1 << 2) | (1 << 3),
+        (1 << 4) | (1 << 5) | (1 << 6),
+        (1 << 7) | (1 << 8) | (1 << 9),
+        (1 << 10) | (1 << 11),
+        (1 << 12) | (1 << 13),
+    ];
+    return pointMasks.filter(pointMask => (mask & pointMask) === pointMask).length;
+};
+
+const hotRollerPayoutTo1 = (completed: number): number => {
+    switch (completed) {
+        case 2: return 5;
+        case 3: return 10;
+        case 4: return 20;
+        case 5: return 50;
+        case 6: return 200;
+        default: return 0;
+    }
+};
+
 // Calculate total cost to place a craps bet
 export const crapsBetCost = (bet: CrapsBet): number => {
     return bet.amount + (bet.oddsAmount || 0);
+};
+
+export const CRAPS_MAX_BETS = 20;
+
+export const canPlaceCrapsBonusBets = (crapsEpochPointEstablished: boolean, dice: number[]): boolean => {
+    if (crapsEpochPointEstablished) return false;
+    if (dice.length !== 2) return true;
+    const [d1, d2] = dice;
+    if (!d1 || !d2) return true;
+    return d1 + d2 === 7;
 };
 
 // Overload to optionally specify hard roll explicitly
@@ -868,6 +994,11 @@ export const resolveCrapsBets = (
     const results: string[] = [];
     const total = Array.isArray(totalOrDice) ? (totalOrDice[0] + totalOrDice[1]) : totalOrDice;
     const isHard = Array.isArray(totalOrDice) ? (totalOrDice[0] === totalOrDice[1]) : (total % 2 === 0);
+    const dice = Array.isArray(totalOrDice) ? totalOrDice : null;
+    const isDouble = dice ? dice[0] === dice[1] : false;
+    const die1 = dice ? dice[0] : 0;
+    const die2 = dice ? dice[1] : 0;
+    const isPointTotal = (value: number) => [4, 5, 6, 8, 9, 10].includes(value);
 
     bets.forEach(bet => {
         let resolved = false;
@@ -973,15 +1104,100 @@ export const resolveCrapsBets = (
                     remainingBets.push(bet);
                 }
             }
-        } else if (bet.type === 'FIRE' || bet.type === 'MUGGSY' || bet.type === 'DIFF_DOUBLES' ||
-                   bet.type === 'RIDE_LINE' || bet.type === 'REPLAY' || bet.type === 'HOT_ROLLER' || bet.type === 'REPEATER') {
-            // All epoch bonus bets lose on 7-out (point is ON and 7 is rolled)
+        } else if (bet.type === 'FIRE') {
+            // Fire bet resolution depends on made point tracking from chain logs.
             const sevenOut = total === 7 && point !== null;
             if (sevenOut) {
                 loseAmount = bet.amount;
                 resolved = true;
             } else {
-                // Not resolved, keep the bet active
+                remainingBets.push(bet);
+            }
+        } else if (bet.type === 'MUGGSY') {
+            const stage = bet.progressMask || 0;
+            if (stage === 0) {
+                if (point !== null) {
+                    loseAmount = bet.amount;
+                    resolved = true;
+                } else if (total === 7) {
+                    winAmount = bet.amount * 2;
+                    resolved = true;
+                } else if (isPointTotal(total)) {
+                    remainingBets.push({ ...bet, progressMask: 1 });
+                } else {
+                    loseAmount = bet.amount;
+                    resolved = true;
+                }
+            } else {
+                if (total === 7) winAmount = bet.amount * 3;
+                else loseAmount = bet.amount;
+                resolved = true;
+            }
+        } else if (bet.type === 'DIFF_DOUBLES') {
+            let mask = bet.progressMask || 0;
+            if (isDouble) {
+                mask |= 1 << (die1 - 1);
+            }
+            if (total === 7) {
+                const count = countBits(mask);
+                const payout = diffDoublesPayoutTo1(count);
+                if (payout > 0) winAmount = bet.amount * payout;
+                else loseAmount = bet.amount;
+                resolved = true;
+            } else {
+                remainingBets.push({ ...bet, progressMask: mask });
+            }
+        } else if (bet.type === 'RIDE_LINE') {
+            let wins = bet.progressMask || 0;
+            if (point === null && (total === 7 || total === 11)) wins += 1;
+            if (point !== null && total === point) wins += 1;
+            if (point !== null && total === 7) {
+                const payout = rideLinePayoutTo1(wins);
+                if (payout > 0) winAmount = bet.amount * payout;
+                else loseAmount = bet.amount;
+                resolved = true;
+            } else {
+                remainingBets.push({ ...bet, progressMask: wins });
+            }
+        } else if (bet.type === 'REPLAY') {
+            let mask = bet.progressMask || 0;
+            if (point !== null && total === point) {
+                const shift = replayShiftForPoint(point);
+                if (shift !== null) {
+                    const current = (mask >> shift) & 0xF;
+                    const next = Math.min(0xF, current + 1);
+                    mask = (mask & ~(0xF << shift)) | (next << shift);
+                }
+            }
+            if (point !== null && total === 7) {
+                const payout = replayPayoutTo1(mask);
+                if (payout > 0) winAmount = bet.amount * payout;
+                else loseAmount = bet.amount;
+                resolved = true;
+            } else {
+                remainingBets.push({ ...bet, progressMask: mask });
+            }
+        } else if (bet.type === 'HOT_ROLLER') {
+            let mask = bet.progressMask || 0;
+            if (dice) {
+                mask |= hotRollerBitForRoll(die1, die2);
+            }
+            if (total === 7) {
+                const completed = hotRollerCompletedPoints(mask);
+                const payout = hotRollerPayoutTo1(completed);
+                if (payout > 0) winAmount = bet.amount * payout;
+                else loseAmount = bet.amount;
+                resolved = true;
+            } else {
+                remainingBets.push({ ...bet, progressMask: mask });
+            }
+        } else if (bet.type === 'REPEATER') {
+            // Placeholder until backend support exists.
+            const sevenOut = total === 7 && point !== null;
+            if (sevenOut) {
+                loseAmount = bet.amount;
+                resolved = true;
+            } else {
                 remainingBets.push(bet);
             }
         }
@@ -993,7 +1209,18 @@ export const resolveCrapsBets = (
             if (winAmount > 0) results.push(`${bet.type}${bet.target ? ' ' + bet.target : ''} WIN (+$${Math.floor(winAmount)})`);
             else if (loseAmount > 0) results.push(`${bet.type}${bet.target ? ' ' + bet.target : ''} LOSS (-$${loseAmount})`);
             else results.push(`${bet.type} PUSH`);
-        } else if (!(bet.type === 'ATS_SMALL' || bet.type === 'ATS_TALL' || bet.type === 'ATS_ALL')) {
+        } else if (![
+            'ATS_SMALL',
+            'ATS_TALL',
+            'ATS_ALL',
+            'FIRE',
+            'MUGGSY',
+            'DIFF_DOUBLES',
+            'RIDE_LINE',
+            'REPLAY',
+            'HOT_ROLLER',
+            'REPEATER'
+        ].includes(bet.type)) {
             remainingBets.push(bet);
         }
     });
@@ -1447,19 +1674,60 @@ export const parseGameLogs = (gameType: GameType, logs: string[], netPnL: number
       }
 
       case GameType.BACCARAT: {
-        // {"playerCards":[...],"bankerCards":[...],"bets":[...],"winner":"PLAYER|BANKER|TIE","totalReturn":...}
+        // {"player":{"cards":[...],"total":..},"banker":{"cards":[...],"total":..},"winner":"PLAYER|BANKER|TIE","bets":[...],"totalWagered":..,"totalReturn":..}
         const winner = data.winner || 'TIE';
-        const pCards = (data.playerCards || []).map(cardToString).join(' ');
-        const bCards = (data.bankerCards || []).map(cardToString).join(' ');
+        const betTypeMap: Record<string, string> = {
+          PLAYER: 'PLAYER',
+          BANKER: 'BANKER',
+          TIE: 'TIE',
+          PLAYER_PAIR: 'P_PAIR',
+          BANKER_PAIR: 'B_PAIR',
+          LUCKY_6: 'LUCKY6',
+          PLAYER_DRAGON: 'P_DRAGON',
+          BANKER_DRAGON: 'B_DRAGON',
+          PANDA_8: 'PANDA8',
+          PLAYER_PERFECT_PAIR: 'P_PERFECT_PAIR',
+          BANKER_PERFECT_PAIR: 'B_PERFECT_PAIR',
+        };
+        const formatBetType = (raw: string) => betTypeMap[raw] ?? raw;
+        const formatCard = (card: unknown): string => {
+          if (typeof card === 'number') return cardToString(card);
+          if (typeof card === 'string') {
+            const parsed = Number(card);
+            if (!Number.isNaN(parsed)) return cardToString(parsed);
+            return card;
+          }
+          return '?';
+        };
 
-        const summary = `${winner} wins. ${resultPart}`;
+        const player = data.player || {};
+        const banker = data.banker || {};
+        const pTotal = typeof player.total === 'number' ? player.total : null;
+        const bTotal = typeof banker.total === 'number' ? banker.total : null;
+        const pCards = Array.isArray(player.cards) ? player.cards.map(formatCard).join(' ') : '';
+        const bCards = Array.isArray(banker.cards) ? banker.cards.map(formatCard).join(' ') : '';
+
+        const score = pTotal !== null && bTotal !== null ? ` ${pTotal}-${bTotal}` : '';
+        const summary = `${winner} wins${score}. ${resultPart}`;
         const details: string[] = [];
-        details.push(`Player: ${pCards}`);
-        details.push(`Banker: ${bCards}`);
+        if (pCards) details.push(`Player: ${pCards}${pTotal !== null ? ` (${pTotal})` : ''}`);
+        if (bCards) details.push(`Banker: ${bCards}${bTotal !== null ? ` (${bTotal})` : ''}`);
 
         (data.bets || []).forEach((bet: any) => {
-          const outcome = bet.outcome || (bet.return > bet.wagered ? 'WIN' : bet.return === bet.wagered ? 'PUSH' : 'LOSS');
-          details.push(`${bet.type}: ${outcome} ${bet.return > 0 ? `(+$${bet.return})` : `(-$${bet.wagered})`}`);
+          const betType = formatBetType(bet.type);
+          const amount = Number(bet.amount ?? 0);
+          const payout = Number(bet.payout ?? 0);
+          const outcome = bet.result || (payout > 0 ? 'WIN' : payout < 0 ? 'LOSS' : 'PUSH');
+          if (outcome === 'PUSH') {
+            details.push(`${betType}: PUSH`);
+            return;
+          }
+          if (payout > 0) {
+            details.push(`${betType}: ${outcome} (+$${payout})`);
+            return;
+          }
+          const lossAmount = payout < 0 ? Math.abs(payout) : amount;
+          details.push(`${betType}: ${outcome} (-$${lossAmount})`);
         });
 
         return { summary, details, raw: data };
@@ -1474,8 +1742,51 @@ export const parseGameLogs = (gameType: GameType, logs: string[], netPnL: number
         const details: string[] = [];
 
         (data.bets || []).forEach((bet: any) => {
-          const outcome = bet.outcome || (bet.return > 0 ? 'WIN' : 'LOSS');
-          details.push(`${bet.type}${bet.target !== undefined ? ` ${bet.target}` : ''}: ${outcome}`);
+          const rawType = String(bet.type ?? '');
+          const number = typeof bet.number === 'number' ? bet.number : bet.target;
+          const displayType = rawType === 'DOZEN' && Number.isInteger(number)
+            ? `DOZEN_${number + 1}`
+            : rawType === 'COLUMN' && Number.isInteger(number)
+              ? `COL_${number + 1}`
+              : rawType;
+          const showNumber =
+            rawType === 'STRAIGHT' || rawType === 'SPLIT_H' || rawType === 'SPLIT_V'
+            || rawType === 'STREET' || rawType === 'CORNER' || rawType === 'SIX_LINE';
+          const label = `${displayType}${showNumber && number !== undefined ? ` ${number}` : ''}`;
+          const won = typeof bet.won === 'boolean'
+            ? bet.won
+            : bet.outcome
+              ? bet.outcome === 'WIN'
+              : bet.return > 0;
+          const payoutMult = (() => {
+            switch (rawType) {
+              case 'STRAIGHT': return 35;
+              case 'RED':
+              case 'BLACK':
+              case 'EVEN':
+              case 'ODD':
+              case 'LOW':
+              case 'HIGH':
+                return 1;
+              case 'DOZEN':
+              case 'COLUMN':
+                return 2;
+              case 'SPLIT_H':
+              case 'SPLIT_V':
+                return 17;
+              case 'STREET': return 11;
+              case 'CORNER': return 8;
+              case 'SIX_LINE': return 5;
+              default: return null;
+            }
+          })();
+          const amount = Number(bet.amount ?? 0);
+          if (won) {
+            const profit = payoutMult !== null && amount > 0 ? amount * payoutMult : 0;
+            details.push(`${label}: WIN${profit > 0 ? ` (+$${profit})` : ''}`);
+          } else {
+            details.push(`${label}: LOSS${amount > 0 ? ` (-$${amount})` : ''}`);
+          }
         });
 
         return { summary, details, raw: data };
@@ -1507,7 +1818,29 @@ export const parseGameLogs = (gameType: GameType, logs: string[], netPnL: number
         const details: string[] = [`Dice: ${dice.join('-')}`];
 
         (data.bets || []).forEach((bet: any) => {
-          details.push(`${bet.type}: ${bet.outcome}`);
+          const betTypeMap: Record<string, string> = {
+            SPECIFIC_TRIPLE: 'TRIPLE_SPECIFIC',
+            ANY_TRIPLE: 'TRIPLE_ANY',
+            SPECIFIC_DOUBLE: 'DOUBLE_SPECIFIC',
+            TOTAL: 'SUM',
+            SINGLE: 'SINGLE_DIE',
+            THREE_NUMBER_EASY_HOP: 'HOP3_EASY',
+            THREE_NUMBER_HARD_HOP: 'HOP3_HARD',
+            FOUR_NUMBER_EASY_HOP: 'HOP4_EASY',
+          };
+          const rawType = String(bet.type ?? '');
+          const displayType = betTypeMap[rawType] ?? rawType;
+          const number = typeof bet.number === 'number' ? bet.number : undefined;
+          const label = `${displayType}${number !== undefined && number > 0 ? ` ${number}` : ''}`;
+          const payout = Number(bet.payout ?? 0);
+          const amount = Number(bet.amount ?? 0);
+          const won = typeof bet.won === 'boolean' ? bet.won : payout > 0;
+          if (won) {
+            const profit = payout > amount ? payout - amount : payout;
+            details.push(`${label}: WIN${profit > 0 ? ` (+$${profit})` : ''}`);
+          } else {
+            details.push(`${label}: LOSS${amount > 0 ? ` (-$${amount})` : ''}`);
+          }
         });
 
         return { summary, details, raw: data };

@@ -1,20 +1,56 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import { GameState, GameType } from '../../../types';
 import { Hand } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
 import { getVisibleHandValue } from '../../../utils/gameUtils';
+import { CardAnimationOverlay } from '../3d/CardAnimationOverlay';
+import { buildCardsById, buildRowSlots } from '../3d/cardLayouts';
 
-export const GenericGameView = React.memo<{ gameState: GameState; actions: any; lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
+// Simple mobile detection hook
+const useIsMobile = () => {
+    const [isMobile, setIsMobile] = useState(false);
+    useEffect(() => {
+        const check = () => setIsMobile(window.innerWidth < 640);
+        check();
+        window.addEventListener('resize', check);
+        return () => window.removeEventListener('resize', check);
+    }, []);
+    return isMobile;
+};
+
+export const GenericGameView = React.memo<{ gameState: GameState; actions: any; lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null; onAnimationBlockingChange?: (blocking: boolean) => void }>(({ gameState, actions, lastWin, playMode, onAnimationBlockingChange }) => {
     const dealerValue = useMemo(() => getVisibleHandValue(gameState.dealerCards), [gameState.dealerCards]);
     const playerValue = useMemo(() => getVisibleHandValue(gameState.playerCards), [gameState.playerCards]);
     const gameTitle = useMemo(() => gameState.type.replace(/_/g, ' '), [gameState.type]);
     const isWarState = useMemo(() => gameState.type === GameType.CASINO_WAR && gameState.message.includes('WAR'), [gameState.type, gameState.message]);
     const isCasinoWarBetting = useMemo(() => gameState.type === GameType.CASINO_WAR && gameState.stage === 'BETTING', [gameState.type, gameState.stage]);
     const casinoWarTieBet = useMemo(() => gameState.casinoWarTieBet || 0, [gameState.casinoWarTieBet]);
+    const isMobile = useIsMobile();
+    const animationActive = useMemo(
+        () => /DEALING|GOING TO WAR|SURRENDERING|WAITING FOR CHAIN/.test(gameState.message),
+        [gameState.message]
+    );
+    const dealerSlots = useMemo(() => buildRowSlots('dealer', 1, -1.2, { mirror: true, fan: 0 }), []);
+    const playerSlots = useMemo(() => buildRowSlots('player', 1, 1.2, { fan: 0 }), []);
+    const slots = useMemo(() => [...dealerSlots, ...playerSlots], [dealerSlots, playerSlots]);
+    const dealOrder = useMemo(() => ['player-0', 'dealer-0'], []);
+    const cardsById = useMemo(() => ({
+        ...buildCardsById('dealer', gameState.dealerCards, 1),
+        ...buildCardsById('player', gameState.playerCards, 1),
+    }), [gameState.dealerCards, gameState.playerCards]);
     return (
         <>
+            <CardAnimationOverlay
+                slots={slots}
+                dealOrder={dealOrder}
+                cardsById={cardsById}
+                isActionActive={animationActive}
+                storageKey="casino-war-3d-mode"
+                onAnimationBlockingChange={onAnimationBlockingChange}
+                isMobile={isMobile}
+            />
             <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-6 md:gap-8 relative z-10 pt-8 sm:pt-10 pb-24 sm:pb-20">
                 <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">{gameTitle}</h1>
                 <div className="absolute top-2 left-2 z-40">

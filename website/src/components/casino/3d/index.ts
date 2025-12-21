@@ -6,6 +6,16 @@
  */
 
 export { CrapsScene3D } from './CrapsScene3D';
+export { BaccaratScene3D } from './BaccaratScene3D';
+export { BaccaratCards3DWrapper } from './BaccaratCards3DWrapper';
+export { CardAnimationOverlay } from './CardAnimationOverlay';
+export { CardTableScene3D } from './CardTableScene3D';
+export { Card3D } from './Card3D';
+export { RouletteScene3D } from './RouletteScene3D';
+export { RouletteWheel3DWrapper } from './RouletteWheel3DWrapper';
+export { SicBoScene3D } from './SicBoScene3D';
+export { SicBoDice3DWrapper } from './SicBoDice3DWrapper';
+export * from './cardLayouts';
 export { PhysicsDice } from './PhysicsDice';
 export { DiceModel } from './DiceModel';
 export { PowerMeter } from './PowerMeter';

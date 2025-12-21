@@ -257,7 +257,9 @@ export default function CasinoApp() {
     }
 
     track('casino.deal', { game: gameState.type, mode: playMode, stage: gameState.stage, bet: gameState.bet });
-    void playSfx('deal');
+    if (gameState.type !== GameType.CRAPS && gameState.type !== GameType.SIC_BO) {
+      void playSfx('deal');
+    }
     actions.deal();
   };
 

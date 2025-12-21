@@ -369,7 +369,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ leaderboard, history, viewMode
                         )
                     ) : (
                         history.slice(-15).reverse().map((log, i) => (
-                            <div key={i} className="text-gray-300">&gt; {log}</div>
+                            <div key={i} className="text-gray-300 whitespace-pre-line">&gt; {log}</div>
                         ))
                     )}
                 </div>

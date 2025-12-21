@@ -459,6 +459,20 @@ export class CasinoChainService {
   }
 
   /**
+   * Check if a session is still active (not complete)
+   * Returns null if session doesn't exist or couldn't be fetched
+   */
+  async isSessionActive(sessionId: bigint): Promise<boolean | null> {
+    try {
+      const sessionState = await (this.client as any).getCasinoSession(sessionId);
+      if (!sessionState) return null;
+      return !sessionState.isComplete;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Subscribe to game started events
    * @returns Unsubscribe function
    */

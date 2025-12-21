@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { GameState } from '../../../types';
+import { CRAPS_MAX_BETS } from '../../../utils/gameUtils';
 
 interface CrapsBetMenuProps {
     gameState: GameState;
@@ -129,6 +130,9 @@ export const CrapsBetMenu: React.FC<CrapsBetMenuProps> = ({
                                 status: 'PENDING' as const,
                                 local: true,
                             }));
+                        if (prev.crapsBets.length + newBets.length > CRAPS_MAX_BETS) {
+                            return { ...prev, message: `BET LIMIT ${CRAPS_MAX_BETS}` };
+                        }
                         const totalCost = newBets.reduce((sum, b) => sum + b.amount, 0);
                         return {
                             ...prev,

@@ -458,7 +458,7 @@ const HotRollerSection: React.FC<{ bet: CrapsBet }> = ({ bet }) => {
 
 // Muggsy Section
 const MuggsySection: React.FC<{ bet: CrapsBet }> = ({ bet }) => {
-    const stage = bet.target || 0;
+    const stage = bet.progressMask || 0;
     const isHot = stage === 1;
 
     return (

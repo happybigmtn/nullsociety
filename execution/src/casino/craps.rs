@@ -95,6 +95,10 @@ impl TryFrom<u8> for BuyCommissionTiming {
 const ATS_SMALL_PAYOUT_TO_1: u64 = 34;
 const ATS_TALL_PAYOUT_TO_1: u64 = 34;
 const ATS_ALL_PAYOUT_TO_1: u64 = 175;
+const MUGGSY_COME_OUT_PAYOUT_TO_1: u64 = 2;
+const MUGGSY_POINT_SEVEN_PAYOUT_TO_1: u64 = 3;
+const DIFF_DOUBLES_PAYOUTS_TO_1: [u64; 7] = [0, 0, 0, 4, 8, 15, 100];
+const HOT_ROLLER_PAYOUTS_TO_1: [u64; 7] = [0, 0, 5, 10, 20, 50, 200];
 
 // ATS progress bitmask (stored in `odds_amount` for ATS bet entries).
 // Bits: 2..6 => 0..4, 8..12 => 5..9.
@@ -135,18 +139,23 @@ pub enum BetType {
     Come = 2,       // Like PASS but during point phase
     DontCome = 3,   // Like DONT_PASS but during point phase
     Field = 4,      // Single roll: 2,12=2x, 3,4,9,10,11=1x
-    Yes = 5,        // Place bet: target hits before 7
-    No = 6,         // Lay bet: 7 hits before target
-    Next = 7,       // Hop bet: exact total on next roll
+    Yes = 5,        // Place bet: target (2-12 except 7) hits before 7
+    No = 6,         // Lay bet: 7 hits before target (2-12 except 7)
+    Next = 7,       // Hop bet: exact total (2-12) on next roll
     Hardway4 = 8,   // 2+2 before 7 or easy 4
     Hardway6 = 9,   // 3+3 before 7 or easy 6
     Hardway8 = 10,  // 4+4 before 7 or easy 8
     Hardway10 = 11, // 5+5 before 7 or easy 10
     Fire = 12,      // Fire Bet side bet (Pay Table A)
-    Buy = 13,       // Buy bet: place-style, fair odds with commission
+    // Note: Buy bet (13) has been removed
     AtsSmall = 15,  // All Tall Small: Small (2-6) before seven-out
     AtsTall = 16,   // All Tall Small: Tall (8-12) before seven-out
     AtsAll = 17,    // All Tall Small: All (Small + Tall) before seven-out
+    Muggsy = 18,    // Muggsy's Corner
+    DiffDoubles = 19, // Different Doubles
+    RideLine = 20,  // Ride the Line
+    Replay = 21,    // Replay
+    HotRoller = 22, // Hot Roller
 }
 
 impl TryFrom<u8> for BetType {
@@ -167,10 +176,15 @@ impl TryFrom<u8> for BetType {
             10 => Ok(BetType::Hardway8),
             11 => Ok(BetType::Hardway10),
             12 => Ok(BetType::Fire),
-            13 => Ok(BetType::Buy),
+            // 13 (Buy) removed
             15 => Ok(BetType::AtsSmall),
             16 => Ok(BetType::AtsTall),
             17 => Ok(BetType::AtsAll),
+            18 => Ok(BetType::Muggsy),
+            19 => Ok(BetType::DiffDoubles),
+            20 => Ok(BetType::RideLine),
+            21 => Ok(BetType::Replay),
+            22 => Ok(BetType::HotRoller),
             _ => Err(()),
         }
     }
@@ -264,10 +278,14 @@ fn bet_type_str(bet_type: BetType) -> &'static str {
         BetType::Hardway8 => "HARDWAY_8",
         BetType::Hardway10 => "HARDWAY_10",
         BetType::Fire => "FIRE",
-        BetType::Buy => "BUY",
         BetType::AtsSmall => "ATS_SMALL",
         BetType::AtsTall => "ATS_TALL",
         BetType::AtsAll => "ATS_ALL",
+        BetType::Muggsy => "MUGGSY",
+        BetType::DiffDoubles => "DIFF_DOUBLES",
+        BetType::RideLine => "RIDE_LINE",
+        BetType::Replay => "REPLAY",
+        BetType::HotRoller => "HOT_ROLLER",
     }
 }
 
@@ -495,15 +513,19 @@ fn calculate_field_payout(total: u8, amount: u64, paytable: FieldPaytable) -> u6
 }
 
 /// Calculate YES (place) bet return with a 1% commission on winnings.
+/// True odds are based on ways to roll 7 (6) vs ways to roll target.
 fn calculate_yes_payout(target: u8, amount: u64, hit: bool) -> u64 {
     if !hit {
         return 0;
     }
 
+    // True odds: 6 / ways_to_roll_target
     let true_odds = match target {
-        4 | 10 => amount.saturating_mul(2),                  // 6:3 = 2:1
-        5 | 9 => amount.saturating_mul(3).saturating_div(2), // 6:4 = 3:2
-        6 | 8 => amount.saturating_mul(6).saturating_div(5), // 6:5
+        2 | 12 => amount.saturating_mul(6),                  // 6:1 (1 way to roll)
+        3 | 11 => amount.saturating_mul(3),                  // 3:1 (2 ways to roll)
+        4 | 10 => amount.saturating_mul(2),                  // 2:1 (3 ways to roll)
+        5 | 9 => amount.saturating_mul(3).saturating_div(2), // 3:2 (4 ways to roll)
+        6 | 8 => amount.saturating_mul(6).saturating_div(5), // 6:5 (5 ways to roll)
         _ => amount,
     };
 
@@ -513,15 +535,19 @@ fn calculate_yes_payout(target: u8, amount: u64, hit: bool) -> u64 {
 }
 
 /// Calculate NO (lay) bet return with a 1% commission on winnings.
+/// True odds are based on ways to roll target vs ways to roll 7 (6).
 fn calculate_no_payout(target: u8, amount: u64, seven_hit: bool) -> u64 {
     if !seven_hit {
         return 0;
     }
 
+    // True odds: ways_to_roll_target / 6
     let true_odds = match target {
-        4 | 10 => amount.saturating_div(2),                  // 3:6 = 1:2
-        5 | 9 => amount.saturating_mul(2).saturating_div(3), // 4:6 = 2:3
-        6 | 8 => amount.saturating_mul(5).saturating_div(6), // 5:6
+        2 | 12 => amount.saturating_div(6),                  // 1:6 (1 way to roll target)
+        3 | 11 => amount.saturating_div(3),                  // 1:3 (2 ways to roll target)
+        4 | 10 => amount.saturating_div(2),                  // 1:2 (3 ways to roll target)
+        5 | 9 => amount.saturating_mul(2).saturating_div(3), // 2:3 (4 ways to roll target)
+        6 | 8 => amount.saturating_mul(5).saturating_div(6), // 5:6 (5 ways to roll target)
         _ => amount,
     };
 
@@ -617,6 +643,126 @@ fn ats_payout_to_1(bet_type: BetType) -> u64 {
     }
 }
 
+fn is_point_total(total: u8) -> bool {
+    matches!(total, 4 | 5 | 6 | 8 | 9 | 10)
+}
+
+fn diff_doubles_payout_to_1(count: u32) -> u64 {
+    DIFF_DOUBLES_PAYOUTS_TO_1
+        .get(count as usize)
+        .copied()
+        .unwrap_or(0)
+}
+
+fn ride_line_payout_to_1(wins: u64) -> u64 {
+    match wins {
+        3 => 2,
+        4 => 3,
+        5 => 5,
+        6 => 8,
+        7 => 12,
+        8 => 18,
+        9 => 25,
+        10 => 40,
+        w if w >= 11 => 100,
+        _ => 0,
+    }
+}
+
+fn replay_shift_for_point(point: u8) -> Option<u32> {
+    match point {
+        4 => Some(0),
+        5 => Some(4),
+        6 => Some(8),
+        8 => Some(12),
+        9 => Some(16),
+        10 => Some(20),
+        _ => None,
+    }
+}
+
+fn replay_payout_to_1(mask: u64) -> u64 {
+    let mut payout = 0u64;
+    for (point, shift) in [(4, 0u32), (5, 4), (6, 8), (8, 12), (9, 16), (10, 20)] {
+        let count = ((mask >> shift) & 0xF) as u8;
+        let point_payout = match point {
+            4 | 10 => {
+                if count >= 4 {
+                    1000
+                } else if count >= 3 {
+                    120
+                } else {
+                    0
+                }
+            }
+            5 | 9 => {
+                if count >= 4 {
+                    500
+                } else if count >= 3 {
+                    95
+                } else {
+                    0
+                }
+            }
+            6 | 8 => {
+                if count >= 4 {
+                    100
+                } else if count >= 3 {
+                    70
+                } else {
+                    0
+                }
+            }
+            _ => 0,
+        };
+        payout = payout.max(point_payout);
+    }
+    payout
+}
+
+fn hot_roller_bit_for_roll(d1: u8, d2: u8) -> u64 {
+    let (a, b) = if d1 <= d2 { (d1, d2) } else { (d2, d1) };
+    match (a, b) {
+        (1, 3) => 1u64 << 0,
+        (2, 2) => 1u64 << 1,
+        (1, 4) => 1u64 << 2,
+        (2, 3) => 1u64 << 3,
+        (1, 5) => 1u64 << 4,
+        (2, 4) => 1u64 << 5,
+        (3, 3) => 1u64 << 6,
+        (2, 6) => 1u64 << 7,
+        (3, 5) => 1u64 << 8,
+        (4, 4) => 1u64 << 9,
+        (3, 6) => 1u64 << 10,
+        (4, 5) => 1u64 << 11,
+        (4, 6) => 1u64 << 12,
+        (5, 5) => 1u64 << 13,
+        _ => 0,
+    }
+}
+
+fn hot_roller_completed_points(mask: u64) -> u8 {
+    let point_masks = [
+        (1u64 << 0) | (1u64 << 1),
+        (1u64 << 2) | (1u64 << 3),
+        (1u64 << 4) | (1u64 << 5) | (1u64 << 6),
+        (1u64 << 7) | (1u64 << 8) | (1u64 << 9),
+        (1u64 << 10) | (1u64 << 11),
+        (1u64 << 12) | (1u64 << 13),
+    ];
+    point_masks
+        .iter()
+        .filter(|&&mask_req| (mask & mask_req) == mask_req)
+        .count() as u8
+}
+
+fn hot_roller_payout_to_1(completed_points: u8) -> u64 {
+    HOT_ROLLER_PAYOUTS_TO_1
+        .get(completed_points as usize)
+        .copied()
+        .unwrap_or(0)
+}
+
 /// Calculate hardway bet payout
 /// Returns Some(payout) if resolved, None if still working
 fn calculate_hardway_payout(target: u8, d1: u8, d2: u8, total: u8, amount: u64) -> Option<u64> {
@@ -648,6 +794,9 @@ fn calculate_hardway_payout(target: u8, d1: u8, d2: u8, total: u8, amount: u64) 
 /// Process a roll and return bet results
 fn process_roll(state: &mut CrapsState, d1: u8, d2: u8) -> Vec<BetResult> {
     let total = d1.saturating_add(d2);
+    let phase_before = state.phase;
+    let is_seven = total == 7;
+    let is_double = d1 == d2;
     let mut results = Vec::with_capacity(state.bets.len());
 
     // 1. Single-roll bets (FIELD, NEXT) - always resolve
@@ -731,43 +880,6 @@ fn process_roll(state: &mut CrapsState, d1: u8, d2: u8) -> Vec<BetResult> {
                         bet_idx: idx,
                         return_amount: calculate_no_payout(bet.target, bet.amount, false),
                         wagered: bet.amount,
-                        resolved: true,
-                    });
-                }
-            }
-            BetType::Buy => {
-                if total == bet.target {
-                    let commission = calculate_buy_commission(bet.amount);
-                    let return_amount = match state.buy_commission_timing {
-                        BuyCommissionTiming::AtPlacement => {
-                            // Commission already paid at placement.
-                            calculate_buy_payout(bet.target, bet.amount, true)
-                        }
-                        BuyCommissionTiming::OnWin => {
-                            calculate_buy_payout(bet.target, bet.amount, true)
-                                .saturating_sub(commission)
-                        }
-                    };
-                    let wagered = match state.buy_commission_timing {
-                        BuyCommissionTiming::AtPlacement => bet.amount.saturating_add(commission),
-                        BuyCommissionTiming::OnWin => bet.amount,
-                    };
-                    results.push(BetResult {
-                        bet_idx: idx,
-                        return_amount,
-                        wagered,
-                        resolved: true,
-                    });
-                } else if total == 7 {
-                    let commission = calculate_buy_commission(bet.amount);
-                    let wagered = match state.buy_commission_timing {
-                        BuyCommissionTiming::AtPlacement => bet.amount.saturating_add(commission),
-                        BuyCommissionTiming::OnWin => bet.amount,
-                    };
-                    results.push(BetResult {
-                        bet_idx: idx,
-                        return_amount: 0,
-                        wagered,
                         resolved: true,
                     });
                 }
@@ -921,27 +1033,176 @@ fn process_roll(state: &mut CrapsState, d1: u8, d2: u8) -> Vec<BetResult> {
 
     // 7. Update phase and main point
     let phase_event = update_phase(state, total);
-    match phase_event {
-        PhaseEvent::PointEstablished(point) => {
-            // Fix pass/don't pass odds tracking: set bet.target to the main point.
-            for bet in state.bets.iter_mut() {
-                if matches!(bet.bet_type, BetType::Pass | BetType::DontPass)
-                    && bet.status == BetStatus::On
-                {
-                    bet.target = point;
+    let point_established = if let PhaseEvent::PointEstablished(point) = phase_event {
+        Some(point)
+    } else {
+        None
+    };
+    let point_made = if let PhaseEvent::PointMade(point) = phase_event {
+        Some(point)
+    } else {
+        None
+    };
+    let seven_out = matches!(phase_event, PhaseEvent::SevenOut);
+
+    if let Some(point) = point_established {
+        // Fix pass/don't pass odds tracking: set bet.target to the main point.
+        for bet in state.bets.iter_mut() {
+            if matches!(bet.bet_type, BetType::Pass | BetType::DontPass)
+                && bet.status == BetStatus::On
+            {
+                bet.target = point;
+            }
+        }
+    }
+
+    if let Some(point) = point_made {
+        if let Some(bit) = point_to_fire_bit(point) {
+            state.made_points_mask |= 1u8 << bit;
+        }
+    }
+
+    // Bonus bet progress and resolution.
+    for (idx, bet) in state.bets.iter_mut().enumerate() {
+        match bet.bet_type {
+            BetType::Muggsy => {
+                let stage = bet.odds_amount;
+                if stage == 0 {
+                    if phase_before != Phase::ComeOut {
+                        results.push(BetResult {
+                            bet_idx: idx,
+                            return_amount: 0,
+                            wagered: bet.amount,
+                            resolved: true,
+                        });
+                    } else if total == 7 {
+                        let return_amount =
+                            bet.amount.saturating_mul(MUGGSY_COME_OUT_PAYOUT_TO_1.saturating_add(1));
+                        results.push(BetResult {
+                            bet_idx: idx,
+                            return_amount,
+                            wagered: bet.amount,
+                            resolved: true,
+                        });
+                    } else if point_established.is_some() && is_point_total(total) {
+                        bet.odds_amount = 1;
+                    } else {
+                        results.push(BetResult {
+                            bet_idx: idx,
+                            return_amount: 0,
+                            wagered: bet.amount,
+                            resolved: true,
+                        });
+                    }
+                } else {
+                    let return_amount = if total == 7 {
+                        bet.amount
+                            .saturating_mul(MUGGSY_POINT_SEVEN_PAYOUT_TO_1.saturating_add(1))
+                    } else {
+                        0
+                    };
+                    results.push(BetResult {
+                        bet_idx: idx,
+                        return_amount,
+                        wagered: bet.amount,
+                        resolved: true,
+                    });
                 }
             }
-        }
-        PhaseEvent::PointMade(point) => {
-            if let Some(bit) = point_to_fire_bit(point) {
-                state.made_points_mask |= 1u8 << bit;
+            BetType::DiffDoubles => {
+                if is_double {
+                    let bit = 1u64 << u32::from(d1.saturating_sub(1));
+                    bet.odds_amount |= bit;
+                }
+                if is_seven {
+                    let count = bet.odds_amount.count_ones();
+                    let mult = diff_doubles_payout_to_1(count);
+                    let return_amount = if mult == 0 {
+                        0
+                    } else {
+                        bet.amount.saturating_mul(mult.saturating_add(1))
+                    };
+                    results.push(BetResult {
+                        bet_idx: idx,
+                        return_amount,
+                        wagered: bet.amount,
+                        resolved: true,
+                    });
+                }
             }
+            BetType::RideLine => {
+                if phase_before == Phase::ComeOut && matches!(total, 7 | 11) {
+                    bet.odds_amount = bet.odds_amount.saturating_add(1);
+                }
+                if point_made.is_some() {
+                    bet.odds_amount = bet.odds_amount.saturating_add(1);
+                }
+                if seven_out {
+                    let mult = ride_line_payout_to_1(bet.odds_amount);
+                    let return_amount = if mult == 0 {
+                        0
+                    } else {
+                        bet.amount.saturating_mul(mult.saturating_add(1))
+                    };
+                    results.push(BetResult {
+                        bet_idx: idx,
+                        return_amount,
+                        wagered: bet.amount,
+                        resolved: true,
+                    });
+                }
+            }
+            BetType::Replay => {
+                if let Some(point) = point_made {
+                    if let Some(shift) = replay_shift_for_point(point) {
+                        let mask = 0xF_u64 << shift;
+                        let current = (bet.odds_amount & mask) >> shift;
+                        let next = (current.saturating_add(1)).min(0xF);
+                        bet.odds_amount = (bet.odds_amount & !mask) | (next << shift);
+                    }
+                }
+                if seven_out {
+                    let mult = replay_payout_to_1(bet.odds_amount);
+                    let return_amount = if mult == 0 {
+                        0
+                    } else {
+                        bet.amount.saturating_mul(mult.saturating_add(1))
+                    };
+                    results.push(BetResult {
+                        bet_idx: idx,
+                        return_amount,
+                        wagered: bet.amount,
+                        resolved: true,
+                    });
+                }
+            }
+            BetType::HotRoller => {
+                let bit = hot_roller_bit_for_roll(d1, d2);
+                if bit != 0 {
+                    bet.odds_amount |= bit;
+                }
+                if is_seven {
+                    let completed = hot_roller_completed_points(bet.odds_amount);
+                    let mult = hot_roller_payout_to_1(completed);
+                    let return_amount = if mult == 0 {
+                        0
+                    } else {
+                        bet.amount.saturating_mul(mult.saturating_add(1))
+                    };
+                    results.push(BetResult {
+                        bet_idx: idx,
+                        return_amount,
+                        wagered: bet.amount,
+                        resolved: true,
+                    });
+                }
+            }
+            _ => {}
         }
-        _ => {}
     }
 
     // Fire bet resolves on seven-out.
-    if matches!(phase_event, PhaseEvent::SevenOut) {
+    if seven_out {
         let points_made = state.made_points_mask.count_ones() as u8;
         let mult = fire_bet_multiplier(points_made);
         for (idx, bet) in state.bets.iter().enumerate() {
@@ -963,7 +1224,7 @@ fn process_roll(state: &mut CrapsState, d1: u8, d2: u8) -> Vec<BetResult> {
     }
 
     // ATS bets lose on seven-out if not already completed.
-    if matches!(phase_event, PhaseEvent::SevenOut) {
+    if seven_out {
         for (idx, bet) in state.bets.iter().enumerate() {
             if !matches!(
                 bet.bet_type,
@@ -978,6 +1239,10 @@ fn process_roll(state: &mut CrapsState, d1: u8, d2: u8) -> Vec<BetResult> {
                 resolved: true,
             });
         }
+    }
+
+    if seven_out {
+        state.made_points_mask = 0;
     }
 
     results
@@ -1227,7 +1492,12 @@ impl CasinoGame for Craps {
                     | BetType::Fire
                     | BetType::AtsSmall
                     | BetType::AtsTall
-                    | BetType::AtsAll => {
+                    | BetType::AtsAll
+                    | BetType::Muggsy
+                    | BetType::DiffDoubles
+                    | BetType::RideLine
+                    | BetType::Replay
+                    | BetType::HotRoller => {
                         if target != 0 {
                             return Err(GameError::InvalidPayload);
                         }
@@ -1241,8 +1511,9 @@ impl CasinoGame for Craps {
                             return Err(GameError::InvalidMove);
                         }
                     }
-                    BetType::Yes | BetType::No | BetType::Buy => {
-                        if ![4u8, 5, 6, 8, 9, 10].contains(&target) {
+                    BetType::Yes | BetType::No => {
+                        // Accept all totals 2-12 except 7
+                        if !(2..=12).contains(&target) || target == 7 {
                             return Err(GameError::InvalidPayload);
                         }
                     }
@@ -1261,28 +1532,32 @@ impl CasinoGame for Craps {
                     }
                 }
 
-                if bet_type == BetType::Fire {
-                    // Fire bet may only be placed before the first roll of the shooter hand.
-                    if state.d1 != 0 || state.d2 != 0 || state.made_points_mask != 0 {
-                        return Err(GameError::InvalidMove);
-                    }
-                    if state.bets.iter().any(|b| b.bet_type == BetType::Fire) {
+                let has_rolled = state.d1 != 0 || state.d2 != 0;
+                let last_total = state.d1.saturating_add(state.d2);
+                let can_place_bonus = !state.epoch_point_established
+                    && (!has_rolled || (state.phase == Phase::ComeOut && last_total == 7));
+                if matches!(
+                    bet_type,
+                    BetType::Fire
+                        | BetType::AtsSmall
+                        | BetType::AtsTall
+                        | BetType::AtsAll
+                        | BetType::Muggsy
+                        | BetType::DiffDoubles
+                        | BetType::RideLine
+                        | BetType::Replay
+                        | BetType::HotRoller
+                ) {
+                    // Bonus bets are tracked for the entire shooter epoch.
+                    // Allow placement before any roll, and also after a 7 (no-point roll)
+                    // so long as a point has not yet been established in the current epoch.
+                    if !can_place_bonus {
                         return Err(GameError::InvalidMove);
                     }
                 }
 
-                if matches!(
-                    bet_type,
-                    BetType::AtsSmall | BetType::AtsTall | BetType::AtsAll
-                ) {
-                    // ATS bets are tracked for the entire shooter epoch.
-                    // Allow placement before any roll, and also after a 7 (no-point roll) so long as a point has not yet
-                    // been established in the current epoch.
-                    let has_rolled = state.d1 != 0 || state.d2 != 0;
-                    let last_total = state.d1.saturating_add(state.d2);
-                    let can_place = !state.epoch_point_established
-                        && (!has_rolled || (state.phase == Phase::ComeOut && last_total == 7));
-                    if !can_place {
+                if bet_type == BetType::Fire {
+                    if state.bets.iter().any(|b| b.bet_type == BetType::Fire) {
                         return Err(GameError::InvalidMove);
                     }
                 }
@@ -1303,18 +1578,8 @@ impl CasinoGame for Craps {
 
                 session.state_blob = state.to_blob();
 
-                let deduction = if bet_type == BetType::Buy {
-                    match state.buy_commission_timing {
-                        BuyCommissionTiming::AtPlacement => {
-                            amount.saturating_add(calculate_buy_commission(amount))
-                        }
-                        BuyCommissionTiming::OnWin => amount,
-                    }
-                } else {
-                    amount
-                };
                 let deduction_i64 =
-                    i64::try_from(deduction).map_err(|_| GameError::InvalidPayload)?;
+                    i64::try_from(amount).map_err(|_| GameError::InvalidPayload)?;
                 Ok(GameResult::ContinueWithUpdate {
                     payout: -deduction_i64,
                     logs: vec![format!("Bet Placed")],
@@ -1538,24 +1803,15 @@ impl CasinoGame for Craps {
                     }
 
                     // Validate bet type/target combinations (simplified - full validation in action 0)
-                    // Basic sanity checks: Yes (Place), No (Lay), Buy need point numbers
-                    if matches!(bet_type, BetType::Yes | BetType::Buy | BetType::No)
-                        && ![4u8, 5, 6, 8, 9, 10].contains(&target)
+                    // Yes (Place), No (Lay) need targets 2-12 excluding 7
+                    if matches!(bet_type, BetType::Yes | BetType::No)
+                        && (!(2..=12).contains(&target) || target == 7)
                     {
                         return Err(GameError::InvalidPayload);
                     }
 
                     // Check for overflow in total wager
-                    let bet_cost = if bet_type == BetType::Buy {
-                        match state.buy_commission_timing {
-                            BuyCommissionTiming::AtPlacement => {
-                                amount.saturating_add(calculate_buy_commission(amount))
-                            }
-                            BuyCommissionTiming::OnWin => amount,
-                        }
-                    } else {
-                        amount
-                    };
+                    let bet_cost = amount;
 
                     total_wager = total_wager
                         .checked_add(bet_cost)
@@ -1577,6 +1833,8 @@ impl CasinoGame for Craps {
 
                     offset += 10;
                 }
+
+                session.bet = total_wager;
 
                 // All validation passed - now execute atomically
                 state.bets = bets_to_place;
@@ -1651,28 +1909,33 @@ impl CasinoGame for Craps {
                         };
                         Ok(GameResult::Win(final_return, logs))
                     } else {
-                        // Total loss - use LossWithExtraDeduction since atomic batch
-                        // doesn't pre-deduct bets via ContinueWithUpdate
-                        Ok(GameResult::LossWithExtraDeduction(total_wager, logs))
+                        // Total loss - wager is deducted on completion for atomic batch
+                        Ok(GameResult::Loss(logs))
                     }
                 } else {
                     // Game continues - return net result
-                    // For atomic batch: player paid total_wager, received total_return
-                    // Net = total_return - total_wager (can be negative)
+                    // For atomic batch: player paid total_wager (+ super fee), received total_return
+                    // Net = total_return - total_cost (can be negative)
                     // Generate logs showing this roll's results
                     let logs = generate_craps_logs(&state, &resolved_bets, total_resolved_wagered, total_return);
-                    if total_return > total_wager {
-                        // Net win on first roll
-                        let net_win = total_return.saturating_sub(total_wager);
+                    let super_fee = if session.super_mode.is_active {
+                        crate::casino::get_super_mode_fee(total_wager)
+                    } else {
+                        0
+                    };
+                    let total_cost = total_wager.saturating_add(super_fee);
+                    if total_return > total_cost {
+                        // Net win on first roll (after fee)
+                        let net_win = total_return.saturating_sub(total_cost);
                         Ok(GameResult::ContinueWithUpdate {
                             payout: net_win as i64,
                             logs,
                         })
-                    } else if total_return < total_wager {
+                    } else if total_return < total_cost {
                         // Net loss on first roll, but game continues
-                        // Player paid total_wager, got back total_return
+                        // Player paid total_wager + fee, got back total_return
                         // Report via ContinueWithUpdate with negative delta
-                        let net_loss = total_wager.saturating_sub(total_return);
+                        let net_loss = total_cost.saturating_sub(total_return);
                         Ok(GameResult::ContinueWithUpdate {
                             payout: -(net_loss as i64),
                             logs,
@@ -2219,5 +2482,257 @@ mod tests {
         let results = process_roll(&mut state, 3, 4); // 7 out
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].return_amount, 0);
+    }
+
+    #[test]
+    fn test_made_points_mask_resets_on_seven_out() {
+        let mut state = CrapsState {
+            phase: Phase::Point,
+            main_point: 6,
+            d1: 3,
+            d2: 3,
+            made_points_mask: 0b001011,
+            epoch_point_established: true,
+            field_paytable: FieldPaytable::default(),
+            buy_commission_timing: BuyCommissionTiming::default(),
+            bets: Vec::new(),
+        };
+
+        process_roll(&mut state, 3, 4); // 7 out
+        assert_eq!(state.made_points_mask, 0);
+        assert_eq!(state.phase, Phase::ComeOut);
+        assert_eq!(state.main_point, 0);
+        assert!(!state.epoch_point_established);
+    }
+
+    #[test]
+    fn test_yes_bet_target_2_can_be_placed() {
+        // Verify YES bet with target 2 can be placed
+        let seed = create_test_seed();
+        let mut session = create_test_session(100);
+        let mut rng = crate::casino::GameRng::new(&seed, session.id, 1);
+
+        // Payload: [0, bet_type=5 (Yes), target=2, amount=100u64 BE]
+        let mut payload = vec![0u8, 5, 2]; // command=0, bet_type=Yes(5), target=2
+        payload.extend_from_slice(&100u64.to_be_bytes()); // amount=100
+
+        let result = Craps::process_move(&mut session, &payload, &mut rng);
+        assert!(result.is_ok(), "YES bet with target 2 should be accepted");
+
+        // Verify bet was placed
+        let state = CrapsState::from_blob(&session.state_blob).unwrap();
+        assert_eq!(state.bets.len(), 1);
+        assert_eq!(state.bets[0].bet_type, BetType::Yes);
+        assert_eq!(state.bets[0].target, 2);
+        assert_eq!(state.bets[0].amount, 100);
+    }
+
+    #[test]
+    fn test_no_bet_target_2_can_be_placed() {
+        // Verify NO bet with target 2 can be placed
+        let seed = create_test_seed();
+        let mut session = create_test_session(100);
+        let mut rng = crate::casino::GameRng::new(&seed, session.id, 1);
+
+        // Payload: [0, bet_type=6 (No), target=2, amount=100u64 BE]
+        let mut payload = vec![0u8, 6, 2]; // command=0, bet_type=No(6), target=2
+        payload.extend_from_slice(&100u64.to_be_bytes()); // amount=100
+
+        let result = Craps::process_move(&mut session, &payload, &mut rng);
+        assert!(result.is_ok(), "NO bet with target 2 should be accepted");
+
+        // Verify bet was placed
+        let state = CrapsState::from_blob(&session.state_blob).unwrap();
+        assert_eq!(state.bets.len(), 1);
+        assert_eq!(state.bets[0].bet_type, BetType::No);
+        assert_eq!(state.bets[0].target, 2);
+    }
+
+    #[test]
+    fn test_yes_bet_target_7_rejected() {
+        // Verify YES bet with target 7 is rejected
+        let seed = create_test_seed();
+        let mut session = create_test_session(100);
+        let mut rng = crate::casino::GameRng::new(&seed, session.id, 1);
+
+        // Payload: [0, bet_type=5 (Yes), target=7, amount=100u64 BE]
+        let mut payload = vec![0u8, 5, 7]; // command=0, bet_type=Yes(5), target=7
+        payload.extend_from_slice(&100u64.to_be_bytes()); // amount=100
+
+        let result = Craps::process_move(&mut session, &payload, &mut rng);
+        assert!(result.is_err(), "YES bet with target 7 should be rejected");
+    }
+
+    #[test]
+    fn test_muggsy_come_out_seven_pays() {
+        let mut state = CrapsState {
+            phase: Phase::ComeOut,
+            main_point: 0,
+            d1: 0,
+            d2: 0,
+            made_points_mask: 0,
+            epoch_point_established: false,
+            field_paytable: FieldPaytable::default(),
+            buy_commission_timing: BuyCommissionTiming::default(),
+            bets: vec![CrapsBet {
+                bet_type: BetType::Muggsy,
+                target: 0,
+                status: BetStatus::On,
+                amount: 10,
+                odds_amount: 0,
+            }],
+        };
+
+        let results = process_roll(&mut state, 3, 4);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].return_amount, 30);
+    }
+
+    #[test]
+    fn test_muggsy_point_seven_pays() {
+        let mut state = CrapsState {
+            phase: Phase::ComeOut,
+            main_point: 0,
+            d1: 0,
+            d2: 0,
+            made_points_mask: 0,
+            epoch_point_established: false,
+            field_paytable: FieldPaytable::default(),
+            buy_commission_timing: BuyCommissionTiming::default(),
+            bets: vec![CrapsBet {
+                bet_type: BetType::Muggsy,
+                target: 0,
+                status: BetStatus::On,
+                amount: 10,
+                odds_amount: 0,
+            }],
+        };
+
+        let results = process_roll(&mut state, 2, 2);
+        assert!(results.is_empty());
+        assert_eq!(state.bets[0].odds_amount, 1);
+
+        let results = process_roll(&mut state, 3, 4);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].return_amount, 40);
+    }
+
+    #[test]
+    fn test_diff_doubles_pays_on_seven() {
+        let mut state = CrapsState {
+            phase: Phase::ComeOut,
+            main_point: 0,
+            d1: 0,
+            d2: 0,
+            made_points_mask: 0,
+            epoch_point_established: false,
+            field_paytable: FieldPaytable::default(),
+            buy_commission_timing: BuyCommissionTiming::default(),
+            bets: vec![CrapsBet {
+                bet_type: BetType::DiffDoubles,
+                target: 0,
+                status: BetStatus::On,
+                amount: 10,
+                odds_amount: 0,
+            }],
+        };
+
+        process_roll(&mut state, 1, 1);
+        process_roll(&mut state, 2, 2);
+        let results = process_roll(&mut state, 3, 3);
+        assert!(results.is_empty());
+
+        let results = process_roll(&mut state, 3, 4);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].return_amount, 50);
+    }
+
+    #[test]
+    fn test_ride_line_pays_on_seven_out() {
+        let mut state = CrapsState {
+            phase: Phase::ComeOut,
+            main_point: 0,
+            d1: 0,
+            d2: 0,
+            made_points_mask: 0,
+            epoch_point_established: false,
+            field_paytable: FieldPaytable::default(),
+            buy_commission_timing: BuyCommissionTiming::default(),
+            bets: vec![CrapsBet {
+                bet_type: BetType::RideLine,
+                target: 0,
+                status: BetStatus::On,
+                amount: 10,
+                odds_amount: 0,
+            }],
+        };
+
+        process_roll(&mut state, 3, 4); // come-out 7
+        process_roll(&mut state, 5, 6); // come-out 11
+        process_roll(&mut state, 2, 2); // point 4 established
+        process_roll(&mut state, 2, 2); // point 4 made
+        process_roll(&mut state, 2, 3); // point 5 established
+        let results = process_roll(&mut state, 3, 4); // seven-out
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].return_amount, 30);
+    }
+
+    #[test]
+    fn test_replay_pays_on_three_points() {
+        let mut state = CrapsState {
+            phase: Phase::ComeOut,
+            main_point: 0,
+            d1: 0,
+            d2: 0,
+            made_points_mask: 0,
+            epoch_point_established: false,
+            field_paytable: FieldPaytable::default(),
+            buy_commission_timing: BuyCommissionTiming::default(),
+            bets: vec![CrapsBet {
+                bet_type: BetType::Replay,
+                target: 0,
+                status: BetStatus::On,
+                amount: 1,
+                odds_amount: 0,
+            }],
+        };
+
+        for _ in 0..3 {
+            process_roll(&mut state, 2, 2); // point 4 established
+            process_roll(&mut state, 2, 2); // point 4 made
+        }
+        process_roll(&mut state, 2, 3); // point 5 established
+        let results = process_roll(&mut state, 3, 4); // seven-out
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].return_amount, 121);
+    }
+
+    #[test]
+    fn test_hot_roller_pays_on_two_points() {
+        let mut state = CrapsState {
+            phase: Phase::ComeOut,
+            main_point: 0,
+            d1: 0,
+            d2: 0,
+            made_points_mask: 0,
+            epoch_point_established: false,
+            field_paytable: FieldPaytable::default(),
+            buy_commission_timing: BuyCommissionTiming::default(),
+            bets: vec![CrapsBet {
+                bet_type: BetType::HotRoller,
+                target: 0,
+                status: BetStatus::On,
+                amount: 10,
+                odds_amount: 0,
+            }],
+        };
+
+        process_roll(&mut state, 1, 3);
+        process_roll(&mut state, 2, 2);
+        process_roll(&mut state, 1, 4);
+        process_roll(&mut state, 2, 3);
+        let results = process_roll(&mut state, 3, 4);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].return_amount, 60);
     }
 }

@@ -1,17 +1,38 @@
 
 import React, { useEffect, useMemo, useCallback, useState } from 'react';
 import { GameState, SicBoBet } from '../../../types';
-import { DiceRender } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
 import { getSicBoTotalItems, getSicBoCombinationItems, calculateSicBoTotalExposure, calculateSicBoCombinationExposure } from '../../../utils/gameUtils';
+import { SicBoDice3DWrapper } from '../3d/SicBoDice3DWrapper';
 
-export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string; actions: any; lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, numberInput = "", actions, lastWin, playMode }) => {
+// Simple mobile detection hook
+const useIsMobile = () => {
+    const [isMobile, setIsMobile] = useState(false);
+    useEffect(() => {
+        const check = () => setIsMobile(window.innerWidth < 640);
+        check();
+        window.addEventListener('resize', check);
+        return () => window.removeEventListener('resize', check);
+    }, []);
+    return isMobile;
+};
+
+export const SicBoView = React.memo<{
+    gameState: GameState;
+    numberInput?: string;
+    actions: any;
+    lastWin?: number;
+    playMode?: 'CASH' | 'FREEROLL' | null;
+    onAnimationBlockingChange?: (blocking: boolean) => void;
+}>(({ gameState, numberInput = "", actions, lastWin, playMode, onAnimationBlockingChange }) => {
 
     const totalItems = useMemo(() => getSicBoTotalItems(), []);
     const combinationItems = useMemo(() => getSicBoCombinationItems(), []);
     const betTypes = useMemo(() => new Set(gameState.sicBoBets.map((b) => b.type)), [gameState.sicBoBets]);
     const [tapPicks, setTapPicks] = useState<number[]>([]);
+    const isMobile = useIsMobile();
+    const isRolling = gameState.message === 'ROLLING...';
 
     useEffect(() => {
         setTapPicks([]);
@@ -161,7 +182,7 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
 
     return (
         <>
-            <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-8 relative z-10 pt-8 sm:pt-10 pb-24 sm:pb-20 md:pl-64 md:pr-60">
+            <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-8 relative pt-8 sm:pt-10 pb-24 sm:pb-20 md:pl-64 md:pr-60">
                 <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">SIC BO</h1>
                 <div className="absolute top-2 left-2 z-40">
                     <MobileDrawer label="INFO" title="SIC BO">
@@ -222,25 +243,13 @@ export const SicBoView = React.memo<{ gameState: GameState; numberInput?: string
                     </MobileDrawer>
                 </div>
                 {/* Dice Display */}
-                <div className="min-h-[96px] sm:min-h-[120px] flex items-center justify-center">
-                    {gameState.dice.length === 3 ? (
-                        <div className="flex flex-col gap-2 items-center">
-                             <span className="text-xs uppercase tracking-widest text-gray-500">ROLL</span>
-                             <div className="flex gap-4">
-                                {gameState.dice.map((d, i) => <DiceRender key={i} value={d} delayMs={i * 60} />)}
-                             </div>
-                             <div className="text-terminal-gold font-bold mt-2 text-xl">
-                                 TOTAL: {gameState.dice.reduce((a,b)=>a+b,0)}
-                             </div>
-                        </div>
-                    ) : (
-                        <div className="flex gap-4">
-                            {[1,2,3].map(i => (
-                                <div key={i} className="w-14 h-14 sm:w-16 sm:h-16 border border-dashed border-gray-700 rounded flex items-center justify-center text-gray-700 text-xl sm:text-2xl">?</div>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                <SicBoDice3DWrapper
+                    diceValues={gameState.dice}
+                    isRolling={isRolling}
+                    onRoll={() => actions?.deal?.()}
+                    isMobile={isMobile}
+                    onAnimationBlockingChange={onAnimationBlockingChange}
+                />
 
                 {/* Center Info */}
                 <div className="text-center space-y-3 relative z-20">

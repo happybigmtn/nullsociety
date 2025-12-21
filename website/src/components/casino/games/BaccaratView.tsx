@@ -1,11 +1,22 @@
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { GameState } from '../../../types';
-import { Hand } from '../GameComponents';
 import { getBaccaratValue } from '../../../utils/gameUtils';
 import { cardIdToString } from '../../../utils/gameStateParser';
 import { MobileDrawer } from '../MobileDrawer';
-import { GameControlBar } from '../GameControlBar';
+import { BaccaratCards3DWrapper } from '../3d/BaccaratCards3DWrapper';
+
+// Simple mobile detection hook
+const useIsMobile = () => {
+    const [isMobile, setIsMobile] = useState(false);
+    useEffect(() => {
+        const check = () => setIsMobile(window.innerWidth < 640);
+        check();
+        window.addEventListener('resize', check);
+        return () => window.removeEventListener('resize', check);
+    }, []);
+    return isMobile;
+};
 
 type BetGroup = 'NONE' | 'BONUS';
 
@@ -23,9 +34,16 @@ const BONUS_BETS = [
     { key: '0', action: 'ALL_BONUS', label: '$$$$$' },
 ];
 
-export const BaccaratView = React.memo<{ gameState: GameState; actions: any; lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
+export const BaccaratView = React.memo<{
+    gameState: GameState;
+    actions: any;
+    lastWin?: number;
+    playMode?: 'CASH' | 'FREEROLL' | null;
+    onAnimationBlockingChange?: (blocking: boolean) => void;
+}>(({ gameState, actions, lastWin, playMode, onAnimationBlockingChange }) => {
     const [leftSidebarView, setLeftSidebarView] = useState<'EXPOSURE' | 'SIDE_BETS'>('EXPOSURE');
     const [activeGroup, setActiveGroup] = useState<BetGroup>('NONE');
+    const isMobile = useIsMobile();
     // Consolidate main bet and side bets for display
     const allBets = useMemo(() => [
         { type: gameState.baccaratSelection, amount: gameState.bet },
@@ -37,6 +55,14 @@ export const BaccaratView = React.memo<{ gameState: GameState; actions: any; las
 
     const playerValue = useMemo(() => getBaccaratValue(gameState.playerCards), [gameState.playerCards]);
     const bankerValue = useMemo(() => getBaccaratValue(gameState.dealerCards), [gameState.dealerCards]);
+    const playerLabel = useMemo(
+        () => (gameState.playerCards.length > 0 ? `PLAYER (${playerValue})` : 'PLAYER'),
+        [gameState.playerCards.length, playerValue]
+    );
+    const bankerLabel = useMemo(
+        () => (gameState.dealerCards.length > 0 ? `BANKER (${bankerValue})` : 'BANKER'),
+        [gameState.dealerCards.length, bankerValue]
+    );
 
     const hasTie = useMemo(() => gameState.baccaratBets.some(b => b.type === 'TIE'), [gameState.baccaratBets]);
     const hasPlayerPair = useMemo(() => gameState.baccaratBets.some(b => b.type === 'P_PAIR'), [gameState.baccaratBets]);
@@ -186,7 +212,7 @@ export const BaccaratView = React.memo<{ gameState: GameState; actions: any; las
 
     return (
         <>
-            <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-6 md:gap-8 relative z-10 pt-8 sm:pt-10 pb-24 sm:pb-20 md:pl-64">
+            <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-6 md:gap-8 relative pt-8 sm:pt-10 pb-24 sm:pb-20 md:pl-64">
                 <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">BACCARAT</h1>
                 <div className="absolute top-2 left-2 z-40">
                     <MobileDrawer label="BETS" title="BACCARAT BETS">
@@ -205,96 +231,78 @@ export const BaccaratView = React.memo<{ gameState: GameState; actions: any; las
                         </div>
                     </MobileDrawer>
                 </div>
-                {/* Banker Area */}
-                <div className={`min-h-[96px] sm:min-h-[120px] flex items-center justify-center transition-all duration-300 ${isBankerSelected ? 'scale-110 opacity-100' : 'scale-90 opacity-75'}`}>
-                    {gameState.dealerCards.length > 0 ? (
-                        <Hand
-                            cards={gameState.dealerCards}
-                            title={`BANKER (${bankerValue})`}
-                            forcedColor={bankerColor}
-                        />
-                    ) : (
-                        <div className="flex flex-col gap-2 items-center">
-                            <span className={`text-xl sm:text-2xl font-bold tracking-widest ${bankerColor}`}>BANKER</span>
-                            <div className={`w-12 h-[4.5rem] sm:w-14 sm:h-20 md:w-16 md:h-24 border border-dashed rounded flex items-center justify-center ${bankerColor.replace('text-', 'border-')}`}>?</div>
+                <BaccaratCards3DWrapper
+                    playerCards={gameState.playerCards}
+                    bankerCards={gameState.dealerCards}
+                    playerLabel={playerLabel}
+                    bankerLabel={bankerLabel}
+                    playerColor={playerColor}
+                    bankerColor={bankerColor}
+                    isPlayerSelected={isPlayerSelected}
+                    isBankerSelected={isBankerSelected}
+                    isDealing={gameState.message === 'DEALING...'}
+                    isMobile={isMobile}
+                    onAnimationBlockingChange={onAnimationBlockingChange}
+                >
+                    {/* Center Info */}
+                    <div className="text-center space-y-2 relative z-20 py-2 sm:py-4">
+                        <div className="text-lg sm:text-2xl font-bold text-terminal-gold tracking-widest leading-tight animate-pulse">
+                            {gameState.message}
                         </div>
-                    )}
-                </div>
-
-                {/* Center Info */}
-                <div className="text-center space-y-2 relative z-20 py-2 sm:py-4">
-                    <div className="text-lg sm:text-2xl font-bold text-terminal-gold tracking-widest leading-tight animate-pulse">
-                        {gameState.message}
-                    </div>
-                    <div className="flex flex-wrap items-center justify-center gap-2 text-[11px]">
-                        <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass(gameState.baccaratSelection)}`}>
-                            <span className={gameState.stage === 'RESULT' && getWinnerClass(gameState.baccaratSelection).includes('text-terminal-green') ? 'text-terminal-green' : 'text-white'}>
-                                {gameState.baccaratSelection}
-                            </span> ${gameState.bet.toLocaleString()}
-                        </span>
-                        {sideBetAmounts.TIE > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('TIE')}`}>
-                                TIE ${sideBetAmounts.TIE.toLocaleString()}
+                        <div className="flex flex-wrap items-center justify-center gap-2 text-[11px]">
+                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass(gameState.baccaratSelection)}`}>
+                                <span className={gameState.stage === 'RESULT' && getWinnerClass(gameState.baccaratSelection).includes('text-terminal-green') ? 'text-terminal-green' : 'text-white'}>
+                                    {gameState.baccaratSelection}
+                                </span> ${gameState.bet.toLocaleString()}
                             </span>
-                        )}
-                        {sideBetAmounts.P_PAIR > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_PAIR')}`}>
-                                P.PAIR ${sideBetAmounts.P_PAIR.toLocaleString()}
-                            </span>
-                        )}
-                        {sideBetAmounts.B_PAIR > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_PAIR')}`}>
-                                B.PAIR ${sideBetAmounts.B_PAIR.toLocaleString()}
-                            </span>
-                        )}
-                        {sideBetAmounts.LUCKY6 > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('LUCKY6')}`}>
-                                LUCKY6 ${sideBetAmounts.LUCKY6.toLocaleString()}
-                            </span>
-                        )}
-                        {sideBetAmounts.P_DRAGON > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_DRAGON')}`}>
-                                P.DRAGON ${sideBetAmounts.P_DRAGON.toLocaleString()}
-                            </span>
-                        )}
-                        {sideBetAmounts.B_DRAGON > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_DRAGON')}`}>
-                                B.DRAGON ${sideBetAmounts.B_DRAGON.toLocaleString()}
-                            </span>
-                        )}
-                        {sideBetAmounts.PANDA8 > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('PANDA8')}`}>
-                                PANDA8 ${sideBetAmounts.PANDA8.toLocaleString()}
-                            </span>
-                        )}
-                        {sideBetAmounts.P_PERFECT_PAIR > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_PERFECT_PAIR')}`}>
-                                P.PP ${sideBetAmounts.P_PERFECT_PAIR.toLocaleString()}
-                            </span>
-                        )}
-                        {sideBetAmounts.B_PERFECT_PAIR > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_PERFECT_PAIR')}`}>
-                                B.PP ${sideBetAmounts.B_PERFECT_PAIR.toLocaleString()}
-                            </span>
-                        )}
-                    </div>
-                </div>
-
-                {/* Player Area */}
-                <div className={`min-h-[96px] sm:min-h-[120px] flex gap-8 items-center justify-center transition-all duration-300 ${isPlayerSelected ? 'scale-110 opacity-100' : 'scale-90 opacity-75'}`}>
-                    {gameState.playerCards.length > 0 ? (
-                        <Hand
-                            cards={gameState.playerCards}
-                            title={`PLAYER (${playerValue})`}
-                            forcedColor={playerColor}
-                        />
-                    ) : (
-                        <div className="flex flex-col gap-2 items-center">
-                            <span className={`text-xl sm:text-2xl font-bold tracking-widest ${playerColor}`}>PLAYER</span>
-                            <div className={`w-12 h-[4.5rem] sm:w-14 sm:h-20 md:w-16 md:h-24 border border-dashed rounded flex items-center justify-center ${playerColor.replace('text-', 'border-')}`}>?</div>
+                            {sideBetAmounts.TIE > 0 && (
+                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('TIE')}`}>
+                                    TIE ${sideBetAmounts.TIE.toLocaleString()}
+                                </span>
+                            )}
+                            {sideBetAmounts.P_PAIR > 0 && (
+                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_PAIR')}`}>
+                                    P.PAIR ${sideBetAmounts.P_PAIR.toLocaleString()}
+                                </span>
+                            )}
+                            {sideBetAmounts.B_PAIR > 0 && (
+                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_PAIR')}`}>
+                                    B.PAIR ${sideBetAmounts.B_PAIR.toLocaleString()}
+                                </span>
+                            )}
+                            {sideBetAmounts.LUCKY6 > 0 && (
+                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('LUCKY6')}`}>
+                                    LUCKY6 ${sideBetAmounts.LUCKY6.toLocaleString()}
+                                </span>
+                            )}
+                            {sideBetAmounts.P_DRAGON > 0 && (
+                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_DRAGON')}`}>
+                                    P.DRAGON ${sideBetAmounts.P_DRAGON.toLocaleString()}
+                                </span>
+                            )}
+                            {sideBetAmounts.B_DRAGON > 0 && (
+                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_DRAGON')}`}>
+                                    B.DRAGON ${sideBetAmounts.B_DRAGON.toLocaleString()}
+                                </span>
+                            )}
+                            {sideBetAmounts.PANDA8 > 0 && (
+                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('PANDA8')}`}>
+                                    PANDA8 ${sideBetAmounts.PANDA8.toLocaleString()}
+                                </span>
+                            )}
+                            {sideBetAmounts.P_PERFECT_PAIR > 0 && (
+                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_PERFECT_PAIR')}`}>
+                                    P.PP ${sideBetAmounts.P_PERFECT_PAIR.toLocaleString()}
+                                </span>
+                            )}
+                            {sideBetAmounts.B_PERFECT_PAIR > 0 && (
+                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_PERFECT_PAIR')}`}>
+                                    B.PP ${sideBetAmounts.B_PERFECT_PAIR.toLocaleString()}
+                                </span>
+                            )}
                         </div>
-                    )}
-                </div>
+                    </div>
+                </BaccaratCards3DWrapper>
 
                 {/* Super Mode Info - Animated */}
                 {gameState.superMode?.isActive && (
