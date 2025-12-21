@@ -1,0 +1,206 @@
+/**
+ * Sic Bo 3D Dice Wrapper - Full Window Animation
+ */
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { DiceRender } from '../GameComponents';
+import { playSfx } from '../../../services/sfx';
+
+const SicBoScene3D = lazy(() =>
+  import('./SicBoScene3D').then((mod) => ({ default: mod.SicBoScene3D }))
+);
+
+interface SicBoDice3DWrapperProps {
+  diceValues: number[];
+  isRolling?: boolean;
+  onRoll: () => void;
+  isMobile?: boolean;
+  onAnimationBlockingChange?: (blocking: boolean) => void;
+}
+
+const Scene3DLoader: React.FC = () => (
+  <div className="w-full h-full min-h-[320px] flex items-center justify-center bg-terminal-dim/30 rounded border border-terminal-green/20">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-10 h-10 border-3 border-terminal-green border-t-transparent rounded-full animate-spin" />
+      <span className="text-xs font-mono text-gray-500 tracking-wider">LOADING 3D ENGINE...</span>
+    </div>
+  </div>
+);
+
+const Dice2D: React.FC<{ values: number[] }> = ({ values }) => (
+  <div className="min-h-[96px] flex gap-6 items-center justify-center">
+    {values.length === 3 && (
+      <div className="flex flex-col gap-2 items-center">
+        <span className="text-xs uppercase tracking-widest text-gray-500">ROLL</span>
+        <div className="flex gap-4">
+          {values.map((d, i) => (
+            <DiceRender key={i} value={d} delayMs={i * 60} />
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+);
+
+export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
+  diceValues,
+  isRolling = false,
+  onRoll,
+  isMobile = false,
+  onAnimationBlockingChange,
+}) => {
+  const [is3DMode, setIs3DMode] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const stored = localStorage.getItem('sicbo-3d-mode');
+    return stored ? stored === 'true' : true;
+  });
+
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [targetValues, setTargetValues] = useState<[number, number, number] | undefined>();
+  const [skipRequested, setSkipRequested] = useState(false);
+  const prevDiceRef = useRef<string>('');
+  const wasRollingRef = useRef(false);
+  const rollSoundPlayedRef = useRef(false);
+  const collapseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (isRolling && !wasRollingRef.current) {
+      if (!rollSoundPlayedRef.current) {
+        void playSfx('dice');
+        rollSoundPlayedRef.current = true;
+      }
+    }
+    if (!isRolling && rollSoundPlayedRef.current) {
+      rollSoundPlayedRef.current = false;
+    }
+    if (isRolling && !wasRollingRef.current && is3DMode) {
+      setIsAnimating(true);
+      setIsExpanded(true);
+      onAnimationBlockingChange?.(true);
+      if (collapseTimeoutRef.current) {
+        clearTimeout(collapseTimeoutRef.current);
+        collapseTimeoutRef.current = null;
+      }
+    }
+    wasRollingRef.current = isRolling;
+  }, [isRolling, is3DMode, onAnimationBlockingChange]);
+
+  useEffect(() => {
+    if (diceValues.length === 3) {
+      const key = `${diceValues[0]}-${diceValues[1]}-${diceValues[2]}`;
+      if (key !== prevDiceRef.current) {
+        prevDiceRef.current = key;
+        setTargetValues([diceValues[0], diceValues[1], diceValues[2]]);
+      }
+    }
+  }, [diceValues]);
+
+  const toggle3DMode = useCallback(() => {
+    setIs3DMode((prev) => {
+      const next = !prev;
+      localStorage.setItem('sicbo-3d-mode', String(next));
+      if (!next) {
+        setIsAnimating(false);
+        setIsExpanded(false);
+        onAnimationBlockingChange?.(false);
+      }
+      return next;
+    });
+  }, [onAnimationBlockingChange]);
+
+  const handleRoll = useCallback(() => {
+    if (isAnimating) return;
+    setIsAnimating(true);
+    setIsExpanded(true);
+    onAnimationBlockingChange?.(true);
+    if (!rollSoundPlayedRef.current) {
+      void playSfx('dice');
+      rollSoundPlayedRef.current = true;
+    }
+    if (collapseTimeoutRef.current) {
+      clearTimeout(collapseTimeoutRef.current);
+      collapseTimeoutRef.current = null;
+    }
+    onRoll();
+  }, [isAnimating, onRoll, onAnimationBlockingChange]);
+
+  const handleAnimationComplete = useCallback(() => {
+    setIsAnimating(false);
+    collapseTimeoutRef.current = setTimeout(() => {
+      setIsExpanded(false);
+      onAnimationBlockingChange?.(false);
+      collapseTimeoutRef.current = null;
+    }, 1000);
+  }, [onAnimationBlockingChange]);
+
+  useEffect(() => {
+    return () => {
+      if (collapseTimeoutRef.current) {
+        clearTimeout(collapseTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!is3DMode) {
+      onAnimationBlockingChange?.(false);
+    }
+  }, [is3DMode, onAnimationBlockingChange]);
+
+  useEffect(() => {
+    if (!isAnimating) return;
+    setSkipRequested(false);
+  }, [isAnimating]);
+
+  useEffect(() => {
+    if (!isAnimating || !isExpanded || !is3DMode) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' && e.key !== ' ') return;
+      e.preventDefault();
+      e.stopPropagation();
+      setSkipRequested(true);
+    };
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, [isAnimating, isExpanded, is3DMode]);
+
+  const expandedClasses = isExpanded && is3DMode
+    ? 'absolute inset-0 z-[60] bg-terminal-black/95 transition-all duration-300'
+    : '';
+
+  return (
+    <div className={`relative ${is3DMode ? 'flex-1 w-full min-h-[320px]' : 'w-full'} ${expandedClasses}`}>
+      {!isExpanded && (
+        <button
+          type="button"
+          onClick={toggle3DMode}
+          className="absolute top-2 right-2 z-20 px-2 py-1 text-[10px] font-mono
+                     bg-black/80 border border-terminal-green/50 rounded
+                     text-terminal-green hover:text-white hover:bg-terminal-green/20 transition-colors"
+        >
+          {is3DMode ? '2D' : '3D'}
+        </button>
+      )}
+
+      {is3DMode ? (
+        <div className="h-full w-full">
+          <Suspense fallback={<Scene3DLoader />}>
+            <SicBoScene3D
+              targetValues={targetValues}
+              isAnimating={isAnimating}
+              onRoll={handleRoll}
+              onAnimationComplete={handleAnimationComplete}
+              isMobile={isMobile}
+              fullscreen={isExpanded}
+              skipRequested={skipRequested}
+            />
+          </Suspense>
+        </div>
+      ) : (
+        <Dice2D values={diceValues} />
+      )}
+    </div>
+  );
+};
+
+export default SicBoDice3DWrapper;

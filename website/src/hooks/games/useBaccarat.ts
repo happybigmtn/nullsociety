@@ -24,32 +24,33 @@ export const useBaccarat = ({
   }, [setGameState, baccaratSelectionRef]);
 
   const placeBet = useCallback((type: BaccaratBet['type']) => {
-      // Toggle behavior: remove if exists, add if not
-      const existingIndex = gameState.baccaratBets.findIndex(b => b.type === type);
-      if (existingIndex >= 0) {
-          // Remove the bet
-          const amountToRemove = gameState.baccaratBets[existingIndex].amount;
-          const newBets = gameState.baccaratBets.filter((_, i) => i !== existingIndex);
+      setGameState(prev => {
+          // Toggle behavior: remove if exists, add if not
+          const existingIndex = prev.baccaratBets.findIndex(b => b.type === type);
+          if (existingIndex >= 0) {
+              const amountToRemove = prev.baccaratBets[existingIndex].amount;
+              const newBets = prev.baccaratBets.filter((_, i) => i !== existingIndex);
+              baccaratBetsRef.current = newBets;
+              return {
+                  ...prev,
+                  baccaratUndoStack: [...prev.baccaratUndoStack, prev.baccaratBets],
+                  baccaratBets: newBets,
+                  sessionWager: prev.sessionWager - amountToRemove
+              };
+          }
+
+          if (stats.chips < prev.bet) return prev;
+
+          const newBets = [...prev.baccaratBets, { type, amount: prev.bet }];
           baccaratBetsRef.current = newBets;
-          setGameState(prev => ({
+          return {
               ...prev,
               baccaratUndoStack: [...prev.baccaratUndoStack, prev.baccaratBets],
               baccaratBets: newBets,
-              sessionWager: prev.sessionWager - amountToRemove // Decrease wager
-          }));
-      } else {
-          // Add the bet
-          if (stats.chips < gameState.bet) return;
-          const newBets = [...gameState.baccaratBets, { type, amount: gameState.bet }];
-          baccaratBetsRef.current = newBets;
-          setGameState(prev => ({
-              ...prev,
-              baccaratUndoStack: [...prev.baccaratUndoStack, prev.baccaratBets],
-              baccaratBets: newBets,
-              sessionWager: prev.sessionWager + prev.bet // Increase wager
-          }));
-      }
-  }, [gameState.baccaratBets, gameState.bet, stats.chips, setGameState, baccaratBetsRef]);
+              sessionWager: prev.sessionWager + prev.bet
+          };
+      });
+  }, [setGameState, stats.chips, baccaratBetsRef]);
 
   const undo = useCallback(() => {
       if (gameState.baccaratUndoStack.length > 0) {

@@ -103,7 +103,7 @@ trap cleanup EXIT INT TERM
 # Clean data if --fresh flag is set
 if [ "$FRESH" = true ]; then
     echo -e "${YELLOW}Cleaning node data directories...${NC}"
-    rm -rf ./data/node* 2>/dev/null || true
+    ./scripts/prune-node-data.sh
 fi
 
 # Build if not skipped

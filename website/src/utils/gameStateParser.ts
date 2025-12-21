@@ -421,7 +421,9 @@ export type CrapsPhase = 'COME_OUT' | 'POINT';
 export type CrapsBetType =
   | 'PASS' | 'DONT_PASS' | 'COME' | 'DONT_COME' | 'FIELD'
   | 'YES' | 'NO' | 'NEXT'
-  | 'HARDWAY_4' | 'HARDWAY_6' | 'HARDWAY_8' | 'HARDWAY_10';
+  | 'HARDWAY_4' | 'HARDWAY_6' | 'HARDWAY_8' | 'HARDWAY_10'
+  | 'FIRE'
+  | 'ATS_SMALL' | 'ATS_TALL' | 'ATS_ALL';
 
 export type CrapsBetStatus = 'ON' | 'PENDING';
 
@@ -440,11 +442,27 @@ export interface CrapsState {
   bets: CrapsBet[];
 }
 
-const CRAPS_BET_TYPES: CrapsBetType[] = [
-  'PASS', 'DONT_PASS', 'COME', 'DONT_COME', 'FIELD',
-  'YES', 'NO', 'NEXT',
-  'HARDWAY_4', 'HARDWAY_6', 'HARDWAY_8', 'HARDWAY_10'
-];
+// Map backend BetType enum values to frontend bet types
+// Uses Record instead of array to handle gaps in enum values (13, 14 are unused)
+const CRAPS_BET_TYPE_MAP: Record<number, CrapsBetType> = {
+  0: 'PASS',
+  1: 'DONT_PASS',
+  2: 'COME',
+  3: 'DONT_COME',
+  4: 'FIELD',
+  5: 'YES',
+  6: 'NO',
+  7: 'NEXT',
+  8: 'HARDWAY_4',
+  9: 'HARDWAY_6',
+  10: 'HARDWAY_8',
+  11: 'HARDWAY_10',
+  12: 'FIRE',
+  // 13, 14 are unused
+  15: 'ATS_SMALL',
+  16: 'ATS_TALL',
+  17: 'ATS_ALL',
+};
 
 /**
  * Read a Big Endian u64 from bytes
@@ -494,10 +512,8 @@ export function parseCrapsState(state: Uint8Array): CrapsState {
     const amount = readBigEndianU64(state, offset + 3);
     const oddsAmount = readBigEndianU64(state, offset + 11);
 
-    // Validate bet type index
-    const betType: CrapsBetType = betTypeIndex < CRAPS_BET_TYPES.length
-      ? CRAPS_BET_TYPES[betTypeIndex]
-      : 'PASS';
+    // Validate bet type - use map lookup with fallback
+    const betType: CrapsBetType = CRAPS_BET_TYPE_MAP[betTypeIndex] ?? 'PASS';
 
     const status: CrapsBetStatus = statusByte === 0 ? 'ON' : 'PENDING';
 

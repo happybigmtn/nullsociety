@@ -598,6 +598,8 @@ impl CasinoGame for SicBo {
                     offset += 10;
                 }
 
+                session.bet = total_wager;
+
                 // All validation passed - now execute atomically
                 state.bets = bets_to_place;
 
@@ -631,10 +633,9 @@ impl CasinoGame for SicBo {
                     let logs = generate_sicbo_logs(&state, &dice, total_wager, final_winnings);
                     Ok(GameResult::Win(final_winnings, logs))
                 } else {
-                    // Total loss - use LossWithExtraDeduction since atomic batch
-                    // doesn't pre-deduct bets via ContinueWithUpdate
+                    // Total loss - wager is deducted on completion for atomic batch
                     let logs = generate_sicbo_logs(&state, &dice, total_wager, 0);
-                    Ok(GameResult::LossWithExtraDeduction(total_wager, logs))
+                    Ok(GameResult::Loss(logs))
                 }
             }
 
