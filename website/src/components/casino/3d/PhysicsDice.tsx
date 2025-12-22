@@ -22,6 +22,7 @@ import {
 } from './diceUtils';
 import { ATTRACTOR_PRESETS, calculateAlignmentTorque, DICE_PHYSICS } from './physics';
 import CollisionSound from './audio/CollisionSound';
+import PositionalAudioEmitter from './audio/PositionalAudioEmitter';
 
 export interface PhysicsDiceRef {
   throw: (
@@ -99,6 +100,7 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
     const wobbleAxisRef = useRef(new THREE.Vector3());
     const localUpRef = useRef(new THREE.Vector3());
     const topFaceInverseQuatRef = useRef(new THREE.Quaternion());
+    const rollVelocityRef = useRef(new THREE.Vector3());
     const staggerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const impactParticlesRef = useRef<ImpactParticlesHandle>(null);
     const lastImpactMsRef = useRef(0);
@@ -317,7 +319,11 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
     // Physics frame update for outcome targeting and rest detection
     useFrame(() => {
       if (!rigidBodyRef.current) return;
+      if (!isThrownRef.current || hasRestedRef.current) {
+        rollVelocityRef.current.set(0, 0, 0);
+      }
       if (smoothSettleRef.current) {
+        rollVelocityRef.current.set(0, 0, 0);
         const settle = smoothSettleRef.current;
         const elapsed = performance.now() - settle.startMs;
         const t = Math.min(1, elapsed / settle.durationMs);
@@ -345,6 +351,7 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
       const angVel = rigidBodyRef.current.angvel();
       const linVelVec = linVelRef.current.set(linVel.x, linVel.y, linVel.z);
       const angVelVec = angVelRef.current.set(angVel.x, angVel.y, angVel.z);
+      rollVelocityRef.current.copy(linVelVec);
 
       const speed = linVelVec.length();
       const angSpeed = angVelVec.length();
@@ -465,6 +472,13 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
             velocityThreshold={1.2}
             cooldownMs={impactCooldownMs}
             volume={soundVolume}
+          />
+          <PositionalAudioEmitter
+            soundType="roll"
+            enabled={soundEnabled}
+            velocityRef={rollVelocityRef}
+            volume={soundVolume * 0.35}
+            minSpeed={0.6}
           />
         </RigidBody>
         <ImpactParticles ref={impactParticlesRef} />

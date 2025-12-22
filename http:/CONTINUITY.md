@@ -32,12 +32,15 @@ Done:
 - Wired ambient soundscapes into roulette/craps/sic bo scenes.
 - Added collision audio to physics dice.
 - Ran `npm run test:unit` after audio integration.
+- Added positional audio emitters for dice and roulette ball.
+- Wired GuidedStore actions for chain outcomes, skip requests, and animation blocking.
+- Ran `npm run test:unit` and `npm test`.
 
 Now:
-- Phase 6 in progress: audio integration complete; verification done.
+- Phase 6 in progress: audio + guided store wiring complete; full tests done.
 
 Next:
-- Await further instructions for remaining Phase 6 tasks.
+- Decide on remaining Phase 6 tasks (performance profiling, mobile optimization, full chain store integration).
 
 Open questions (UNCONFIRMED if needed):
 - None.

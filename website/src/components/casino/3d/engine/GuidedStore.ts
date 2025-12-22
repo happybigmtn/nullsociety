@@ -57,6 +57,8 @@ export interface GuidedStoreActions {
 
   requestSkip: (gameType: keyof GameRoundTypes) => void;
 
+  setAnimationBlocking: (gameType: keyof GameRoundTypes, blocking: boolean) => void;
+
   resetRound: (gameType: keyof GameRoundTypes, roundId: number) => void;
 
   // Global controls
@@ -174,6 +176,16 @@ export const useGuidedStore = create<GuidedStore>()(
         [gameType]: {
           ...state[gameType],
           skipRequested: true,
+        },
+      }));
+      get().notifyTransient();
+    },
+
+    setAnimationBlocking: (gameType, blocking) => {
+      set((state) => ({
+        [gameType]: {
+          ...state[gameType],
+          isAnimationBlocking: blocking,
         },
       }));
       get().notifyTransient();

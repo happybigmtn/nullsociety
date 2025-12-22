@@ -12,7 +12,9 @@ interface PositionalAudioEmitterProps {
   refDistance?: number;
   maxDistance?: number;
   velocityRef?: React.MutableRefObject<THREE.Vector3>;
+  followRef?: React.MutableRefObject<THREE.Object3D | null>;
   pitchScale?: number;
+  minSpeed?: number;
   position?: [number, number, number];
 }
 
@@ -33,7 +35,9 @@ export const PositionalAudioEmitter: React.FC<PositionalAudioEmitterProps> = ({
   refDistance = 1.8,
   maxDistance = 18,
   velocityRef,
+  followRef,
   pitchScale = 0.03,
+  minSpeed = 0.2,
   position = [0, 0, 0],
 }) => {
   const groupRef = useRef<THREE.Group>(null);
@@ -92,7 +96,11 @@ export const PositionalAudioEmitter: React.FC<PositionalAudioEmitterProps> = ({
     const nodes = nodesRef.current;
     if (!nodes || !groupRef.current) return;
 
-    groupRef.current.getWorldPosition(tempVector);
+    if (followRef?.current) {
+      followRef.current.getWorldPosition(tempVector);
+    } else {
+      groupRef.current.getWorldPosition(tempVector);
+    }
     const now = nodes.ctx.currentTime;
 
     nodes.panner.positionX.setValueAtTime(tempVector.x, now);
@@ -102,8 +110,10 @@ export const PositionalAudioEmitter: React.FC<PositionalAudioEmitterProps> = ({
     if (velocityRef?.current) {
       const speed = velocityRef.current.length();
       const rate = 1 + speed * pitchScale;
+      const adjustedSpeed = Math.max(0, speed - minSpeed);
+      const targetGain = volume * Math.min(1.2, adjustedSpeed * 0.35);
       nodes.source.playbackRate.setTargetAtTime(rate, now, 0.05);
-      nodes.gain.gain.setTargetAtTime(volume * Math.min(1.4, 0.4 + speed * 0.2), now, 0.1);
+      nodes.gain.gain.setTargetAtTime(targetGain, now, 0.08);
     }
   });
 

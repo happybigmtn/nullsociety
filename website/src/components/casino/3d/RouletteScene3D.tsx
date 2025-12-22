@@ -23,6 +23,7 @@ import {
 import RouletteColliders from './RouletteColliders';
 import CasinoPostProcessing from './post/CasinoPostProcessing';
 import AmbientSoundscape from './audio/AmbientSoundscape';
+import PositionalAudioEmitter from './audio/PositionalAudioEmitter';
 
 const TWO_PI = Math.PI * 2;
 const POCKET_COUNT = ROULETTE_NUMBERS.length;
@@ -143,6 +144,7 @@ function RouletteWheel({
   isMobile,
   spinStateRef,
   ballRef,
+  ballVelocityRef,
   skipRequested,
 }: {
   targetNumber?: number | null;
@@ -152,6 +154,7 @@ function RouletteWheel({
   isMobile?: boolean;
   spinStateRef: React.MutableRefObject<SpinState>;
   ballRef: React.MutableRefObject<THREE.Mesh | null>;
+  ballVelocityRef: React.MutableRefObject<THREE.Vector3>;
   skipRequested?: boolean;
 }) {
   const wheelRef = useRef<THREE.Group>(null);
@@ -335,6 +338,7 @@ function RouletteWheel({
         .sub(lastBallPos.current)
         .multiplyScalar(1 / delta);
     }
+    ballVelocityRef.current.copy(lastBallVel.current);
     lastBallPos.current.copy(currentBallPos.current);
 
     if (state.phase === 'settle' && state.targetNumber !== null) {
@@ -532,6 +536,7 @@ export const RouletteScene3D: React.FC<RouletteScene3DProps> = ({
     extraBallRevs: 0,
   });
   const ballRef = useRef<THREE.Mesh | null>(null);
+  const ballVelocityRef = useRef(new THREE.Vector3());
 
   return (
     <div className="relative w-full h-full min-h-[320px]">
@@ -590,9 +595,18 @@ export const RouletteScene3D: React.FC<RouletteScene3DProps> = ({
                 isMobile={isMobile}
                 spinStateRef={spinStateRef}
                 ballRef={ballRef}
+                ballVelocityRef={ballVelocityRef}
                 skipRequested={skipRequested}
               />
             </CasinoPostProcessing>
+            <PositionalAudioEmitter
+              soundType="roll"
+              enabled={!isMobile && isAnimating}
+              followRef={ballRef}
+              velocityRef={ballVelocityRef}
+              volume={0.25}
+              minSpeed={0.8}
+            />
           </Physics>
         </Suspense>
       </Canvas>

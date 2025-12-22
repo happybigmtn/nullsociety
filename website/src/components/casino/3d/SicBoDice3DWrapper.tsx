@@ -5,6 +5,7 @@ import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 
 import { DiceRender } from '../GameComponents';
 import { playSfx } from '../../../services/sfx';
 import { COLLAPSE_DELAY_MS, getMinRemainingMs, MIN_ANIMATION_MS } from './sceneTiming';
+import { useGuidedStore } from './engine/GuidedStore';
 
 const SicBoScene3D = lazy(() =>
   import('./SicBoScene3D').then((mod) => ({ default: mod.SicBoScene3D }))
@@ -68,6 +69,12 @@ export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
   const completionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const animationStartMsRef = useRef<number | null>(null);
   const skipRequestedRef = useRef(false);
+  const outcomeSentRef = useRef<number | null>(null);
+
+  const startRound = useGuidedStore((s) => s.startRound);
+  const receiveOutcome = useGuidedStore((s) => s.receiveOutcome);
+  const requestSkip = useGuidedStore((s) => s.requestSkip);
+  const setAnimationBlocking = useGuidedStore((s) => s.setAnimationBlocking);
 
   useEffect(() => {
     skipRequestedRef.current = skipRequested;
@@ -88,6 +95,9 @@ export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
       setIsExpanded(true);
       animationStartMsRef.current = performance.now();
       onAnimationBlockingChange?.(true);
+      const nextRoundId = typeof resultId === 'number' ? resultId + 1 : 0;
+      startRound('sicbo', nextRoundId);
+      setAnimationBlocking('sicbo', true);
       if (collapseTimeoutRef.current) {
         clearTimeout(collapseTimeoutRef.current);
         collapseTimeoutRef.current = null;
@@ -98,7 +108,7 @@ export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
       }
     }
     wasRollingRef.current = isRolling;
-  }, [isRolling, is3DMode, onAnimationBlockingChange]);
+  }, [isRolling, is3DMode, onAnimationBlockingChange, resultId, setAnimationBlocking, startRound]);
 
   useEffect(() => {
     if (diceValues.length === 3) {
@@ -129,6 +139,9 @@ export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
     setIsExpanded(true);
     animationStartMsRef.current = performance.now();
     onAnimationBlockingChange?.(true);
+    const nextRoundId = typeof resultId === 'number' ? resultId + 1 : 0;
+    startRound('sicbo', nextRoundId);
+    setAnimationBlocking('sicbo', true);
     if (!rollSoundPlayedRef.current) {
       void playSfx('dice');
       rollSoundPlayedRef.current = true;
@@ -142,16 +155,17 @@ export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
       completionTimeoutRef.current = null;
     }
     onRoll();
-  }, [isAnimating, onRoll, onAnimationBlockingChange]);
+  }, [isAnimating, onRoll, onAnimationBlockingChange, resultId, setAnimationBlocking, startRound]);
 
   const finishAnimation = useCallback(() => {
     setIsAnimating(false);
     collapseTimeoutRef.current = setTimeout(() => {
       setIsExpanded(false);
       onAnimationBlockingChange?.(false);
+      setAnimationBlocking('sicbo', false);
       collapseTimeoutRef.current = null;
     }, COLLAPSE_DELAY_MS);
-  }, [onAnimationBlockingChange]);
+  }, [onAnimationBlockingChange, setAnimationBlocking]);
 
   const handleAnimationComplete = useCallback(() => {
     const remainingMs = skipRequestedRef.current ? 0 : getMinRemainingMs(animationStartMsRef.current, MIN_ANIMATION_MS);
@@ -182,13 +196,28 @@ export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
   useEffect(() => {
     if (!is3DMode) {
       onAnimationBlockingChange?.(false);
+      setAnimationBlocking('sicbo', false);
     }
-  }, [is3DMode, onAnimationBlockingChange]);
+  }, [is3DMode, onAnimationBlockingChange, setAnimationBlocking]);
 
   useEffect(() => {
     if (!isAnimating) return;
     setSkipRequested(false);
   }, [isAnimating]);
+
+  useEffect(() => {
+    if (!skipRequested) return;
+    requestSkip('sicbo');
+  }, [requestSkip, skipRequested]);
+
+  useEffect(() => {
+    if (typeof resultId !== 'number') return;
+    if (!targetValues) return;
+    if (outcomeSentRef.current === resultId) return;
+    if (!targetValues.every((die) => die >= 1 && die <= 6)) return;
+    outcomeSentRef.current = resultId;
+    receiveOutcome('sicbo', { dice: targetValues });
+  }, [receiveOutcome, resultId, targetValues]);
 
   useEffect(() => {
     if (!isAnimating || !isExpanded || !is3DMode) return;

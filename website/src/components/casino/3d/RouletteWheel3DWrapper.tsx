@@ -6,6 +6,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { getRouletteColor } from '../../../utils/gameUtils';
 import { COLLAPSE_DELAY_MS, getMinRemainingMs, MIN_ANIMATION_MS } from './sceneTiming';
+import { useGuidedStore } from './engine/GuidedStore';
 
 const RouletteScene3D = lazy(() =>
   import('./RouletteScene3D').then((mod) => ({ default: mod.RouletteScene3D }))
@@ -76,6 +77,13 @@ export const RouletteWheel3DWrapper: React.FC<RouletteWheel3DWrapperProps> = ({
   const completionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const animationStartMsRef = useRef<number | null>(null);
   const skipRequestedRef = useRef(false);
+  const roundStartedRef = useRef<number | null>(null);
+  const outcomeSentRef = useRef<number | null>(null);
+
+  const startRound = useGuidedStore((s) => s.startRound);
+  const receiveOutcome = useGuidedStore((s) => s.receiveOutcome);
+  const requestSkip = useGuidedStore((s) => s.requestSkip);
+  const setAnimationBlocking = useGuidedStore((s) => s.setAnimationBlocking);
 
   useEffect(() => {
     skipRequestedRef.current = skipRequested;
@@ -87,6 +95,10 @@ export const RouletteWheel3DWrapper: React.FC<RouletteWheel3DWrapperProps> = ({
       setIsExpanded(true);
       animationStartMsRef.current = performance.now();
       onAnimationBlockingChange?.(true);
+      const nextRoundId = typeof resultId === 'number' ? resultId + 1 : 0;
+      roundStartedRef.current = nextRoundId;
+      startRound('roulette', nextRoundId);
+      setAnimationBlocking('roulette', true);
       if (collapseTimeoutRef.current) {
         clearTimeout(collapseTimeoutRef.current);
         collapseTimeoutRef.current = null;
@@ -97,7 +109,7 @@ export const RouletteWheel3DWrapper: React.FC<RouletteWheel3DWrapperProps> = ({
       }
     }
     wasSpinningRef.current = isSpinning;
-  }, [isSpinning, is3DMode, onAnimationBlockingChange]);
+  }, [isSpinning, is3DMode, onAnimationBlockingChange, resultId, setAnimationBlocking, startRound]);
 
   useEffect(() => {
     if (typeof resultId !== 'number') {
@@ -126,6 +138,10 @@ export const RouletteWheel3DWrapper: React.FC<RouletteWheel3DWrapperProps> = ({
     setIsExpanded(true);
     animationStartMsRef.current = performance.now();
     onAnimationBlockingChange?.(true);
+    const nextRoundId = typeof resultId === 'number' ? resultId + 1 : 0;
+    roundStartedRef.current = nextRoundId;
+    startRound('roulette', nextRoundId);
+    setAnimationBlocking('roulette', true);
     if (collapseTimeoutRef.current) {
       clearTimeout(collapseTimeoutRef.current);
       collapseTimeoutRef.current = null;
@@ -135,16 +151,17 @@ export const RouletteWheel3DWrapper: React.FC<RouletteWheel3DWrapperProps> = ({
       completionTimeoutRef.current = null;
     }
     onSpin();
-  }, [isAnimating, onSpin, onAnimationBlockingChange]);
+  }, [isAnimating, onSpin, onAnimationBlockingChange, resultId, setAnimationBlocking, startRound]);
 
   const finishAnimation = useCallback(() => {
     setIsAnimating(false);
     collapseTimeoutRef.current = setTimeout(() => {
       setIsExpanded(false);
       onAnimationBlockingChange?.(false);
+      setAnimationBlocking('roulette', false);
       collapseTimeoutRef.current = null;
     }, COLLAPSE_DELAY_MS);
-  }, [onAnimationBlockingChange]);
+  }, [onAnimationBlockingChange, setAnimationBlocking]);
 
   const handleAnimationComplete = useCallback(() => {
     const remainingMs = skipRequestedRef.current ? 0 : getMinRemainingMs(animationStartMsRef.current, MIN_ANIMATION_MS);
@@ -175,13 +192,28 @@ export const RouletteWheel3DWrapper: React.FC<RouletteWheel3DWrapperProps> = ({
   useEffect(() => {
     if (!is3DMode) {
       onAnimationBlockingChange?.(false);
+      setAnimationBlocking('roulette', false);
     }
-  }, [is3DMode, onAnimationBlockingChange]);
+  }, [is3DMode, onAnimationBlockingChange, setAnimationBlocking]);
 
   useEffect(() => {
     if (!isAnimating) return;
     setSkipRequested(false);
   }, [isAnimating]);
+
+  useEffect(() => {
+    if (!skipRequested) return;
+    requestSkip('roulette');
+  }, [skipRequested, requestSkip]);
+
+  useEffect(() => {
+    if (typeof resultId !== 'number' || typeof targetNumber !== 'number') return;
+    if (outcomeSentRef.current === resultId) return;
+    outcomeSentRef.current = resultId;
+    const color = getRouletteColor(targetNumber);
+    const mappedColor = color === 'GREEN' ? 'green' : color === 'RED' ? 'red' : 'black';
+    receiveOutcome('roulette', { number: targetNumber, color: mappedColor });
+  }, [receiveOutcome, resultId, targetNumber]);
 
   useEffect(() => {
     if (!isAnimating || !isExpanded || !is3DMode) return;
