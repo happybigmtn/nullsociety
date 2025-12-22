@@ -11,7 +11,7 @@ Key decisions:
 
 State:
 - Phase 1 complete; Phase 2 complete (roulette/dice physics guidance, colliders, shooter arm, pyramid wall).
-- Uncommitted changes include Phase 2 refinements + new tests.
+- Phase 3 complete (card pool/deal/peek system integrated and tested).
 
 Done:
 - Read `agents.md` and `4d.md`.
@@ -20,12 +20,13 @@ Done:
 - Committed and pushed all repo changes.
 - Added Vitest runner and guided forces unit tests.
 - Added roulette physics tests and aligned dice guidance with attractor config/physics constants.
+- Added card pool manager, deal/peek animation helpers, integrated into CardTableScene3D with tests.
 
 Now:
-- Decide whether to commit Phase 2 refinements; ready to start Phase 3 (card system) when requested.
+- Ready to start Phase 4 (shaders/post/lighting) when requested.
 
 Next:
-- Phase 3: implement card pool, deal animation, dealer peek.
+- Phase 4: shaders/post-processing/lighting presets.
 
 Open questions (UNCONFIRMED if needed):
 - None.
@@ -51,3 +52,8 @@ Working set (files/ids/commands):
 - website/src/components/casino/3d/SicBoDice3DWrapper.tsx
 - website/src/components/casino/games/CrapsView.tsx
 - website/src/components/casino/games/SicBoView.tsx
+- website/src/components/casino/3d/cards/CardDealAnimation.ts
+- website/src/components/casino/3d/cards/CardPeekAnimation.ts
+- website/src/components/casino/3d/cards/CardPoolManager.ts
+- website/src/components/casino/3d/cards/index.ts
+- website/src/components/casino/3d/CardTableScene3D.tsx
