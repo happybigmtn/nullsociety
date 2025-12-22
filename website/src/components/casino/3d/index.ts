@@ -21,3 +21,4 @@ export { DiceModel } from './DiceModel';
 export { PowerMeter } from './PowerMeter';
 export { Slingshot } from './Slingshot';
 export * from './diceUtils';
+export * from './cards';

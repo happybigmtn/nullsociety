@@ -11,6 +11,7 @@ import { playSfx } from '../../../services/sfx';
 import Card3D, { CardHand } from './Card3D';
 import { CardSlotConfig, CARD_SCENE_CONFIG } from './cardLayouts';
 import CasinoEnvironment from './CasinoEnvironment';
+import { CardDealAnimator, CardPeekAnimator } from './cards';
 
 // Default timing constants
 const DEAL_INTERVAL_MS = 130;
@@ -19,8 +20,8 @@ const DEAL_ARC_HEIGHT = 0.5;
 const REVEAL_DELAY_MS = 160;
 const REVEAL_STAGGER_MS = 130;
 const FLIP_DURATION_MS = 420;
+const PEEK_DELAY_MS = 180;
 
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 type CardSlotInfo = {
@@ -34,8 +35,11 @@ type CardRig = {
   sequenceIndex: number;
   ref: React.RefObject<THREE.Group>;
   mode: 'deal' | 'reveal' | 'static';
+  dealAnimator: CardDealAnimator;
+  peekAnimator: CardPeekAnimator;
   dealStartMs: number | null;
   flipStartMs: number | null;
+  peekStartMs: number | null;
   dealt: boolean;
   flipProgress: number;
   sfxPlayed: boolean;
@@ -61,6 +65,7 @@ interface CardTableScene3DProps {
   cardSize?: [number, number, number];
   selectedHand?: CardHand; // Which hand the player bet on - that side gets green, opponent gets red
   revealStaggerMs?: number; // Override for delay between each card flip (default 130ms)
+  peekSlots?: string[]; // Slots that should use a corner peek animation
 }
 
 const SHOE_POSITION = new THREE.Vector3(2.4, 0.45, 0.15);
@@ -89,6 +94,7 @@ function CardTableScene({
   cardSize,
   selectedHand,
   revealStaggerMs,
+  peekSlots,
 }: CardTableScene3DProps) {
   const { camera, invalidate } = useThree();
 
@@ -103,6 +109,8 @@ function CardTableScene({
   const cardsByIdRef = useRef(cardsById);
   const animationCompleteRef = useRef(false);
   const skipHandledRef = useRef(false);
+  const peekKey = (peekSlots ?? []).join('|');
+  const peekSet = useMemo(() => new Set(peekSlots ?? []), [peekKey]);
 
   useEffect(() => {
     cardsByIdRef.current = cardsById;
@@ -118,26 +126,39 @@ function CardTableScene({
   if (rigsRef.current.length === 0) {
     rigsRef.current = slotInfos.map((slot, index) => {
       const sequenceIndex = orderMap.get(slot.id) ?? index;
+      const startPos = new THREE.Vector3(
+        SHOE_POSITION.x,
+        SHOE_POSITION.y + sequenceIndex * 0.02,
+        SHOE_POSITION.z
+      );
+      const startRot = new THREE.Euler(
+        SHOE_ROTATION.x,
+        SHOE_ROTATION.y,
+        SHOE_ROTATION.z + sequenceIndex * 0.05
+      );
+      const dealAnimator = new CardDealAnimator({
+        startPos,
+        endPos: slot.position,
+        startRot,
+        endRot: slot.rotation,
+        arcHeight: DEAL_ARC_HEIGHT,
+        durationMs: DEAL_DURATION_MS,
+      });
       return {
         slot,
         sequenceIndex,
         ref: cardRefs[index],
         mode: 'static',
+        dealAnimator,
+        peekAnimator: new CardPeekAnimator(),
         dealStartMs: null,
         flipStartMs: null,
+        peekStartMs: null,
         dealt: false,
         flipProgress: 0,
         sfxPlayed: false,
-        startPos: new THREE.Vector3(
-          SHOE_POSITION.x,
-          SHOE_POSITION.y + sequenceIndex * 0.02,
-          SHOE_POSITION.z
-        ),
-        startRot: new THREE.Euler(
-          SHOE_ROTATION.x,
-          SHOE_ROTATION.y,
-          SHOE_ROTATION.z + sequenceIndex * 0.05
-        ),
+        startPos,
+        startRot,
         workPos: new THREE.Vector3(),
         workRot: new THREE.Euler(),
       };
@@ -190,6 +211,7 @@ function CardTableScene({
       rig.mode = isDeal ? 'deal' : isReveal ? 'reveal' : 'static';
       rig.dealStartMs = isDeal ? now + rig.sequenceIndex * DEAL_INTERVAL_MS : null;
       rig.flipStartMs = null;  // Always reset - will be set during animation if needed
+      rig.peekStartMs = null;
       rig.dealt = !isDeal;
       rig.flipProgress = 0;  // Always start at 0 for animating slots
       rig.sfxPlayed = false;
@@ -198,6 +220,14 @@ function CardTableScene({
       rig.ref.current.visible = Boolean(card) || isDeal || isReveal;
 
       if (isDeal) {
+        rig.dealAnimator.update({
+          startPos: rig.startPos,
+          endPos: rig.slot.position,
+          startRot: rig.startRot,
+          endRot: rig.slot.rotation,
+          arcHeight: DEAL_ARC_HEIGHT,
+          durationMs: DEAL_DURATION_MS,
+        });
         // Reset position to shoe for deal animation
         rig.ref.current.position.copy(rig.startPos);
         rig.ref.current.rotation.copy(rig.startRot);
@@ -256,28 +286,15 @@ function CardTableScene({
       // Mode is 'deal' or 'reveal' here (static returned early) - always show during animation
       rig.ref.current.visible = true;
 
-      const startPos = rig.startPos;
-      const startRot = rig.startRot;
-
       if (rig.mode === 'deal') {
         let dealProgress = 0;
         if (rig.dealStartMs !== null) {
-          dealProgress = Math.min(1, Math.max(0, (now - rig.dealStartMs) / DEAL_DURATION_MS));
+          const elapsed = Math.max(0, now - rig.dealStartMs);
+          dealProgress = rig.dealAnimator.getPose(elapsed, rig.workPos, rig.workRot);
           if (dealProgress < 1) allDone = false;
         } else {
           allDone = false;
         }
-
-        const eased = easeOutCubic(dealProgress);
-        const arc = Math.sin(dealProgress * Math.PI) * DEAL_ARC_HEIGHT;
-        const pos = rig.workPos.lerpVectors(startPos, rig.slot.position, eased);
-        pos.y += arc;
-
-        const rot = rig.workRot.set(
-          THREE.MathUtils.lerp(startRot.x, rig.slot.rotation.x, eased),
-          THREE.MathUtils.lerp(startRot.y, rig.slot.rotation.y, eased),
-          THREE.MathUtils.lerp(startRot.z, rig.slot.rotation.z, eased)
-        );
 
         if (!rig.sfxPlayed && dealProgress > 0.5) {
           rig.sfxPlayed = true;
@@ -300,13 +317,27 @@ function CardTableScene({
           allDone = false;
         }
 
+        if (card?.isHidden && peekSet.has(rig.slot.id)) {
+          if (rig.peekStartMs === null && rig.dealt) {
+            rig.peekStartMs = now + PEEK_DELAY_MS;
+          }
+        } else {
+          rig.peekStartMs = null;
+        }
+
+        const peekOffset = rig.peekStartMs ? rig.peekAnimator.getOffset(now - rig.peekStartMs) : 0;
         const flipAngle = (1 - rig.flipProgress) * Math.PI;
-        rig.ref.current.position.copy(pos);
-        rig.ref.current.rotation.set(rot.x + flipAngle, rot.y, rot.z);
+        rig.ref.current.position.copy(rig.workPos);
+        rig.ref.current.rotation.set(
+          rig.workRot.x + flipAngle + peekOffset,
+          rig.workRot.y,
+          rig.workRot.z
+        );
         return;
       }
 
       if (rig.mode === 'reveal') {
+        rig.peekStartMs = null;
         const cardVisible = Boolean(card) && !card?.isHidden;
         if (!cardVisible) {
           rig.ref.current.position.copy(rig.slot.position);
@@ -391,6 +422,7 @@ export const CardTableScene3D: React.FC<CardTableScene3DProps> = ({
   cardSize,
   selectedHand,
   revealStaggerMs,
+  peekSlots,
 }) => {
   const [sceneReady, setSceneReady] = useState(false);
 
@@ -424,6 +456,7 @@ export const CardTableScene3D: React.FC<CardTableScene3DProps> = ({
             cardSize={cardSize}
             selectedHand={selectedHand}
             revealStaggerMs={revealStaggerMs}
+            peekSlots={peekSlots}
           />
         </Suspense>
       </Canvas>
