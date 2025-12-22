@@ -7,6 +7,7 @@
 import React, { Suspense, lazy, useState, useCallback, useEffect, useRef } from 'react';
 import { DiceRender } from '../GameComponents';
 import { playSfx } from '../../../services/sfx';
+import { track } from '../../../services/telemetry';
 import { COLLAPSE_DELAY_MS, getMinRemainingMs, MIN_ANIMATION_MS } from './sceneTiming';
 import { useGuidedStore } from './engine/GuidedStore';
 
@@ -76,6 +77,9 @@ export const CrapsDice3DWrapper: React.FC<CrapsDice3DWrapperProps> = ({
   const animationStartMsRef = useRef<number | null>(null);
   const skipRequestedRef = useRef(false);
   const outcomeSentRef = useRef<number | null>(null);
+  const roundStartedRef = useRef<number | null>(null);
+  const wasAnimatingRef = useRef(false);
+  const startedByRef = useRef<'button' | 'chain' | null>(null);
 
   const startRound = useGuidedStore((s) => s.startRound);
   const receiveOutcome = useGuidedStore((s) => s.receiveOutcome);
@@ -105,6 +109,8 @@ export const CrapsDice3DWrapper: React.FC<CrapsDice3DWrapperProps> = ({
       animationStartMsRef.current = performance.now();
       onAnimationBlockingChange?.(true);
       const nextRoundId = typeof resultId === 'number' ? resultId + 1 : 0;
+      roundStartedRef.current = nextRoundId;
+      startedByRef.current = 'chain';
       startRound('craps', nextRoundId);
       setAnimationBlocking('craps', true);
       // Clear any pending collapse
@@ -135,9 +141,10 @@ export const CrapsDice3DWrapper: React.FC<CrapsDice3DWrapperProps> = ({
     setIs3DMode((prev) => {
       const newValue = !prev;
       localStorage.setItem('craps-3d-mode', String(newValue));
+      track('casino.3d.toggle', { game: 'craps', enabled: newValue });
       return newValue;
     });
-  }, []);
+  }, [track]);
 
   const handleRoll = useCallback(() => {
     if (isAnimating) return;
@@ -146,6 +153,8 @@ export const CrapsDice3DWrapper: React.FC<CrapsDice3DWrapperProps> = ({
     animationStartMsRef.current = performance.now();
     onAnimationBlockingChange?.(true);
     const nextRoundId = typeof resultId === 'number' ? resultId + 1 : 0;
+    roundStartedRef.current = nextRoundId;
+    startedByRef.current = 'button';
     startRound('craps', nextRoundId);
     setAnimationBlocking('craps', true);
     if (!rollSoundPlayedRef.current) {
@@ -217,8 +226,21 @@ export const CrapsDice3DWrapper: React.FC<CrapsDice3DWrapperProps> = ({
 
   useEffect(() => {
     if (!skipRequested) return;
+    track('casino.3d.skip', { game: 'craps', roundId: roundStartedRef.current });
     requestSkip('craps');
-  }, [requestSkip, skipRequested]);
+  }, [requestSkip, skipRequested, track]);
+
+  useEffect(() => {
+    if (isAnimating && !wasAnimatingRef.current) {
+      track('casino.3d.animation_start', {
+        game: 'craps',
+        source: startedByRef.current ?? 'unknown',
+        roundId: roundStartedRef.current,
+      });
+      startedByRef.current = null;
+    }
+    wasAnimatingRef.current = isAnimating;
+  }, [isAnimating, track]);
 
   useEffect(() => {
     if (typeof resultId !== 'number') return;

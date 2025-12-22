@@ -3,8 +3,9 @@
  *
  * Shows a fullscreen 3D deal/reveal scene during action windows.
  */
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { Card } from '../../../types';
+import { track } from '../../../services/telemetry';
 import { CardSlotConfig } from './cardLayouts';
 import { COLLAPSE_DELAY_MS, getMinRemainingMs, MIN_ANIMATION_MS } from './sceneTiming';
 import type { CardHand } from './Card3D';
@@ -76,6 +77,9 @@ export const CardAnimationOverlay: React.FC<CardAnimationOverlayProps> = ({
   const prevKeysRef = useRef<Record<string, string>>({});
   const didInitRef = useRef(false);
   const activeRoundRef = useRef<number | null>(null);
+  const wasAnimatingRef = useRef(false);
+
+  const telemetryGame = guidedGameType ?? storageKey.replace(/-3d-mode$/, '');
 
   const startRound = useGuidedStore((s) => s.startRound);
   const receiveOutcome = useGuidedStore((s) => s.receiveOutcome);
@@ -115,6 +119,7 @@ export const CardAnimationOverlay: React.FC<CardAnimationOverlayProps> = ({
     setIs3DMode((prev) => {
       const next = !prev;
       localStorage.setItem(storageKey, String(next));
+      track('casino.3d.toggle', { game: telemetryGame, enabled: next });
       if (!next) {
         setIsAnimating(false);
         setIsExpanded(false);
@@ -125,7 +130,7 @@ export const CardAnimationOverlay: React.FC<CardAnimationOverlayProps> = ({
       }
       return next;
     });
-  }, [guidedGameType, onAnimationBlockingChange, setAnimationBlocking, storageKey]);
+  }, [guidedGameType, onAnimationBlockingChange, setAnimationBlocking, storageKey, telemetryGame, track]);
 
   useEffect(() => {
     if (isActionActive && is3DMode) {
@@ -268,9 +273,18 @@ export const CardAnimationOverlay: React.FC<CardAnimationOverlayProps> = ({
   }, [isAnimating]);
 
   useEffect(() => {
-    if (!skipRequested || !guidedGameType) return;
+    if (!skipRequested) return;
+    track('casino.3d.skip', { game: telemetryGame, dealId });
+    if (!guidedGameType) return;
     requestSkip(guidedGameType);
-  }, [guidedGameType, requestSkip, skipRequested]);
+  }, [dealId, guidedGameType, requestSkip, skipRequested, telemetryGame, track]);
+
+  useEffect(() => {
+    if (isAnimating && !wasAnimatingRef.current) {
+      track('casino.3d.animation_start', { game: telemetryGame, dealId });
+    }
+    wasAnimatingRef.current = isAnimating;
+  }, [dealId, isAnimating, telemetryGame, track]);
 
   useEffect(() => {
     if (!isAnimating || !isExpanded || !is3DMode) return;

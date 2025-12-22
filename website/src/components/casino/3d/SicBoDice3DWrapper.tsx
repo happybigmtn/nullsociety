@@ -4,6 +4,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { DiceRender } from '../GameComponents';
 import { playSfx } from '../../../services/sfx';
+import { track } from '../../../services/telemetry';
 import { COLLAPSE_DELAY_MS, getMinRemainingMs, MIN_ANIMATION_MS } from './sceneTiming';
 import { useGuidedStore } from './engine/GuidedStore';
 
@@ -70,6 +71,9 @@ export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
   const animationStartMsRef = useRef<number | null>(null);
   const skipRequestedRef = useRef(false);
   const outcomeSentRef = useRef<number | null>(null);
+  const roundStartedRef = useRef<number | null>(null);
+  const wasAnimatingRef = useRef(false);
+  const startedByRef = useRef<'button' | 'chain' | null>(null);
 
   const startRound = useGuidedStore((s) => s.startRound);
   const receiveOutcome = useGuidedStore((s) => s.receiveOutcome);
@@ -96,6 +100,8 @@ export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
       animationStartMsRef.current = performance.now();
       onAnimationBlockingChange?.(true);
       const nextRoundId = typeof resultId === 'number' ? resultId + 1 : 0;
+      roundStartedRef.current = nextRoundId;
+      startedByRef.current = 'chain';
       startRound('sicbo', nextRoundId);
       setAnimationBlocking('sicbo', true);
       if (collapseTimeoutRef.current) {
@@ -124,6 +130,7 @@ export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
     setIs3DMode((prev) => {
       const next = !prev;
       localStorage.setItem('sicbo-3d-mode', String(next));
+      track('casino.3d.toggle', { game: 'sicbo', enabled: next });
       if (!next) {
         setIsAnimating(false);
         setIsExpanded(false);
@@ -131,7 +138,7 @@ export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
       }
       return next;
     });
-  }, [onAnimationBlockingChange]);
+  }, [onAnimationBlockingChange, track]);
 
   const handleRoll = useCallback(() => {
     if (isAnimating) return;
@@ -140,6 +147,8 @@ export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
     animationStartMsRef.current = performance.now();
     onAnimationBlockingChange?.(true);
     const nextRoundId = typeof resultId === 'number' ? resultId + 1 : 0;
+    roundStartedRef.current = nextRoundId;
+    startedByRef.current = 'button';
     startRound('sicbo', nextRoundId);
     setAnimationBlocking('sicbo', true);
     if (!rollSoundPlayedRef.current) {
@@ -207,8 +216,21 @@ export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
 
   useEffect(() => {
     if (!skipRequested) return;
+    track('casino.3d.skip', { game: 'sicbo', roundId: roundStartedRef.current });
     requestSkip('sicbo');
-  }, [requestSkip, skipRequested]);
+  }, [requestSkip, skipRequested, track]);
+
+  useEffect(() => {
+    if (isAnimating && !wasAnimatingRef.current) {
+      track('casino.3d.animation_start', {
+        game: 'sicbo',
+        source: startedByRef.current ?? 'unknown',
+        roundId: roundStartedRef.current,
+      });
+      startedByRef.current = null;
+    }
+    wasAnimatingRef.current = isAnimating;
+  }, [isAnimating, track]);
 
   useEffect(() => {
     if (typeof resultId !== 'number') return;

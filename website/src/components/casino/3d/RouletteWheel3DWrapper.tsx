@@ -5,6 +5,7 @@
  */
 import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { getRouletteColor } from '../../../utils/gameUtils';
+import { track } from '../../../services/telemetry';
 import { COLLAPSE_DELAY_MS, getMinRemainingMs, MIN_ANIMATION_MS } from './sceneTiming';
 import { useGuidedStore } from './engine/GuidedStore';
 
@@ -79,6 +80,8 @@ export const RouletteWheel3DWrapper: React.FC<RouletteWheel3DWrapperProps> = ({
   const skipRequestedRef = useRef(false);
   const roundStartedRef = useRef<number | null>(null);
   const outcomeSentRef = useRef<number | null>(null);
+  const wasAnimatingRef = useRef(false);
+  const startedByRef = useRef<'button' | 'chain' | null>(null);
 
   const startRound = useGuidedStore((s) => s.startRound);
   const receiveOutcome = useGuidedStore((s) => s.receiveOutcome);
@@ -97,6 +100,7 @@ export const RouletteWheel3DWrapper: React.FC<RouletteWheel3DWrapperProps> = ({
       onAnimationBlockingChange?.(true);
       const nextRoundId = typeof resultId === 'number' ? resultId + 1 : 0;
       roundStartedRef.current = nextRoundId;
+      startedByRef.current = 'chain';
       startRound('roulette', nextRoundId);
       setAnimationBlocking('roulette', true);
       if (collapseTimeoutRef.current) {
@@ -128,9 +132,10 @@ export const RouletteWheel3DWrapper: React.FC<RouletteWheel3DWrapperProps> = ({
     setIs3DMode((prev) => {
       const next = !prev;
       localStorage.setItem('roulette-3d-mode', String(next));
+      track('casino.3d.toggle', { game: 'roulette', enabled: next });
       return next;
     });
-  }, []);
+  }, [track]);
 
   const handleSpin = useCallback(() => {
     if (isAnimating) return;
@@ -140,6 +145,7 @@ export const RouletteWheel3DWrapper: React.FC<RouletteWheel3DWrapperProps> = ({
     onAnimationBlockingChange?.(true);
     const nextRoundId = typeof resultId === 'number' ? resultId + 1 : 0;
     roundStartedRef.current = nextRoundId;
+    startedByRef.current = 'button';
     startRound('roulette', nextRoundId);
     setAnimationBlocking('roulette', true);
     if (collapseTimeoutRef.current) {
@@ -203,8 +209,21 @@ export const RouletteWheel3DWrapper: React.FC<RouletteWheel3DWrapperProps> = ({
 
   useEffect(() => {
     if (!skipRequested) return;
+    track('casino.3d.skip', { game: 'roulette', roundId: roundStartedRef.current });
     requestSkip('roulette');
-  }, [skipRequested, requestSkip]);
+  }, [requestSkip, skipRequested, track]);
+
+  useEffect(() => {
+    if (isAnimating && !wasAnimatingRef.current) {
+      track('casino.3d.animation_start', {
+        game: 'roulette',
+        source: startedByRef.current ?? 'unknown',
+        roundId: roundStartedRef.current,
+      });
+      startedByRef.current = null;
+    }
+    wasAnimatingRef.current = isAnimating;
+  }, [isAnimating, track]);
 
   useEffect(() => {
     if (typeof resultId !== 'number' || typeof targetNumber !== 'number') return;

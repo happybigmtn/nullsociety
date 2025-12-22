@@ -40,12 +40,14 @@ Done:
 - Tuned mobile physics settings for lighter simulation.
 - Wired GuidedStore for blackjack/baccarat card animations (blocking/skip/outcomes).
 - Ran `npm run test:unit` and `npm test`.
+- Added telemetry tracking for 3D toggles/animation starts/skips.
+- Ran `npm run test:unit` and `npm test` (from `website/`).
 
 Now:
-- Phase 6 in progress: profiling hooks, mobile optimizations, and card store wiring complete.
+- Phase 6 complete: integration/polish + telemetry for 3D engagement tracking.
 
 Next:
-- Decide if further Phase 6 polish remains or move to next phase.
+- Await direction on next phase (Phase 7+) or additional polish.
 
 Open questions (UNCONFIRMED if needed):
 - None.
