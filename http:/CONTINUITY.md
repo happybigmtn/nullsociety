@@ -35,9 +35,10 @@ Done:
 - Added positional audio emitters for dice and roulette ball.
 - Wired GuidedStore actions for chain outcomes, skip requests, and animation blocking.
 - Ran `npm run test:unit` and `npm test`.
+- Committed and pushed positional audio + guided store wiring.
 
 Now:
-- Phase 6 in progress: audio + guided store wiring complete; full tests done.
+- Phase 6 in progress: audio + guided store wiring committed; full tests done.
 
 Next:
 - Decide on remaining Phase 6 tasks (performance profiling, mobile optimization, full chain store integration).
