@@ -6,12 +6,11 @@ const AB_BUCKET_KEY = 'casino-3d-ab-bucket';
 const AB_BUCKET_TRACKED_KEY = 'casino-3d-ab-bucket-tracked';
 
 export const getAbBucket = (): AbBucket => {
-  if (typeof window === 'undefined') return '2d';
+  if (typeof window === 'undefined') return '3d';
   const stored = localStorage.getItem(AB_BUCKET_KEY);
-  if (stored === '3d' || stored === '2d') return stored;
-  const next: AbBucket = Math.random() < 0.5 ? '3d' : '2d';
-  localStorage.setItem(AB_BUCKET_KEY, next);
-  return next;
+  if (stored === '3d') return stored;
+  localStorage.setItem(AB_BUCKET_KEY, '3d');
+  return '3d';
 };
 
 export const getInitial3DMode = (storageKey: string) => {

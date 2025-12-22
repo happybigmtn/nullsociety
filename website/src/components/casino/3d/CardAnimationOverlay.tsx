@@ -330,7 +330,7 @@ export const CardAnimationOverlay: React.FC<CardAnimationOverlayProps> = ({
         <button
           type="button"
           onClick={toggle3DMode}
-          className="absolute top-2 right-2 z-30 px-2 py-1 text-[10px] font-mono
+          className="absolute top-2 right-2 z-50 px-2 py-1 text-[10px] font-mono
                      bg-black/80 border border-terminal-green/50 rounded
                      text-terminal-green hover:text-white hover:bg-terminal-green/20 transition-colors"
         >

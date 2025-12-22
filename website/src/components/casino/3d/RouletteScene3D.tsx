@@ -207,6 +207,7 @@ function RouletteWheel({
   const skipHandledRef = useRef(false);
   const lastBallPos = useRef(new THREE.Vector3());
   const lastBallVel = useRef(new THREE.Vector3());
+  const prevAnimatingRef = useRef(false);
   const currentBallPos = useRef(new THREE.Vector3());
   const targetBallPos = useRef(new THREE.Vector3());
   const forceVec = useRef(new THREE.Vector3());
@@ -298,7 +299,12 @@ function RouletteWheel({
   }, [resultId, targetNumber]);
 
   useEffect(() => {
-    if (!isAnimating) return;
+    // Only reset animation state on fresh animation start (false -> true transition)
+    const isFreshStart = isAnimating && !prevAnimatingRef.current;
+    prevAnimatingRef.current = isAnimating;
+
+    if (!isFreshStart) return;
+
     const now = performance.now();
     skipHandledRef.current = false;
     const roundId = typeof resultId === 'number' ? resultId : 0;

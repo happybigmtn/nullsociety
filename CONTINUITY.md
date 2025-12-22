@@ -1,5 +1,6 @@
 Goal (incl. success criteria):
-- Start Phase 7 (Game Shows) by shipping Lightning Roulette visuals + data wiring; then proceed to Football Studio and Dream Catcher.
+- Review current codebase against `4d.md` plan and identify gaps.
+- Enable all 3D scenes by default and ensure 3D overlays fully cover their subwindow during play, using the new physics engine (avoid legacy animations).
 
 Constraints/Assumptions:
 - Follow `agents.md` guidance: read/update this ledger at start of each turn and whenever goal/state/decisions change; keep it brief and factual.
@@ -7,7 +8,7 @@ Constraints/Assumptions:
 - Must be deliberate about tracking progress through each stage in `4d.md`.
 
 Key decisions:
-- None yet (pending scope/ordering based on `4d.md` stages).
+- None yet.
 
 State:
 - Phase 1 complete; Phase 2 complete (roulette/dice physics guidance, colliders, shooter arm, pyramid wall).
@@ -42,6 +43,8 @@ Done:
 - Ran `npm run test:unit` and `npm test`.
 - Added telemetry tracking for 3D toggles/animation starts/skips.
 - Ran `npm run test:unit` and `npm test` (from `website/`).
+- Defaulted 3D A/B bucket to always start in 3D.
+- Raised card-game 2D/3D toggle z-index to stay visible over sidebars.
 - Wired Lightning Roulette multipliers from `superMode` into roulette 3D scene.
 - Added Lightning Roulette multiplier badges + lightning overlay effect in RouletteScene3D.
 - Ran `npm run test:unit` and `npm test` (from `website/`).
@@ -52,15 +55,18 @@ Done:
 - Added performance sampler, 3D A/B default, and feedback prompts for 3D scenes.
 - Added QA checklist doc for guided 3D regression coverage.
 - Ran `npm run test:unit` and `npm test` (from `website/`).
+- Fixed roulette ball animation bug: ball now properly settles on target number instead of spinning forever.
+  - Root cause: animation start effect re-ran when resultId changed, resetting targetRef.current to null
+  - Fix: track previous isAnimating value with ref, only reset on fresh animation start (false→true transition)
 
 Now:
-- Phase 7 prep complete: 4d.md gap coverage addressed and tests run.
+- Roulette 3D animation working correctly (tested: ball settles on target, wins recorded properly).
 
 Next:
-- Resume Phase 7 with Football Studio and Dream Catcher scaffolding.
+- Continue with any remaining 3D scene validation or polish.
 
 Open questions (UNCONFIRMED if needed):
-- None.
+- Which specific animations are considered “legacy” to be removed or replaced?
 
 Working set (files/ids/commands):
 - http://CONTINUITY.md
