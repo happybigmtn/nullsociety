@@ -7,6 +7,7 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useStat
 import { Card } from '../../../types';
 import { CardSlotConfig } from './cardLayouts';
 import { COLLAPSE_DELAY_MS, getMinRemainingMs, MIN_ANIMATION_MS } from './sceneTiming';
+import type { CardHand } from './Card3D';
 
 const CardTableScene3D = lazy(() =>
   import('./CardTableScene3D').then((mod) => ({ default: mod.CardTableScene3D }))
@@ -22,6 +23,8 @@ interface CardAnimationOverlayProps {
   isMobile?: boolean;
   tableSize?: { width: number; depth: number; y: number };
   cardSize?: [number, number, number];
+  selectedHand?: CardHand; // Which hand the player bet on - for card coloring
+  revealStaggerMs?: number; // Delay between each card flip (default 130ms)
 }
 
 const Scene3DLoader: React.FC = () => (
@@ -48,6 +51,8 @@ export const CardAnimationOverlay: React.FC<CardAnimationOverlayProps> = ({
   isMobile = false,
   tableSize,
   cardSize,
+  selectedHand,
+  revealStaggerMs,
 }) => {
   const [is3DMode, setIs3DMode] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -251,6 +256,8 @@ export const CardAnimationOverlay: React.FC<CardAnimationOverlayProps> = ({
                   skipRequested={skipRequested}
                   tableSize={tableSize}
                   cardSize={cardSize}
+                  selectedHand={selectedHand}
+                  revealStaggerMs={revealStaggerMs}
                 />
               </Suspense>
 

@@ -7,12 +7,12 @@ export interface CardSlotConfig {
 }
 
 export const CARD_SCENE_CONFIG = {
-  table: { width: 8.8, depth: 6.4, y: -0.2 },
-  cardSize: [1.4, 2.05, 0.04] as [number, number, number],
-  spacing: 1.45,
-  baseRotationX: -Math.PI / 2 + 0.42,
-  slotLift: 0.07,
-  fan: 0.08,
+  table: { width: 6, depth: 4.5, y: -0.15 },
+  cardSize: [1.2, 1.75, 0.035] as [number, number, number],
+  spacing: 1.3,
+  baseRotationX: -Math.PI / 2 + 0.25,
+  slotLift: 0.06,
+  fan: 0.06,
 };
 
 interface RowOptions {
@@ -53,4 +53,30 @@ export const buildCardsById = (prefix: string, cards: Card[], maxCount: number) 
     entries[`${prefix}-${i}`] = cards[i] ?? null;
   }
   return entries;
+};
+
+// Baccarat layout: 3 player cards (bottom) + 3 banker cards (top)
+// Cards are dealt in alternating order: P1, B1, P2, B2, (P3), (B3)
+// Increased z separation (1.4 / -1.4) to prevent overlap
+export const BACCARAT_SLOTS: CardSlotConfig[] = [
+  // Player cards (bottom row, closer to viewer)
+  ...buildRowSlots('player', 3, 1.4, { spacing: 1.4, fan: 0.04 }),
+  // Banker cards (top row, further from viewer)
+  ...buildRowSlots('banker', 3, -1.4, { spacing: 1.4, fan: -0.04, mirror: true }),
+];
+
+export const BACCARAT_DEAL_ORDER = [
+  'player-0', 'banker-0',  // First cards
+  'player-1', 'banker-1',  // Second cards
+  'player-2', 'banker-2',  // Third cards (optional)
+];
+
+export const buildBaccaratCardsById = (
+  playerCards: Card[],
+  bankerCards: Card[]
+): Record<string, Card | null> => {
+  return {
+    ...buildCardsById('player', playerCards, 3),
+    ...buildCardsById('banker', bankerCards, 3),
+  };
 };

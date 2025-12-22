@@ -8,9 +8,11 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Card } from '../../../types';
 import { playSfx } from '../../../services/sfx';
-import Card3D from './Card3D';
+import Card3D, { CardHand } from './Card3D';
 import { CardSlotConfig, CARD_SCENE_CONFIG } from './cardLayouts';
+import CasinoEnvironment from './CasinoEnvironment';
 
+// Default timing constants
 const DEAL_INTERVAL_MS = 130;
 const DEAL_DURATION_MS = 560;
 const DEAL_ARC_HEIGHT = 0.5;
@@ -57,10 +59,12 @@ interface CardTableScene3DProps {
   skipRequested?: boolean;
   tableSize?: { width: number; depth: number; y: number };
   cardSize?: [number, number, number];
+  selectedHand?: CardHand; // Which hand the player bet on - that side gets green, opponent gets red
+  revealStaggerMs?: number; // Override for delay between each card flip (default 130ms)
 }
 
-const SHOE_POSITION = new THREE.Vector3(3.35, 0.62, 0.2);
-const SHOE_ROTATION = new THREE.Euler(-Math.PI / 2 + 0.45, Math.PI / 2, 0);
+const SHOE_POSITION = new THREE.Vector3(2.4, 0.45, 0.15);
+const SHOE_ROTATION = new THREE.Euler(-Math.PI / 2 + 0.4, Math.PI / 2, 0);
 
 const buildSlotInfo = (slots: CardSlotConfig[]) =>
   slots.map((slot) => ({
@@ -83,11 +87,17 @@ function CardTableScene({
   skipRequested,
   tableSize,
   cardSize,
+  selectedHand,
+  revealStaggerMs,
 }: CardTableScene3DProps) {
   const { camera, invalidate } = useThree();
+
+  // Use override or default for reveal stagger timing
+  const actualRevealStaggerMs = revealStaggerMs ?? REVEAL_STAGGER_MS;
   const slotInfos = useMemo(() => buildSlotInfo(slots), [slots]);
   const slotMap = useMemo(() => new Map(slotInfos.map((slot) => [slot.id, slot])), [slotInfos]);
-  const orderMap = useMemo(() => new Map(dealOrder.map((id, idx) => [id, idx])), [dealOrder]);
+  const orderKey = dealOrder.join('|');
+  const orderMap = useMemo(() => new Map(dealOrder.map((id, idx) => [id, idx])), [orderKey]);
   const cardRefs = useMemo(() => slotInfos.map(() => React.createRef<THREE.Group>()), [slotInfos]);
   const rigsRef = useRef<CardRig[]>([]);
   const cardsByIdRef = useRef(cardsById);
@@ -135,12 +145,13 @@ function CardTableScene({
   }
 
   useEffect(() => {
-    camera.position.set(0, fullscreen ? 4.4 : 4.1, fullscreen ? 5.4 : 5.0);
-    camera.fov = fullscreen ? 40 : 44;
-    camera.updateProjectionMatrix();
-    camera.lookAt(0, 0, 0);
+    // Higher angle, zoomed out view for floating cards
+    camera.position.set(0, fullscreen ? 4.5 : 4.0, fullscreen ? 5.0 : 4.5);
+    (camera as THREE.PerspectiveCamera).fov = fullscreen ? 42 : 46;
+    (camera as THREE.PerspectiveCamera).updateProjectionMatrix();
+    camera.lookAt(0, tableConfig.y + 0.2, 0);
     invalidate();
-  }, [camera, fullscreen, invalidate]);
+  }, [camera, fullscreen, invalidate, tableConfig.y]);
 
   useEffect(() => {
     if (!isAnimating) {
@@ -171,18 +182,26 @@ function CardTableScene({
     const revealSet = new Set(revealSlots);
 
     rigsRef.current.forEach((rig) => {
-      const card = cardsByIdRef.current[rig.slot.id];
+      const card = cardsById[rig.slot.id];  // Use current cardsById, not ref
       const isDeal = dealSet.has(rig.slot.id);
       const isReveal = revealSet.has(rig.slot.id);
+
+      // Full state reset for this animation
       rig.mode = isDeal ? 'deal' : isReveal ? 'reveal' : 'static';
       rig.dealStartMs = isDeal ? now + rig.sequenceIndex * DEAL_INTERVAL_MS : null;
-      rig.flipStartMs = isReveal ? now + REVEAL_DELAY_MS + rig.sequenceIndex * REVEAL_STAGGER_MS : null;
+      rig.flipStartMs = null;  // Always reset - will be set during animation if needed
       rig.dealt = !isDeal;
-      rig.flipProgress = isDeal || isReveal ? 0 : card && !card.isHidden ? 1 : 0;
+      rig.flipProgress = 0;  // Always start at 0 for animating slots
       rig.sfxPlayed = false;
+
       if (!rig.ref.current) return;
       rig.ref.current.visible = Boolean(card) || isDeal || isReveal;
-      if (rig.mode === 'static' && card) {
+
+      if (isDeal) {
+        // Reset position to shoe for deal animation
+        rig.ref.current.position.copy(rig.startPos);
+        rig.ref.current.rotation.copy(rig.startRot);
+      } else if (rig.mode === 'static' && card) {
         const flip = card.isHidden ? Math.PI : 0;
         rig.ref.current.position.copy(rig.slot.position);
         rig.ref.current.rotation.set(
@@ -190,9 +209,10 @@ function CardTableScene({
           rig.slot.rotation.y,
           rig.slot.rotation.z
         );
+        rig.flipProgress = card.isHidden ? 0 : 1;
       }
     });
-  }, [dealId, dealSlots, revealSlots, isAnimating]);
+  }, [dealId, dealSlots, revealSlots, isAnimating, cardsById]);
 
   useEffect(() => {
     if (!isAnimating || !skipRequested || skipHandledRef.current) return;
@@ -233,7 +253,8 @@ function CardTableScene({
         return;
       }
       anyActive = true;
-      rig.ref.current.visible = Boolean(card) || rig.mode !== 'static';
+      // Mode is 'deal' or 'reveal' here (static returned early) - always show during animation
+      rig.ref.current.visible = true;
 
       const startPos = rig.startPos;
       const startRot = rig.startRot;
@@ -258,7 +279,7 @@ function CardTableScene({
           THREE.MathUtils.lerp(startRot.z, rig.slot.rotation.z, eased)
         );
 
-        if (!rig.sfxPlayed && dealProgress > 0.12) {
+        if (!rig.sfxPlayed && dealProgress > 0.5) {
           rig.sfxPlayed = true;
           void playSfx('deal');
         }
@@ -268,7 +289,7 @@ function CardTableScene({
         }
 
         if (rig.dealt && card && !card.isHidden && rig.flipStartMs === null) {
-          rig.flipStartMs = now + REVEAL_DELAY_MS + rig.sequenceIndex * REVEAL_STAGGER_MS;
+          rig.flipStartMs = now + REVEAL_DELAY_MS + rig.sequenceIndex * actualRevealStaggerMs;
         }
 
         if (rig.flipStartMs !== null) {
@@ -294,7 +315,7 @@ function CardTableScene({
         }
 
         if (rig.flipStartMs === null) {
-          rig.flipStartMs = now + REVEAL_DELAY_MS + rig.sequenceIndex * REVEAL_STAGGER_MS;
+          rig.flipStartMs = now + REVEAL_DELAY_MS + rig.sequenceIndex * actualRevealStaggerMs;
         }
         const flipProgress = Math.min(1, Math.max(0, (now - rig.flipStartMs) / FLIP_DURATION_MS));
         rig.flipProgress = easeInOutCubic(flipProgress);
@@ -317,40 +338,39 @@ function CardTableScene({
 
   return (
     <>
+      {/* Pure black void */}
+      <color attach="background" args={['#000000']} />
+      <CasinoEnvironment />
+      {/* Lighting for floating cards */}
       <ambientLight intensity={0.6} />
       <directionalLight
-        position={[4, 6, 3]}
-        intensity={1.4}
-        castShadow={!isMobile}
-        shadow-mapSize-width={isMobile ? 512 : 1024}
-        shadow-mapSize-height={isMobile ? 512 : 1024}
+        position={[2, 5, 3]}
+        intensity={1.2}
+        castShadow={false}
       />
-      <pointLight position={[-3, 3, -2]} intensity={0.35} color="#00ff88" />
-      <pointLight position={[0, 3.2, 4.2]} intensity={0.3} color="#f8c07a" />
+      <pointLight position={[0, 3, 2]} intensity={0.4} color="#ffffff" />
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, tableConfig.y - 0.02, 0]} receiveShadow>
-        <planeGeometry args={[tableConfig.width, tableConfig.depth]} />
-        <meshStandardMaterial color="#10141b" roughness={0.9} metalness={0.05} />
-      </mesh>
+      {/* No table - cards float in void */}
 
-      <mesh position={[0, tableConfig.y - 0.03, 0]} receiveShadow>
-        <boxGeometry args={[tableConfig.width + 0.5, 0.08, tableConfig.depth + 0.5]} />
-        <meshStandardMaterial color="#0b0f13" roughness={0.95} metalness={0.05} />
-      </mesh>
-
-      <mesh position={[SHOE_POSITION.x, SHOE_POSITION.y - 0.05, SHOE_POSITION.z]} rotation={[0, Math.PI / 2, 0]} castShadow>
-        <boxGeometry args={[0.85, 0.45, 1.2]} />
-        <meshStandardMaterial color="#111827" roughness={0.6} metalness={0.15} />
-      </mesh>
-
-      {slotInfos.map((slot, idx) => (
-        <Card3D
-          key={slot.id}
-          ref={cardRefs[idx]}
-          card={cardsById[slot.id] ?? null}
-          size={resolvedCardSize}
-        />
-      ))}
+      {slotInfos.map((slot, idx) => {
+        // Determine isSelected based on slot prefix and selectedHand
+        let isSelected: boolean | undefined = undefined;
+        if (selectedHand) {
+          const slotHand = slot.id.startsWith('player') ? 'player' : slot.id.startsWith('banker') ? 'banker' : null;
+          if (slotHand) {
+            isSelected = slotHand === selectedHand;
+          }
+        }
+        return (
+          <Card3D
+            key={slot.id}
+            ref={cardRefs[idx]}
+            card={cardsById[slot.id] ?? null}
+            size={resolvedCardSize}
+            isSelected={isSelected}
+          />
+        );
+      })}
     </>
   );
 }
@@ -369,6 +389,8 @@ export const CardTableScene3D: React.FC<CardTableScene3DProps> = ({
   skipRequested,
   tableSize,
   cardSize,
+  selectedHand,
+  revealStaggerMs,
 }) => {
   const [sceneReady, setSceneReady] = useState(false);
 
@@ -383,7 +405,7 @@ export const CardTableScene3D: React.FC<CardTableScene3DProps> = ({
           setSceneReady(true);
         }}
         shadows={!isMobile}
-        camera={{ position: [0, 4.1, 5.0], fov: fullscreen ? 40 : 44 }}
+        camera={{ position: [0, 2.8, 3.5], fov: fullscreen ? 48 : 52 }}
       >
         <Suspense fallback={null}>
           <CardTableScene
@@ -400,6 +422,8 @@ export const CardTableScene3D: React.FC<CardTableScene3DProps> = ({
             skipRequested={skipRequested}
             tableSize={tableSize}
             cardSize={cardSize}
+            selectedHand={selectedHand}
+            revealStaggerMs={revealStaggerMs}
           />
         </Suspense>
       </Canvas>
