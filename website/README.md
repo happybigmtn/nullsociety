@@ -70,6 +70,21 @@ npm run build
 
 The built files will be in `website/dist/`.
 
+For a temporary build output (keeps the repo clean):
+
+```bash
+cd website
+npm run build:tmp
+```
+
+Cleanup helpers:
+
+```bash
+cd website
+npm run clean:dist
+npm run clean:wasm
+```
+
 ## Troubleshooting
 
 ### "Waiting for chain" error

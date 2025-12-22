@@ -7,20 +7,27 @@
  * - Throw impulse based on power/direction
  * - Rest detection for animation completion
  */
-import React, { useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
+import React, { useRef, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { RigidBody, RapierRigidBody } from '@react-three/rapier';
+import { CollisionEnterPayload, RigidBody, RapierRigidBody } from '@react-three/rapier';
 import * as THREE from 'three';
 import { DiceModel } from './DiceModel';
+import ImpactParticles, { ImpactParticlesHandle } from './ImpactParticles';
 import {
   getTargetQuaternion,
-  getCurrentTopFace,
+  getCurrentTopFaceFromQuaternion,
   calculateThrowImpulse,
   isDiceAtRest,
+  type RandomSource,
 } from './diceUtils';
 
 export interface PhysicsDiceRef {
-  throw: (power: number, direction: { x: number; z: number }, verticalImpulse?: number) => void;
+  throw: (
+    power: number,
+    direction: { x: number; z: number },
+    verticalImpulse?: number,
+    randomSource?: RandomSource
+  ) => void;
   reset: () => void;
   getPosition: (target: THREE.Vector3) => boolean;
   nudgeTo: (next: THREE.Vector3) => void;
@@ -53,6 +60,10 @@ interface PhysicsDiceProps {
 
 export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
   ({ position = [0, 2, 0], targetValue, onRest, size = 0.8, index = 0, settleBounds, collisionGroups }, ref) => {
+    const safeTargetValue =
+      typeof targetValue === 'number' && targetValue >= 1 && targetValue <= 6
+        ? targetValue
+        : undefined;
     const rigidBodyRef = useRef<RapierRigidBody>(null);
     const isThrownRef = useRef(false);
     const hasRestedRef = useRef(false);
@@ -62,11 +73,20 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
     const targetQuatRef = useRef<THREE.Quaternion | null>(null);
     const linVelRef = useRef(new THREE.Vector3());
     const angVelRef = useRef(new THREE.Vector3());
-    const currentEulerRef = useRef(new THREE.Euler());
     const currentQuatRef = useRef(new THREE.Quaternion());
+    const smoothQuatRef = useRef(new THREE.Quaternion());
+    const smoothPosRef = useRef(new THREE.Vector3());
+    const wobbleQuatRef = useRef(new THREE.Quaternion());
+    const wobbleAxisRef = useRef(new THREE.Vector3());
+    const localUpRef = useRef(new THREE.Vector3());
+    const topFaceInverseQuatRef = useRef(new THREE.Quaternion());
     const correctionQuatRef = useRef(new THREE.Quaternion());
     const inverseQuatRef = useRef(new THREE.Quaternion());
     const axisRef = useRef(new THREE.Vector3());
+    const staggerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const impactParticlesRef = useRef<ImpactParticlesHandle>(null);
+    const lastImpactMsRef = useRef(0);
+    const impactPointRef = useRef(new THREE.Vector3());
     const smoothSettleRef = useRef<{
       startMs: number;
       durationMs: number;
@@ -81,6 +101,7 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
     const hardSettleAfterMs = 1700;
     const forceSettleHeight = 0.8;
     const smoothSettleDurationMs = 640;
+    const impactCooldownMs = 90;
 
     const clampToBounds = (translation: { x: number; y: number; z: number }) => {
       if (!settleBounds) return translation;
@@ -149,18 +170,23 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
       hasRestedRef.current = false;
       restCheckCountRef.current = 0;
       smoothSettleRef.current = null;
-      targetQuatRef.current = targetValue ? getTargetQuaternion(targetValue) : null;
-    }, [targetValue]);
+      targetQuatRef.current = safeTargetValue ? getTargetQuaternion(safeTargetValue) : null;
+    }, [safeTargetValue]);
 
     // Expose throw and reset methods
     useImperativeHandle(ref, () => ({
-      throw: (power: number, direction: { x: number; z: number }, verticalImpulse?: number) => {
+      throw: (
+        power: number,
+        direction: { x: number; z: number },
+        verticalImpulse?: number,
+        randomSource?: RandomSource
+      ) => {
         if (!rigidBodyRef.current) return;
 
         isThrownRef.current = true;
         hasRestedRef.current = false;
         restCheckCountRef.current = 0;
-        throwStartRef.current = Date.now();
+        throwStartRef.current = performance.now();
         forcedSettleRef.current = false;
         smoothSettleRef.current = null;
 
@@ -169,7 +195,7 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
         enableDynamic();
 
         // Calculate impulse with slight delay offset for multiple dice
-        const impulse = calculateThrowImpulse(power, direction);
+        const impulse = calculateThrowImpulse(power, direction, randomSource);
         if (typeof verticalImpulse === 'number') {
           impulse.linear.y = verticalImpulse;
         }
@@ -178,7 +204,10 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
         const staggerDelay = index * 0.03;
         const staggerOffset = index * 0.35;
 
-        setTimeout(() => {
+        if (staggerTimeoutRef.current) {
+          clearTimeout(staggerTimeoutRef.current);
+        }
+        staggerTimeoutRef.current = setTimeout(() => {
           if (!rigidBodyRef.current) return;
 
           rigidBodyRef.current.applyImpulse(
@@ -194,6 +223,10 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
 
       reset: () => {
         if (!rigidBodyRef.current) return;
+        if (staggerTimeoutRef.current) {
+          clearTimeout(staggerTimeoutRef.current);
+          staggerTimeoutRef.current = null;
+        }
 
         isThrownRef.current = false;
         hasRestedRef.current = false;
@@ -234,11 +267,36 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
         rigidBodyRef.current.setEnabledRotations(false, false, false, true);
       },
       forceSettle: () => {
-        if (!rigidBodyRef.current || !targetValue) return;
+        if (!rigidBodyRef.current || !safeTargetValue) return;
         const translation = rigidBodyRef.current.translation();
-        completeSettle(targetValue, translation);
+        completeSettle(safeTargetValue, translation);
       },
     }));
+
+    useEffect(() => {
+      return () => {
+        if (staggerTimeoutRef.current) {
+          clearTimeout(staggerTimeoutRef.current);
+        }
+      };
+    }, []);
+
+    const handleCollisionEnter = useCallback((payload: CollisionEnterPayload) => {
+      if (!impactParticlesRef.current || !rigidBodyRef.current) return;
+      const now = performance.now();
+      if (now - lastImpactMsRef.current < impactCooldownMs) return;
+
+      const linvel = rigidBodyRef.current.linvel();
+      const speed = Math.sqrt(linvel.x * linvel.x + linvel.y * linvel.y + linvel.z * linvel.z);
+      if (speed < 2.2) return;
+
+      const contact = payload.manifold?.solverContactPoint(0);
+      if (!contact) return;
+      impactPointRef.current.set(contact.x, contact.y, contact.z);
+      const intensity = Math.min(1, speed / 9);
+      impactParticlesRef.current.emit(impactPointRef.current, intensity);
+      lastImpactMsRef.current = now;
+    }, []);
 
     // Physics frame update for outcome targeting and rest detection
     useFrame(() => {
@@ -248,8 +306,15 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
         const elapsed = performance.now() - settle.startMs;
         const t = Math.min(1, elapsed / settle.durationMs);
         const eased = 1 - Math.pow(1 - t, 3);
-        const nextQuat = settle.fromQuat.clone().slerp(settle.toQuat, eased);
-        const nextPos = settle.fromPos.clone().lerp(settle.toPos, eased);
+        const nextQuat = smoothQuatRef.current.copy(settle.fromQuat).slerp(settle.toQuat, eased);
+        const nextPos = smoothPosRef.current.copy(settle.fromPos).lerp(settle.toPos, eased);
+        if (t < 0.18) {
+          const wobbleT = t / 0.18;
+          const wobbleAmount = Math.sin(wobbleT * Math.PI * 4) * (1 - wobbleT) * 0.08;
+          wobbleAxisRef.current.set(0.6, 1, 0.4).normalize();
+          wobbleQuatRef.current.setFromAxisAngle(wobbleAxisRef.current, wobbleAmount);
+          nextQuat.multiply(wobbleQuatRef.current);
+        }
         rigidBodyRef.current.setTranslation({ x: nextPos.x, y: nextPos.y, z: nextPos.z }, true);
         rigidBodyRef.current.setRotation(nextQuat, true);
         if (t >= 1) {
@@ -268,64 +333,67 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
       const speed = linVelVec.length();
       const angSpeed = angVelVec.length();
       const translation = rigidBodyRef.current.translation();
-      const elapsedMs = throwStartRef.current ? Date.now() - throwStartRef.current : 0;
+      const elapsedMs = throwStartRef.current ? performance.now() - throwStartRef.current : 0;
       const softSettleReady = elapsedMs > softSettleAfterMs && translation.y < forceSettleHeight;
       const hardSettleReady = elapsedMs > hardSettleAfterMs && translation.y < forceSettleHeight;
 
       // Get current rotation state
       const rot = rigidBodyRef.current.rotation();
       const currentQuat = currentQuatRef.current.set(rot.x, rot.y, rot.z, rot.w);
-      const currentEuler = currentEulerRef.current.setFromQuaternion(currentQuat);
-      const currentTop = getCurrentTopFace(currentEuler);
+      const currentTop = getCurrentTopFaceFromQuaternion(
+        currentQuat,
+        localUpRef.current,
+        topFaceInverseQuatRef.current
+      );
 
       // Apply gentle correction when dice is slow and not showing target face
-      if (speed < 4.6 && angSpeed < 7.5 && targetValue && currentTop !== targetValue) {
+      if (speed < 4.6 && angSpeed < 7.5 && safeTargetValue && currentTop !== safeTargetValue) {
         const targetQuat = targetQuatRef.current;
         if (!targetQuat) {
           // Target quaternion not ready yet; skip correction this frame.
         } else {
-        // Calculate correction needed
-        const inverseQuat = inverseQuatRef.current.copy(currentQuat).invert();
-        const correctionQuat = correctionQuatRef.current.copy(targetQuat).multiply(inverseQuat);
-        const angle = 2 * Math.acos(Math.min(1, Math.abs(correctionQuat.w)));
+          // Calculate correction needed
+          const inverseQuat = inverseQuatRef.current.copy(currentQuat).invert();
+          const correctionQuat = correctionQuatRef.current.copy(targetQuat).multiply(inverseQuat);
+          const angle = 2 * Math.acos(Math.min(1, Math.abs(correctionQuat.w)));
 
-        if (angle > 0.1) {
-          const axis = axisRef.current.set(
-            correctionQuat.x,
-            correctionQuat.y,
-            correctionQuat.z
-          ).normalize();
+          if (angle > 0.1) {
+            const axis = axisRef.current.set(
+              correctionQuat.x,
+              correctionQuat.y,
+              correctionQuat.z
+            ).normalize();
 
-          // Gentle nudge - don't overpower physics
-          const speedFactor = Math.min(1, Math.max(0.35, speed / 4.6));
-          const nudgeStrength = Math.min(angle * 0.95 * speedFactor, 2.1);
-          rigidBodyRef.current.applyTorqueImpulse(
-            {
-              x: axis.x * nudgeStrength,
-              y: axis.y * nudgeStrength,
-              z: axis.z * nudgeStrength,
-            },
-            true
-          );
-        }
+            // Gentle nudge - don't overpower physics
+            const speedFactor = Math.min(1, Math.max(0.35, speed / 4.6));
+            const nudgeStrength = Math.min(angle * 0.95 * speedFactor, 2.1);
+            rigidBodyRef.current.applyTorqueImpulse(
+              {
+                x: axis.x * nudgeStrength,
+                y: axis.y * nudgeStrength,
+                z: axis.z * nudgeStrength,
+              },
+              true
+            );
+          }
         }
       }
 
-      if (forcedSettleRef.current && targetValue && !hasRestedRef.current) {
-        beginSmoothSettle(targetValue, translation);
+      if (forcedSettleRef.current && safeTargetValue && !hasRestedRef.current) {
+        beginSmoothSettle(safeTargetValue, translation);
         return;
       }
 
       if (softSettleReady && !forcedSettleRef.current) {
-        if (targetValue) {
-          beginSmoothSettle(targetValue, translation);
+        if (safeTargetValue) {
+          beginSmoothSettle(safeTargetValue, translation);
           return;
         }
       }
 
       if (hardSettleReady && !forcedSettleRef.current) {
-        if (targetValue) {
-          beginSmoothSettle(targetValue, translation);
+        if (safeTargetValue) {
+          beginSmoothSettle(safeTargetValue, translation);
           return;
         }
 
@@ -339,7 +407,7 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
 
       // Only consider "showing correct face" if we have a target value
       // If no target, we must wait for the chain response
-      if (!targetValue) {
+      if (!safeTargetValue) {
         // No target yet - keep physics running but don't settle
         // Reset counter so we'll need fresh rest frames once target arrives
         if (isAtRest) {
@@ -348,13 +416,13 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
         return;
       }
 
-      const showingCorrectFace = currentTop === targetValue;
+      const showingCorrectFace = currentTop === safeTargetValue;
 
       if (isAtRest && showingCorrectFace) {
         restCheckCountRef.current++;
         // Settle faster - 8 frames (~0.13 seconds at 60fps)
         if (restCheckCountRef.current > 8) {
-          beginSmoothSettle(targetValue, translation);
+          beginSmoothSettle(safeTargetValue, translation);
         }
       } else if (isAtRest && !showingCorrectFace) {
         // At rest but wrong face - give it a nudge
@@ -365,20 +433,24 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
     });
 
     return (
-      <RigidBody
-        ref={rigidBodyRef}
-        position={position}
-        colliders="cuboid"
-        collisionGroups={collisionGroups}
-        restitution={0.3}
-        friction={0.25}
-        mass={1}
-        linearDamping={0.45}
-        angularDamping={0.5}
-        ccd
-      >
-        <DiceModel size={size} />
-      </RigidBody>
+      <>
+        <RigidBody
+          ref={rigidBodyRef}
+          position={position}
+          colliders="cuboid"
+          collisionGroups={collisionGroups}
+          restitution={0.3}
+          friction={0.25}
+          mass={1}
+          linearDamping={0.45}
+          angularDamping={0.5}
+          ccd
+          onCollisionEnter={handleCollisionEnter}
+        >
+          <DiceModel size={size} />
+        </RigidBody>
+        <ImpactParticles ref={impactParticlesRef} />
+      </>
     );
   }
 );

@@ -12,6 +12,7 @@ const SicBoScene3D = lazy(() =>
 
 interface SicBoDice3DWrapperProps {
   diceValues: number[];
+  resultId?: number;
   isRolling?: boolean;
   onRoll: () => void;
   isMobile?: boolean;
@@ -44,6 +45,7 @@ const Dice2D: React.FC<{ values: number[] }> = ({ values }) => (
 
 export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
   diceValues,
+  resultId,
   isRolling = false,
   onRoll,
   isMobile = false,
@@ -223,6 +225,7 @@ export const SicBoDice3DWrapper: React.FC<SicBoDice3DWrapperProps> = ({
           <Suspense fallback={<Scene3DLoader />}>
             <SicBoScene3D
               targetValues={targetValues}
+              resultId={resultId}
               isAnimating={isAnimating}
               onRoll={handleRoll}
               onAnimationComplete={handleAnimationComplete}

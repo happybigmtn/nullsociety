@@ -1,11 +1,14 @@
 /**
  * 3D Sic Bo Scene - Triple dice roll with chain-resolved values.
  */
-import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Physics, RigidBody, CuboidCollider, interactionGroups } from '@react-three/rapier';
 import * as THREE from 'three';
 import { PhysicsDice, PhysicsDiceRef } from './PhysicsDice';
+import { createRoundRng } from './engine';
+import CasinoEnvironment from './CasinoEnvironment';
+import ResultPulse from './ResultPulse';
 
 const TABLE_CONFIG = {
   width: 5.0,
@@ -41,10 +44,24 @@ const SETTLE_BOUNDS = {
 
 const CAMERA_POS = new THREE.Vector3(0, 4.4, 5.6);
 const CAMERA_FOV = 46;
+const CAMERA_SETTLE_FOV = 40;
+const CAMERA_SETTLE_DURATION_MS = 900;
+const CAMERA_ORBIT_RADIUS = 0.35;
+const CAMERA_ORBIT_ECCENTRICITY = 0.6;
 const COMPLETE_DELAY_MS = 600;
+
+const MAGNET_ANCHOR_Z = 0.85;
+const MAGNET_DURATION_MS = 900;
+const MAGNET_LOCK_EPS = 0.02;
+const TRIANGLE_OFFSETS: Array<[number, number, number]> = [
+  [0, 0, DICE_SIZE * 0.7],
+  [-DICE_SIZE * 0.65, 0, -DICE_SIZE * 0.38],
+  [DICE_SIZE * 0.65, 0, -DICE_SIZE * 0.38],
+];
 
 interface SicBoScene3DProps {
   targetValues?: [number, number, number];
+  resultId?: number;
   isAnimating: boolean;
   onRoll?: () => void;
   onAnimationComplete?: () => void;
@@ -149,14 +166,64 @@ function Walls() {
   );
 }
 
+function SicBoCameraRig({
+  isSettled,
+  diceCenter,
+}: {
+  isSettled: boolean;
+  diceCenter: React.MutableRefObject<THREE.Vector3>;
+}) {
+  const { camera } = useThree();
+  const targetPos = useRef(new THREE.Vector3());
+  const orbitPos = useRef(new THREE.Vector3());
+  const settlePos = useRef(new THREE.Vector3(0, 4.8, 4.7));
+  const smoothLookAt = useRef(new THREE.Vector3(0, 0, 0));
+  const settleStartMs = useRef<number | null>(null);
+  const orbitAngle = useRef(0);
+
+  useFrame((_, delta) => {
+    const lerpSpeed = 1 - Math.exp(-3.2 * delta);
+    let settleProgress = 0;
+
+    if (!isSettled) {
+      orbitAngle.current = (orbitAngle.current + 0.3 * delta) % (Math.PI * 2);
+      settleStartMs.current = null;
+    } else {
+      if (settleStartMs.current === null) {
+        settleStartMs.current = performance.now();
+      }
+      const elapsed = performance.now() - settleStartMs.current;
+      settleProgress = Math.min(1, elapsed / CAMERA_SETTLE_DURATION_MS);
+    }
+
+    orbitPos.current.set(
+      Math.cos(orbitAngle.current) * CAMERA_ORBIT_RADIUS,
+      CAMERA_POS.y,
+      CAMERA_POS.z + Math.sin(orbitAngle.current) * CAMERA_ORBIT_RADIUS * CAMERA_ORBIT_ECCENTRICITY
+    );
+    targetPos.current.copy(orbitPos.current).lerp(settlePos.current, settleProgress);
+
+    camera.position.lerp(targetPos.current, lerpSpeed);
+    smoothLookAt.current.lerp(diceCenter.current, lerpSpeed);
+    const targetFov = THREE.MathUtils.lerp(CAMERA_FOV, CAMERA_SETTLE_FOV, settleProgress);
+    camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, lerpSpeed);
+    camera.updateProjectionMatrix();
+    camera.lookAt(smoothLookAt.current);
+  });
+
+  return null;
+}
+
 function DiceScene({
   targetValues,
+  resultId,
   isAnimating,
   onAnimationComplete,
   isMobile,
   skipRequested,
 }: {
   targetValues?: [number, number, number];
+  resultId?: number;
   isAnimating: boolean;
   onAnimationComplete?: () => void;
   isMobile?: boolean;
@@ -168,9 +235,38 @@ function DiceScene({
     useRef<PhysicsDiceRef>(null),
   ];
   const [settled, setSettled] = useState<[boolean, boolean, boolean]>([false, false, false]);
+  const [pulseId, setPulseId] = useState(0);
+  const [triplePulseId, setTriplePulseId] = useState(0);
   const hasThrown = useRef(false);
   const completionRef = useRef(false);
   const skipHandledRef = useRef(false);
+  const pulseTriggeredRef = useRef(false);
+  const tripleTriggeredRef = useRef(false);
+  const throwTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dicePositions = useRef([
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+  ]);
+  const magnetizedPositions = useRef([
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+  ]);
+  const magnetTargets = useRef([
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+  ]);
+  const magnetOffsets = useRef(
+    TRIANGLE_OFFSETS.map((offset) => new THREE.Vector3(offset[0], offset[1], offset[2]))
+  );
+  const magnetStartMs = useRef<number | null>(null);
+  const magnetLocked = useRef(false);
+  const magnetAnchor = useRef(new THREE.Vector3(0, SETTLE_BOUNDS.settleY, 0));
+  const rngRef = useRef<ReturnType<typeof createRoundRng> | null>(null);
+  const diceCenter = useRef(new THREE.Vector3(0, 0, 0));
+  const diceCenterTarget = useRef(new THREE.Vector3(0, 0, 0));
 
   const finishAnimation = useCallback((delayMs: number) => {
     if (completionRef.current) return;
@@ -184,20 +280,37 @@ function DiceScene({
     if (!isAnimating) return;
     completionRef.current = false;
     skipHandledRef.current = false;
+    pulseTriggeredRef.current = false;
+    tripleTriggeredRef.current = false;
   }, [isAnimating]);
+
+  useEffect(() => {
+    const edgePad = DICE_SIZE * 0.8;
+    const clampedZ = Math.min(
+      SETTLE_BOUNDS.maxZ - edgePad,
+      Math.max(SETTLE_BOUNDS.minZ + edgePad, MAGNET_ANCHOR_Z)
+    );
+    magnetAnchor.current.set(0, SETTLE_BOUNDS.settleY, clampedZ);
+  }, []);
 
   useEffect(() => {
     if (isAnimating && !hasThrown.current) {
       hasThrown.current = true;
+      rngRef.current = createRoundRng('sicbo', typeof resultId === 'number' ? resultId : 0);
       setSettled([false, false, false]);
       diceRefs.forEach((ref) => ref.current?.reset());
 
-      setTimeout(() => {
-        const power = 1.45 + Math.random() * 0.35;
+      if (throwTimeoutRef.current) {
+        clearTimeout(throwTimeoutRef.current);
+      }
+      throwTimeoutRef.current = setTimeout(() => {
+        const rng = rngRef.current ?? createRoundRng('sicbo', typeof resultId === 'number' ? resultId : 0);
+        const power = 1.45 + rng.next() * 0.35;
         diceRefs.forEach((ref, index) => {
-          const dir = { x: (Math.random() - 0.5) * 0.35, z: -1 };
-          const downwardImpulse = -1.0 - Math.random() * 0.35;
-          ref.current?.throw(power, dir, downwardImpulse + index * -0.1);
+          const dir = { x: (rng.next() - 0.5) * 0.35, z: -1 };
+          const downwardImpulse = -1.0 - rng.next() * 0.35;
+          const randomSource = () => rng.next();
+          ref.current?.throw(power, dir, downwardImpulse + index * -0.1, randomSource);
         });
       }, 50);
     }
@@ -205,7 +318,15 @@ function DiceScene({
     if (!isAnimating) {
       hasThrown.current = false;
     }
-  }, [isAnimating]);
+  }, [isAnimating, resultId]);
+
+  useEffect(() => {
+    return () => {
+      if (throwTimeoutRef.current) {
+        clearTimeout(throwTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleRest = useCallback((idx: number) => {
     setSettled((prev) => {
@@ -215,11 +336,41 @@ function DiceScene({
     });
   }, []);
 
+  const restHandlers = useMemo(
+    () => [
+      () => handleRest(0),
+      () => handleRest(1),
+      () => handleRest(2),
+    ],
+    [handleRest]
+  );
+
   useEffect(() => {
     if (settled.every(Boolean) && isAnimating) {
       finishAnimation(COMPLETE_DELAY_MS);
     }
   }, [settled, isAnimating, finishAnimation]);
+
+  const isTriple = Boolean(
+    targetValues &&
+    targetValues.length === 3 &&
+    targetValues[0] === targetValues[1] &&
+    targetValues[1] === targetValues[2]
+  );
+
+  useEffect(() => {
+    if (!isAnimating || pulseTriggeredRef.current) return;
+    if (!settled.every(Boolean)) return;
+    pulseTriggeredRef.current = true;
+    setPulseId((prev) => prev + 1);
+  }, [isAnimating, settled]);
+
+  useEffect(() => {
+    if (!isAnimating || tripleTriggeredRef.current) return;
+    if (!settled.every(Boolean) || !isTriple) return;
+    tripleTriggeredRef.current = true;
+    setTriplePulseId((prev) => prev + 1);
+  }, [isAnimating, settled, isTriple]);
 
   useEffect(() => {
     if (!isAnimating || !skipRequested || skipHandledRef.current) return;
@@ -230,8 +381,98 @@ function DiceScene({
     finishAnimation(200);
   }, [isAnimating, skipRequested, targetValues, finishAnimation]);
 
+  useFrame(() => {
+    let allPositionsReady = true;
+    diceRefs.forEach((ref, idx) => {
+      const hasPos = ref.current?.getPosition(dicePositions.current[idx]) ?? false;
+      if (!hasPos) {
+        allPositionsReady = false;
+      }
+    });
+    if (!allPositionsReady) return;
+
+    const now = performance.now();
+    const allSettled = settled.every(Boolean);
+
+    if (allSettled) {
+      if (magnetStartMs.current === null) {
+        magnetStartMs.current = now;
+        magnetLocked.current = false;
+      }
+
+      const magnetProgress = Math.min(1, (now - magnetStartMs.current) / MAGNET_DURATION_MS);
+      if (!magnetLocked.current) {
+        const eased = 1 - Math.pow(1 - magnetProgress, 3);
+        const lerpFactor = 0.12 + eased * 0.35;
+        let maxDist = 0;
+
+        magnetOffsets.current.forEach((offset, idx) => {
+          magnetTargets.current[idx].copy(magnetAnchor.current).add(offset);
+          magnetTargets.current[idx].set(
+            Math.min(SETTLE_BOUNDS.maxX, Math.max(SETTLE_BOUNDS.minX, magnetTargets.current[idx].x)),
+            SETTLE_BOUNDS.settleY,
+            Math.min(SETTLE_BOUNDS.maxZ, Math.max(SETTLE_BOUNDS.minZ, magnetTargets.current[idx].z))
+          );
+
+          magnetizedPositions.current[idx].lerpVectors(
+            dicePositions.current[idx],
+            magnetTargets.current[idx],
+            lerpFactor
+          );
+
+          maxDist = Math.max(
+            maxDist,
+            magnetizedPositions.current[idx].distanceTo(magnetTargets.current[idx])
+          );
+
+          diceRefs[idx].current?.nudgeTo(magnetizedPositions.current[idx]);
+          dicePositions.current[idx].copy(magnetizedPositions.current[idx]);
+        });
+
+        if (magnetProgress > 0.9 && maxDist < MAGNET_LOCK_EPS) {
+          magnetLocked.current = true;
+          diceRefs.forEach((ref) => ref.current?.lock());
+        }
+      }
+    } else {
+      magnetStartMs.current = null;
+      magnetLocked.current = false;
+    }
+
+    diceCenterTarget.current
+      .copy(dicePositions.current[0])
+      .add(dicePositions.current[1])
+      .add(dicePositions.current[2])
+      .multiplyScalar(1 / 3);
+
+    if (allSettled) {
+      diceCenter.current.copy(diceCenterTarget.current);
+    } else {
+      diceCenter.current.lerp(diceCenterTarget.current, 0.15);
+    }
+  });
+
   return (
     <>
+      <CasinoEnvironment />
+      <SicBoCameraRig isSettled={settled.every(Boolean)} diceCenter={diceCenter} />
+      <ResultPulse
+        trigger={pulseId}
+        positionRef={diceCenter}
+        radius={0.26}
+        thickness={0.12}
+        maxScale={3.6}
+        yOffset={0.04}
+      />
+      <ResultPulse
+        trigger={triplePulseId}
+        positionRef={diceCenter}
+        color="#facc15"
+        radius={0.32}
+        thickness={0.18}
+        maxScale={4.2}
+        yOffset={0.05}
+      />
       <ambientLight intensity={0.6} />
       <directionalLight
         position={[3, 6, 4]}
@@ -243,7 +484,7 @@ function DiceScene({
       <pointLight position={[-2, 3, 2]} intensity={0.35} color="#00ff88" />
 
       <Physics
-        gravity={[0, -24, 0]}
+        gravity={[0, -25, 0]}
         timeStep={isMobile ? 1 / 45 : 1 / 60}
         maxCcdSubsteps={4}
         numSolverIterations={8}
@@ -258,7 +499,7 @@ function DiceScene({
           ref={diceRefs[0]}
           position={[-DICE_SPREAD_X, DICE_START_Y, DICE_START_Z]}
           targetValue={targetValues?.[0]}
-          onRest={() => handleRest(0)}
+          onRest={restHandlers[0]}
           index={0}
           size={DICE_SIZE}
           settleBounds={SETTLE_BOUNDS}
@@ -268,7 +509,7 @@ function DiceScene({
           ref={diceRefs[1]}
           position={[0, DICE_START_Y + 0.1, DICE_START_Z - DICE_SPREAD_Z]}
           targetValue={targetValues?.[1]}
-          onRest={() => handleRest(1)}
+          onRest={restHandlers[1]}
           index={1}
           size={DICE_SIZE}
           settleBounds={SETTLE_BOUNDS}
@@ -278,7 +519,7 @@ function DiceScene({
           ref={diceRefs[2]}
           position={[DICE_SPREAD_X, DICE_START_Y, DICE_START_Z]}
           targetValue={targetValues?.[2]}
-          onRest={() => handleRest(2)}
+          onRest={restHandlers[2]}
           index={2}
           size={DICE_SIZE}
           settleBounds={SETTLE_BOUNDS}
@@ -291,6 +532,7 @@ function DiceScene({
 
 export const SicBoScene3D: React.FC<SicBoScene3DProps> = ({
   targetValues,
+  resultId,
   isAnimating,
   onRoll,
   onAnimationComplete,
@@ -317,6 +559,7 @@ export const SicBoScene3D: React.FC<SicBoScene3DProps> = ({
         <Suspense fallback={null}>
           <DiceScene
             targetValues={targetValues}
+            resultId={resultId}
             isAnimating={isAnimating}
             onAnimationComplete={onAnimationComplete}
             isMobile={isMobile}

@@ -290,6 +290,7 @@ export const CrapsView = React.memo<{
                 {/* Dice Area - 3D/2D Toggle */}
                 <CrapsDice3DWrapper
                     diceValues={gameState.dice}
+                    resultId={gameState.crapsRollHistory.length}
                     isRolling={gameState.message === 'ROLLING...'}
                     onRoll={() => actions?.rollCraps?.()}
                     isMobile={isMobile}

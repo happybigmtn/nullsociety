@@ -241,6 +241,7 @@ export const BaccaratView = React.memo<{
                     isPlayerSelected={isPlayerSelected}
                     isBankerSelected={isBankerSelected}
                     isDealing={gameState.message === 'DEALING...'}
+                    superMode={gameState.superMode}
                     isMobile={isMobile}
                     onAnimationBlockingChange={onAnimationBlockingChange}
                 >

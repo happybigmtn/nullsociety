@@ -12,6 +12,8 @@
  */
 import * as THREE from 'three';
 
+export type RandomSource = () => number;
+
 // Euler rotations (in radians) that place each face on top (+Y)
 // Starting layout per DiceModel: +X=3, -X=4, +Y=1, -Y=6, +Z=2, -Z=5
 export const FACE_ROTATIONS: Record<number, [number, number, number]> = {
@@ -36,26 +38,30 @@ export function getTargetQuaternion(faceValue: number): THREE.Quaternion {
 /**
  * Determine which face is currently on top based on current rotation
  */
-export function getCurrentTopFace(rotation: THREE.Euler): number {
-  // Create up vector and transform by inverse rotation to see which original axis points up
-  const upWorld = new THREE.Vector3(0, 1, 0);
-  const quat = new THREE.Quaternion().setFromEuler(rotation);
-  const quatInv = quat.clone().invert();
-  const localUp = upWorld.clone().applyQuaternion(quatInv);
+export function getCurrentTopFaceFromQuaternion(
+  quat: THREE.Quaternion,
+  localUp: THREE.Vector3,
+  inverseQuat: THREE.Quaternion
+): number {
+  inverseQuat.copy(quat).invert();
+  localUp.set(0, 1, 0).applyQuaternion(inverseQuat);
 
-  // Find which axis is most aligned with local up
   const absX = Math.abs(localUp.x);
   const absY = Math.abs(localUp.y);
   const absZ = Math.abs(localUp.z);
 
   if (absY >= absX && absY >= absZ) {
     return localUp.y > 0 ? 1 : 6;
-  } else if (absX >= absZ) {
-    // +X face = 3, -X face = 4 (per DiceModel FACE_VALUES)
-    return localUp.x > 0 ? 3 : 4;
-  } else {
-    return localUp.z > 0 ? 2 : 5;
   }
+  if (absX >= absZ) {
+    return localUp.x > 0 ? 3 : 4;
+  }
+  return localUp.z > 0 ? 2 : 5;
+}
+
+export function getCurrentTopFace(rotation: THREE.Euler): number {
+  const quat = new THREE.Quaternion().setFromEuler(rotation);
+  return getCurrentTopFaceFromQuaternion(quat, new THREE.Vector3(), new THREE.Quaternion());
 }
 
 /**
@@ -64,7 +70,8 @@ export function getCurrentTopFace(rotation: THREE.Euler): number {
  */
 export function calculateThrowImpulse(
   power: number,
-  direction: { x: number; z: number }
+  direction: { x: number; z: number },
+  random: RandomSource = Math.random
 ): { linear: THREE.Vector3; angular: THREE.Vector3 } {
   // Slightly stronger throw for extra momentum while keeping dice contained
   const basePower = 10 + power * 6; // Range: 10.0-16.0 units
@@ -76,8 +83,8 @@ export function calculateThrowImpulse(
   const normZ = direction.z / len;
 
   // Add slight randomness for natural feel
-  const randX = (Math.random() - 0.5) * 0.12;
-  const randZ = (Math.random() - 0.5) * 0.12;
+  const randX = (random() - 0.5) * 0.12;
+  const randZ = (random() - 0.5) * 0.12;
 
   return {
     linear: new THREE.Vector3(
@@ -87,9 +94,9 @@ export function calculateThrowImpulse(
     ),
     // Good angular velocity for tumbling
     angular: new THREE.Vector3(
-      (Math.random() - 0.5) * 16 * power,
-      (Math.random() - 0.5) * 16 * power,
-      (Math.random() - 0.5) * 16 * power
+      (random() - 0.5) * 16 * power,
+      (random() - 0.5) * 16 * power,
+      (random() - 0.5) * 16 * power
     ),
   };
 }

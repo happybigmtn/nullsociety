@@ -245,6 +245,7 @@ export const SicBoView = React.memo<{
                 {/* Dice Display */}
                 <SicBoDice3DWrapper
                     diceValues={gameState.dice}
+                    resultId={gameState.sicBoHistory.length}
                     isRolling={isRolling}
                     onRoll={() => actions?.deal?.()}
                     isMobile={isMobile}

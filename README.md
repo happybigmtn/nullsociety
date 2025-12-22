@@ -49,6 +49,31 @@ cargo run --release --bin test-transactions -- --url http://localhost:8080 --cou
 - Block explorer: `http://localhost:8080/explorer`
 - Metrics: `http://localhost:9090/metrics` (per node: 9090-9093)
 
+## Generated Artifacts and Cleanup
+
+Local development creates large artifacts that are ignored in git:
+
+- `data/`: local node state (configured via `configs/local/node*.yaml`).
+- `website/dist/`: frontend production build output.
+- `website/wasm/pkg`: wasm-pack output (recreated on demand).
+
+Cleanup shortcuts:
+
+```bash
+./scripts/prune-node-data.sh
+./scripts/start-local-network.sh --fresh
+./scripts/prune-dev-artifacts.sh            # data/ + website/dist
+./scripts/prune-dev-artifacts.sh --all      # data/ + dist + wasm pkg
+```
+
+Temporary frontend builds (avoid `website/dist/` during tests):
+
+```bash
+cd website && pnpm build:tmp
+```
+
+The output will be written to `/tmp/nullsociety-dist`.
+
 ## Components
 
 _Components are designed for deployment in adversarial environments. If you find an exploit, please refer to our [security policy](./SECURITY.md) before disclosing it publicly (an exploit may equip a malicious party to attack users of a primitive)._

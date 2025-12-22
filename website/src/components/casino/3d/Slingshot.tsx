@@ -9,7 +9,7 @@
  * - Haptic feedback on release
  */
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { animated, useSpring } from '@react-spring/web';
+import { animated, to, useSpring } from '@react-spring/web';
 
 interface SlingshotProps {
   /** Whether the slingshot is active */
@@ -253,9 +253,9 @@ export const Slingshot: React.FC<SlingshotProps> = ({ active, onFling, size = 20
           top: size / 2 - 30,
           width: 60,
           height: 60,
-          transform: diceSpring.x.to(
-            (x) =>
-              `translate(${diceSpring.x.get()}px, ${diceSpring.y.get()}px) scale(${diceSpring.scale.get()})`
+          transform: to(
+            [diceSpring.x, diceSpring.y, diceSpring.scale],
+            (x, y, scale) => `translate(${x}px, ${y}px) scale(${scale})`
           ),
         }}
       >

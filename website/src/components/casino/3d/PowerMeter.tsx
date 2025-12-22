@@ -28,7 +28,8 @@ export const PowerMeter: React.FC<PowerMeterProps> = ({
 }) => {
   const [isCharging, setIsCharging] = useState(false);
   const [power, setPower] = useState(0);
-  const chargeIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const chargeRafRef = useRef<number | null>(null);
+  const isChargingRef = useRef(false);
   const startTimeRef = useRef<number>(0);
 
   // Spring animation for the meter fill
@@ -48,31 +49,39 @@ export const PowerMeter: React.FC<PowerMeterProps> = ({
 
   // Start charging
   const startCharge = useCallback(() => {
-    if (!active) return;
+    if (!active || isChargingRef.current) return;
+    isChargingRef.current = true;
     setIsCharging(true);
-    startTimeRef.current = Date.now();
+    startTimeRef.current = performance.now();
 
-    // Charge up over ~1.5 seconds
-    chargeIntervalRef.current = setInterval(() => {
-      const elapsed = Date.now() - startTimeRef.current;
+    const tick = () => {
+      if (!isChargingRef.current) return;
+      const elapsed = performance.now() - startTimeRef.current;
       const newPower = Math.min(1, elapsed / 1500);
       setPower(newPower);
-    }, 16);
+      if (newPower < 1) {
+        chargeRafRef.current = requestAnimationFrame(tick);
+      }
+    };
+
+    chargeRafRef.current = requestAnimationFrame(tick);
   }, [active]);
 
   // Release and throw
   const releaseCharge = useCallback(() => {
-    if (!isCharging) return;
+    if (!isChargingRef.current) return;
 
+    isChargingRef.current = false;
     setIsCharging(false);
-    if (chargeIntervalRef.current) {
-      clearInterval(chargeIntervalRef.current);
+    if (chargeRafRef.current) {
+      cancelAnimationFrame(chargeRafRef.current);
+      chargeRafRef.current = null;
     }
 
     // Call back with current power, then reset
     onRelease(power);
     setPower(0);
-  }, [isCharging, power, onRelease]);
+  }, [power, onRelease]);
 
   // Keyboard handlers
   useEffect(() => {
@@ -101,12 +110,14 @@ export const PowerMeter: React.FC<PowerMeterProps> = ({
     };
   }, [active, disableKeyboard, triggerKey, startCharge, releaseCharge]);
 
-  // Cleanup interval on unmount
+  // Cleanup animation frame on unmount
   useEffect(() => {
     return () => {
-      if (chargeIntervalRef.current) {
-        clearInterval(chargeIntervalRef.current);
+      if (chargeRafRef.current) {
+        cancelAnimationFrame(chargeRafRef.current);
+        chargeRafRef.current = null;
       }
+      isChargingRef.current = false;
     };
   }, []);
 

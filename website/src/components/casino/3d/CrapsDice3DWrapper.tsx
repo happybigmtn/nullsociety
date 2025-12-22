@@ -16,6 +16,7 @@ const CrapsScene3D = lazy(() =>
 
 interface CrapsDice3DWrapperProps {
   diceValues: number[];
+  resultId?: number;
   isRolling?: boolean;
   onRoll: () => void;
   isMobile?: boolean;
@@ -50,6 +51,7 @@ const Dice2D: React.FC<{ values: number[] }> = ({ values }) => (
 
 export const CrapsDice3DWrapper: React.FC<CrapsDice3DWrapperProps> = ({
   diceValues,
+  resultId,
   isRolling = false,
   onRoll,
   isMobile = false,
@@ -236,6 +238,7 @@ export const CrapsDice3DWrapper: React.FC<CrapsDice3DWrapperProps> = ({
           <Suspense fallback={<Scene3DLoader />}>
             <CrapsScene3D
               targetValues={targetValues}
+              resultId={resultId}
               isAnimating={isAnimating}
               onRoll={handleRoll}
               onAnimationComplete={handleAnimationComplete}

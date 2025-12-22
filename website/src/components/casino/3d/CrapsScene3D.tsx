@@ -9,6 +9,9 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Physics, RigidBody, CuboidCollider, interactionGroups } from '@react-three/rapier';
 import * as THREE from 'three';
 import { PhysicsDice, PhysicsDiceRef } from './PhysicsDice';
+import { createRoundRng } from './engine';
+import CasinoEnvironment from './CasinoEnvironment';
+import ResultPulse from './ResultPulse';
 
 const TABLE_CONFIG = {
   width: 5.6,
@@ -54,6 +57,7 @@ const CAMERA_SETTLE_DURATION_MS = 1000;
 
 interface CrapsScene3DProps {
   targetValues?: [number, number];
+  resultId?: number;
   isAnimating: boolean;
   onRoll?: () => void;
   onAnimationComplete?: () => void;
@@ -189,7 +193,7 @@ function AnimatedCamera({
   const upTarget = useRef(new THREE.Vector3());
 
   useFrame((_, delta) => {
-    const lerpSpeed = 3.2 * delta;
+    const lerpSpeed = 1 - Math.exp(-3.2 * delta);
     const orbitSpeed = 0.35;
     let settleProgress = 0;
 
@@ -243,12 +247,14 @@ function AnimatedCamera({
 // Inner scene component that has access to Three.js context
 function DiceScene({
   targetValues,
+  resultId,
   isAnimating,
   onAnimationComplete,
   isMobile,
   skipRequested,
 }: {
   targetValues?: [number, number];
+  resultId?: number;
   isAnimating: boolean;
   onAnimationComplete?: () => void;
   isMobile?: boolean;
@@ -258,9 +264,12 @@ function DiceScene({
   const dice2Ref = useRef<PhysicsDiceRef>(null);
   const [settled, setSettled] = useState<[boolean, boolean]>([false, false]);
   const [cameraSettled, setCameraSettled] = useState(false);
+  const [pulseId, setPulseId] = useState(0);
   const hasThrown = useRef(false);
   const completionRef = useRef(false);
   const skipHandledRef = useRef(false);
+  const pulseTriggeredRef = useRef(false);
+  const throwTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const diceCenter = useRef(new THREE.Vector3(0, 0, 0));
   const diceCenterTarget = useRef(new THREE.Vector3(0, 0, 0));
   const dice1Pos = useRef(new THREE.Vector3());
@@ -272,11 +281,13 @@ function DiceScene({
   const magnetStartMs = useRef<number | null>(null);
   const magnetLocked = useRef(false);
   const magnetAnchor = useRef(new THREE.Vector3(0, SETTLE_BOUNDS.settleY, 0));
+  const rngRef = useRef<ReturnType<typeof createRoundRng> | null>(null);
 
   useEffect(() => {
     if (!isAnimating) return;
     completionRef.current = false;
     skipHandledRef.current = false;
+    pulseTriggeredRef.current = false;
   }, [isAnimating]);
 
   const finishAnimation = useCallback((delayMs: number) => {
@@ -300,6 +311,7 @@ function DiceScene({
   useEffect(() => {
     if (isAnimating && !hasThrown.current) {
       hasThrown.current = true;
+      rngRef.current = createRoundRng('craps', typeof resultId === 'number' ? resultId : 0);
       setSettled([false, false]);
       setCameraSettled(false);
       diceCenter.current.set(0, DICE_START_Y, DICE_START_Z);
@@ -309,14 +321,19 @@ function DiceScene({
       dice2Ref.current?.reset();
 
       // Throw after a frame to ensure physics is ready
-      setTimeout(() => {
+      if (throwTimeoutRef.current) {
+        clearTimeout(throwTimeoutRef.current);
+      }
+      throwTimeoutRef.current = setTimeout(() => {
+        const rng = rngRef.current ?? createRoundRng('craps', typeof resultId === 'number' ? resultId : 0);
         // Stronger, downward-biased toss from the shooter toward the table
-        const power = 1.5 + Math.random() * 0.35;
+        const power = 1.5 + rng.next() * 0.35;
         // Throw toward back wall (negative Z is away from camera)
-        const dir = { x: (Math.random() - 0.5) * 0.22, z: -1 };
-        const downwardImpulse = -1.1 - Math.random() * 0.35;
-        dice1Ref.current?.throw(power, dir, downwardImpulse);
-        dice2Ref.current?.throw(power, dir, downwardImpulse);
+        const dir = { x: (rng.next() - 0.5) * 0.22, z: -1 };
+        const downwardImpulse = -1.1 - rng.next() * 0.35;
+        const randomSource = () => rng.next();
+        dice1Ref.current?.throw(power, dir, downwardImpulse, randomSource);
+        dice2Ref.current?.throw(power, dir, downwardImpulse, randomSource);
       }, 50);
     }
 
@@ -324,7 +341,15 @@ function DiceScene({
       hasThrown.current = false;
     }
 
-  }, [isAnimating]);
+  }, [isAnimating, resultId]);
+
+  useEffect(() => {
+    return () => {
+      if (throwTimeoutRef.current) {
+        clearTimeout(throwTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleDice1Rest = useCallback(() => {
     setSettled(prev => [true, prev[1]]);
@@ -344,6 +369,13 @@ function DiceScene({
       finishAnimation(CAMERA_SETTLE_DURATION_MS);
     }
   }, [settled, isAnimating, finishAnimation]);
+
+  useEffect(() => {
+    if (!isAnimating || pulseTriggeredRef.current) return;
+    if (!settled[0] || !settled[1]) return;
+    pulseTriggeredRef.current = true;
+    setPulseId((prev) => prev + 1);
+  }, [isAnimating, settled]);
 
   useEffect(() => {
     if (!isAnimating || !skipRequested || skipHandledRef.current) return;
@@ -423,7 +455,16 @@ function DiceScene({
 
   return (
     <>
+      <CasinoEnvironment />
       <AnimatedCamera isSettled={cameraSettled} diceCenter={diceCenter} />
+      <ResultPulse
+        trigger={pulseId}
+        positionRef={diceCenter}
+        radius={0.28}
+        thickness={0.12}
+        maxScale={3.8}
+        yOffset={0.04}
+      />
 
       <ambientLight intensity={0.6} />
       <directionalLight
@@ -474,6 +515,7 @@ function DiceScene({
 
 export const CrapsScene3D: React.FC<CrapsScene3DProps> = ({
   targetValues,
+  resultId,
   isAnimating,
   onRoll,
   onAnimationComplete,
@@ -499,6 +541,7 @@ export const CrapsScene3D: React.FC<CrapsScene3DProps> = ({
         <Suspense fallback={null}>
           <DiceScene
             targetValues={targetValues}
+            resultId={resultId}
             isAnimating={isAnimating}
             onAnimationComplete={onAnimationComplete}
             isMobile={isMobile}

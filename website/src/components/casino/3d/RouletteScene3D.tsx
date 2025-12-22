@@ -7,6 +7,8 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { ROULETTE_NUMBERS, getRouletteColor } from '../../../utils/gameUtils';
+import CasinoEnvironment from './CasinoEnvironment';
+import { createRoundRng } from './engine';
 
 const TWO_PI = Math.PI * 2;
 const POCKET_COUNT = ROULETTE_NUMBERS.length;
@@ -24,9 +26,14 @@ const BALL_INNER_RADIUS = 1.95;
 const BALL_HEIGHT_START = 0.32;
 const BALL_HEIGHT_END = 0.14;
 
-const WHEEL_BASE_COLOR = '#0b0c12';
-const WHEEL_RING_COLOR = '#111827';
-const WHEEL_INNER_COLOR = '#0f172a';
+const WHEEL_BASE_COLOR = '#050508';
+const WHEEL_RING_COLOR = '#0a0a10';
+const WHEEL_INNER_COLOR = '#080810';
+
+// Neon pocket colors
+const NEON_RED = '#cc1111';
+const NEON_GREEN = '#00aa44';
+const POCKET_BLACK = '#0a0a0f';
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 const normalizeAngle = (angle: number) => ((angle % TWO_PI) + TWO_PI) % TWO_PI;
@@ -61,6 +68,8 @@ interface SpinState {
   wheelToAngle: number;
   ballFromAngle: number;
   ballToAngle: number;
+  extraWheelRevs: number;
+  extraBallRevs: number;
 }
 
 interface RouletteScene3DProps {
@@ -82,25 +91,27 @@ const createNumberTexture = (value: number, size: number) => {
   if (!ctx) return new THREE.CanvasTexture(canvas);
 
   ctx.clearRect(0, 0, size, size);
-  ctx.fillStyle = 'rgba(8, 10, 15, 0.88)';
-  ctx.beginPath();
-  ctx.arc(size / 2, size / 2, size * 0.42, 0, TWO_PI);
-  ctx.fill();
 
-  ctx.strokeStyle = 'rgba(0, 255, 136, 0.35)';
-  ctx.lineWidth = size * 0.04;
-  ctx.stroke();
-
+  // Neon colored numbers matching pocket colors
   const color = value === 0
-    ? '#22c55e'
+    ? '#00ff88'  // Bright green for 0
     : getRouletteColor(value) === 'RED'
-      ? '#ef4444'
-      : '#f8fafc';
+      ? '#ff3333'  // Bright red
+      : '#ffffff'; // White for black pockets
+
+  // Add glow effect
+  ctx.shadowColor = color;
+  ctx.shadowBlur = size * 0.15;
+
   ctx.fillStyle = color;
-  ctx.font = `700 ${Math.floor(size * 0.48)}px "Courier New", monospace`;
+  ctx.font = `700 ${Math.floor(size * 0.55)}px "Courier New", monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(String(value), size / 2, size / 2 + size * 0.02);
+  ctx.fillText(String(value), size / 2, size / 2);
+
+  // Second pass for brighter center
+  ctx.shadowBlur = size * 0.05;
+  ctx.fillText(String(value), size / 2, size / 2);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.needsUpdate = true;
@@ -135,11 +146,12 @@ function RouletteWheel({
   const pocketData = useMemo(() => {
     return ROULETTE_NUMBERS.map((num, index) => {
       const angle = pocketAngle(index);
+      // Neon terminal colors - bright accents on dark base
       const color = num === 0
-        ? '#16a34a'
+        ? NEON_GREEN
         : getRouletteColor(num) === 'RED'
-          ? '#ef4444'
-          : '#111827';
+          ? NEON_RED
+          : POCKET_BLACK;
       return {
         num,
         angle,
@@ -190,7 +202,9 @@ function RouletteWheel({
     if (!isAnimating) return;
     const now = performance.now();
     skipHandledRef.current = false;
-    const baseDuration = 3800 + Math.random() * 800;
+    const roundId = typeof resultId === 'number' ? resultId : 0;
+    const rng = createRoundRng('roulette', roundId);
+    const baseDuration = 3800 + rng.range(0, 800);
     const wheelDirection: 1 | -1 = 1;
     const ballDirection: 1 | -1 = -1;
     targetRef.current = null;
@@ -201,8 +215,8 @@ function RouletteWheel({
       durationMs: baseDuration,
       wheelAngle: spinStateRef.current.wheelAngle,
       ballAngle: spinStateRef.current.ballAngle,
-      wheelSpeed: (3.2 + Math.random() * 1.2) * wheelDirection,
-      ballSpeed: (6.4 + Math.random() * 1.6) * ballDirection,
+      wheelSpeed: (3.2 + rng.range(0, 1.2)) * wheelDirection,
+      ballSpeed: (6.4 + rng.range(0, 1.6)) * ballDirection,
       targetNumber: null,
       targetLocked: false,
       settleStartMs: 0,
@@ -211,8 +225,10 @@ function RouletteWheel({
       wheelToAngle: 0,
       ballFromAngle: 0,
       ballToAngle: 0,
+      extraWheelRevs: 2 + rng.int(0, 1),
+      extraBallRevs: 3 + rng.int(0, 1),
     };
-  }, [isAnimating]);
+  }, [isAnimating, resultId]);
 
   useFrame((_, delta) => {
     const state = spinStateRef.current;
@@ -256,10 +272,12 @@ function RouletteWheel({
         const targetAngle = pocketAngle(targetIndex < 0 ? 0 : targetIndex);
         const wheelDirection: 1 | -1 = state.wheelSpeed >= 0 ? 1 : -1;
         const ballDirection: 1 | -1 = state.ballSpeed >= 0 ? 1 : -1;
-        const extraWheelRevs = 2 + Math.floor(Math.random() * 2);
-        const extraBallRevs = 3 + Math.floor(Math.random() * 2);
-        const wheelDelta = deltaForDirection(state.wheelAngle, targetAngle, wheelDirection) + (extraWheelRevs * TWO_PI * wheelDirection);
-        const ballDelta = deltaForDirection(state.ballAngle, targetAngle, ballDirection) + (extraBallRevs * TWO_PI * ballDirection);
+        const wheelDelta =
+          deltaForDirection(state.wheelAngle, targetAngle, wheelDirection) +
+          (state.extraWheelRevs * TWO_PI * wheelDirection);
+        const ballDelta =
+          deltaForDirection(state.ballAngle, targetAngle, ballDirection) +
+          (state.extraBallRevs * TWO_PI * ballDirection);
 
         state.phase = 'settle';
         state.settleStartMs = now;
@@ -322,7 +340,7 @@ function RouletteWheel({
             castShadow={!isMobile}
           >
             <boxGeometry args={[POCKET_DEPTH, POCKET_HEIGHT, POCKET_DEPTH * 1.6]} />
-            <meshStandardMaterial color={pocket.color} roughness={0.5} metalness={0.1} />
+            <meshBasicMaterial color={pocket.color} />
           </mesh>
         ))}
         {pocketData.map((pocket, index) => (
@@ -432,6 +450,8 @@ export const RouletteScene3D: React.FC<RouletteScene3DProps> = ({
     wheelToAngle: 0,
     ballFromAngle: 0,
     ballToAngle: 0,
+    extraWheelRevs: 0,
+    extraBallRevs: 0,
   });
   const ballRef = useRef<THREE.Mesh | null>(null);
 
@@ -449,19 +469,27 @@ export const RouletteScene3D: React.FC<RouletteScene3DProps> = ({
         camera={{ position: [0, 4.9, 6.0], fov: 46 }}
       >
         <Suspense fallback={null}>
-          <ambientLight intensity={0.55} />
+          {/* Dark terminal background */}
+          <color attach="background" args={['#030306']} />
+          <CasinoEnvironment />
+
+          {/* Terminal-style lighting */}
+          <ambientLight intensity={0.6} />
           <directionalLight
-            position={[4, 6, 3]}
-            intensity={1.35}
+            position={[3, 8, 5]}
+            intensity={1.5}
             castShadow={!isMobile}
             shadow-mapSize-width={isMobile ? 512 : 1024}
             shadow-mapSize-height={isMobile ? 512 : 1024}
           />
-          <pointLight position={[-3, 3, -2]} intensity={0.35} color="#00ff88" />
+          {/* Neon green accent lights */}
+          <pointLight position={[-2, 3, 2]} intensity={0.4} color="#22ff88" />
+          <pointLight position={[2, 3, -2]} intensity={0.2} color="#22ff88" />
 
+          {/* Dark floor under wheel */}
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.18, 0]} receiveShadow>
             <circleGeometry args={[3.8, isMobile ? 32 : 48]} />
-            <meshStandardMaterial color="#0b0f13" roughness={0.9} metalness={0.05} />
+            <meshStandardMaterial color="#050508" roughness={0.95} metalness={0.02} />
           </mesh>
 
           <RouletteCameraRig spinStateRef={spinStateRef} ballRef={ballRef} />
