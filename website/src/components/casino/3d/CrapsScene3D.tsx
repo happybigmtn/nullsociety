@@ -17,6 +17,7 @@ import ResultPulse from './ResultPulse';
 import ShooterArm, { type ShooterArmState } from './ShooterArm';
 import PyramidWallCollider from './PyramidWallCollider';
 import CasinoPostProcessing from './post/CasinoPostProcessing';
+import AmbientSoundscape from './audio/AmbientSoundscape';
 
 const TABLE_CONFIG = {
   width: 5.6,
@@ -537,6 +538,8 @@ function DiceScene({
           size={DICE_SIZE}
           settleBounds={SETTLE_BOUNDS}
           collisionGroups={DICE_COLLISION_GROUP}
+          soundEnabled={!isMobile}
+          soundMaterial="plastic"
         />
         <PhysicsDice
           ref={dice2Ref}
@@ -547,6 +550,8 @@ function DiceScene({
           size={DICE_SIZE}
           settleBounds={SETTLE_BOUNDS}
           collisionGroups={DICE_COLLISION_GROUP}
+          soundEnabled={!isMobile}
+          soundMaterial="plastic"
         />
       </Physics>
     </>
@@ -567,6 +572,7 @@ export const CrapsScene3D: React.FC<CrapsScene3DProps> = ({
 
   return (
     <div className="relative w-full h-full min-h-[320px]">
+      <AmbientSoundscape profile="speakeasy" enabled={!isMobile} />
       <Canvas
         dpr={isMobile ? 1 : [1, 1.75]}
         frameloop={isAnimating ? 'always' : 'demand'}

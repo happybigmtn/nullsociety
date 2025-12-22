@@ -1,5 +1,5 @@
 Goal (incl. success criteria):
-- Complete Phase 5 audio system tasks from `4d.md` and verify core behaviors where feasible.
+- Begin Phase 6 integration/polish by wiring audio components into scenes and aligning with existing sound settings.
 
 Constraints/Assumptions:
 - Follow `agents.md` guidance: read/update this ledger at start of each turn and whenever goal/state/decisions change; keep it brief and factual.
@@ -28,12 +28,16 @@ Done:
 - Created AudioManager and procedural sound generators.
 - Added CollisionSound, PositionalAudioEmitter, and AmbientSoundscape components.
 - Ran `npm run test:unit`.
+- Synced AudioManager with sound toggle.
+- Wired ambient soundscapes into roulette/craps/sic bo scenes.
+- Added collision audio to physics dice.
+- Ran `npm run test:unit` after audio integration.
 
 Now:
-- Phase 5 complete; audio system implemented and unit tests run.
+- Phase 6 in progress: audio integration complete; verification done.
 
 Next:
-- Await further instructions.
+- Await further instructions for remaining Phase 6 tasks.
 
 Open questions (UNCONFIRMED if needed):
 - None.

@@ -24,6 +24,7 @@ import { RegistrationView } from './components/casino/RegistrationView';
 import { ActiveGame } from './components/casino/ActiveGame';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { playSfx, setSfxEnabled } from './services/sfx';
+import AudioManager from './components/casino/3d/audio/AudioManager';
 import { track } from './services/telemetry';
 
 // Menu
@@ -97,6 +98,7 @@ export default function CasinoApp() {
       // ignore
     }
     setSfxEnabled(soundEnabled);
+    AudioManager.getInstance().setMuted(!soundEnabled);
   }, [soundEnabled]);
 
   useEffect(() => {

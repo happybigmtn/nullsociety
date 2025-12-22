@@ -22,6 +22,7 @@ import {
 } from './physics';
 import RouletteColliders from './RouletteColliders';
 import CasinoPostProcessing from './post/CasinoPostProcessing';
+import AmbientSoundscape from './audio/AmbientSoundscape';
 
 const TWO_PI = Math.PI * 2;
 const POCKET_COUNT = ROULETTE_NUMBERS.length;
@@ -534,6 +535,7 @@ export const RouletteScene3D: React.FC<RouletteScene3DProps> = ({
 
   return (
     <div className="relative w-full h-full min-h-[320px]">
+      <AmbientSoundscape profile="vegas" enabled={!isMobile} />
       <Canvas
         dpr={isMobile ? 1 : [1, 1.75]}
         frameloop={isAnimating ? 'always' : 'demand'}

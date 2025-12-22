@@ -14,6 +14,7 @@ import ResultPulse from './ResultPulse';
 import ShooterArm, { type ShooterArmState } from './ShooterArm';
 import PyramidWallCollider from './PyramidWallCollider';
 import CasinoPostProcessing from './post/CasinoPostProcessing';
+import AmbientSoundscape from './audio/AmbientSoundscape';
 
 const TABLE_CONFIG = {
   width: 5.0,
@@ -545,6 +546,8 @@ function DiceScene({
           size={DICE_SIZE}
           settleBounds={SETTLE_BOUNDS}
           collisionGroups={DICE_COLLISION_GROUP}
+          soundEnabled={!isMobile}
+          soundMaterial="plastic"
         />
         <PhysicsDice
           ref={diceRefs[1]}
@@ -555,6 +558,8 @@ function DiceScene({
           size={DICE_SIZE}
           settleBounds={SETTLE_BOUNDS}
           collisionGroups={DICE_COLLISION_GROUP}
+          soundEnabled={!isMobile}
+          soundMaterial="plastic"
         />
         <PhysicsDice
           ref={diceRefs[2]}
@@ -565,6 +570,8 @@ function DiceScene({
           size={DICE_SIZE}
           settleBounds={SETTLE_BOUNDS}
           collisionGroups={DICE_COLLISION_GROUP}
+          soundEnabled={!isMobile}
+          soundMaterial="plastic"
         />
       </Physics>
     </>
@@ -585,6 +592,7 @@ export const SicBoScene3D: React.FC<SicBoScene3DProps> = ({
 
   return (
     <div className="relative w-full h-full min-h-[320px]">
+      <AmbientSoundscape profile="casino" enabled={!isMobile} />
       <Canvas
         dpr={isMobile ? 1 : [1, 1.75]}
         frameloop={isAnimating ? 'always' : 'demand'}

@@ -21,6 +21,7 @@ import {
   type RandomSource,
 } from './diceUtils';
 import { ATTRACTOR_PRESETS, calculateAlignmentTorque, DICE_PHYSICS } from './physics';
+import CollisionSound from './audio/CollisionSound';
 
 export interface PhysicsDiceRef {
   throw: (
@@ -57,10 +58,27 @@ interface PhysicsDiceProps {
   };
   /** Collision group mask (optional) */
   collisionGroups?: number;
+  /** Enable collision audio */
+  soundEnabled?: boolean;
+  /** Collision material for audio */
+  soundMaterial?: 'plastic' | 'metal' | 'felt' | 'rubber' | 'wood';
+  /** Audio volume scaling */
+  soundVolume?: number;
 }
 
 export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
-  ({ position = [0, 2, 0], targetValue, onRest, size = 0.8, index = 0, settleBounds, collisionGroups }, ref) => {
+  ({
+    position = [0, 2, 0],
+    targetValue,
+    onRest,
+    size = 0.8,
+    index = 0,
+    settleBounds,
+    collisionGroups,
+    soundEnabled = true,
+    soundMaterial = 'plastic',
+    soundVolume = 1,
+  }, ref) => {
     const safeTargetValue =
       typeof targetValue === 'number' && targetValue >= 1 && targetValue <= 6
         ? targetValue
@@ -441,6 +459,13 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
           onCollisionEnter={handleCollisionEnter}
         >
           <DiceModel size={size} />
+          <CollisionSound
+            enabled={soundEnabled}
+            material={soundMaterial}
+            velocityThreshold={1.2}
+            cooldownMs={impactCooldownMs}
+            volume={soundVolume}
+          />
         </RigidBody>
         <ImpactParticles ref={impactParticlesRef} />
       </>
