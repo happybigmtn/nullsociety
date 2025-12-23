@@ -1,25 +1,9 @@
 
-import React, { useCallback, useMemo, useEffect, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { GameState } from '../../../types';
 import { Hand } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
-import { GameControlBar } from '../GameControlBar';
 import { evaluateVideoPokerHand } from '../../../utils/gameUtils';
-import { CardAnimationOverlay } from '../3d/CardAnimationOverlay';
-import { buildCardsById, buildRowSlots } from '../3d/cardLayouts';
-import { deriveSessionRoundId } from '../3d/engine/GuidedRound';
-
-// Simple mobile detection hook
-const useIsMobile = () => {
-    const [isMobile, setIsMobile] = useState(false);
-    useEffect(() => {
-        const check = () => setIsMobile(window.innerWidth < 640);
-        check();
-        window.addEventListener('resize', check);
-        return () => window.removeEventListener('resize', check);
-    }, []);
-    return isMobile;
-};
 
 interface VideoPokerViewProps {
     gameState: GameState;
@@ -42,15 +26,10 @@ const VIDEO_POKER_PAYTABLE: Array<{ rank: string; multiplier: number }> = [
     { rank: 'JACKS OR BETTER', multiplier: 1 },
 ];
 
-export const VideoPokerView = React.memo<VideoPokerViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null; onAnimationBlockingChange?: (blocking: boolean) => void }>(({ gameState, onToggleHold, actions, lastWin, playMode, onAnimationBlockingChange }) => {
+export const VideoPokerView = React.memo<VideoPokerViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, onToggleHold, actions, lastWin, playMode }) => {
     const handleToggleHold = useCallback((index: number) => {
         onToggleHold(index);
     }, [onToggleHold]);
-    const isMobile = useIsMobile();
-    const roundId = useMemo(() => {
-        if (gameState.sessionId === null || !Number.isFinite(gameState.moveNumber)) return undefined;
-        return deriveSessionRoundId(gameState.sessionId, gameState.moveNumber);
-    }, [gameState.moveNumber, gameState.sessionId]);
 
     const handEval = useMemo(() => {
         if (gameState.playerCards.length !== 5) return null;
@@ -62,26 +41,8 @@ export const VideoPokerView = React.memo<VideoPokerViewProps & { lastWin?: numbe
     }, [gameState.playerCards]);
 
     const highlightRank = gameState.stage === 'RESULT' ? handEval?.rank ?? null : null;
-    const animationActive = useMemo(
-        () => /DEALING|DRAWING|WAITING FOR CHAIN/.test(gameState.message),
-        [gameState.message]
-    );
-    const playerSlots = useMemo(() => buildRowSlots('player', 5, 0.9, { spacing: 1.35, fan: 0.05 }), []);
-    const dealOrder = useMemo(() => ['player-0', 'player-1', 'player-2', 'player-3', 'player-4'], []);
-    const cardsById = useMemo(() => buildCardsById('player', gameState.playerCards, 5), [gameState.playerCards]);
     return (
         <>
-            <CardAnimationOverlay
-                slots={playerSlots}
-                dealOrder={dealOrder}
-                cardsById={cardsById}
-                isActionActive={animationActive}
-                storageKey="video-poker-3d-mode"
-                guidedGameType="videoPoker"
-                roundId={roundId}
-                onAnimationBlockingChange={onAnimationBlockingChange}
-                isMobile={isMobile}
-            />
             <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-6 md:gap-8 relative z-10 pt-8 sm:pt-10 pb-24 sm:pb-20">
                 <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">VIDEO POKER</h1>
                 <div className="absolute top-2 left-2 z-40">
@@ -215,7 +176,7 @@ export const VideoPokerView = React.memo<VideoPokerViewProps & { lastWin?: numbe
                         }
                         className="h-12 sm:h-14 px-6 sm:px-8 rounded border-2 font-bold text-sm sm:text-base tracking-widest uppercase font-mono transition-all shadow-[0_0_15px_rgba(0,0,0,0.5)] border-terminal-green bg-terminal-green text-black hover:bg-white hover:border-white hover:scale-105 active:scale-95"
                     >
-                        {(gameState.stage === 'BETTING' || gameState.stage === 'RESULT') ? 'DEAL' : 'DRAW'}
+                        <span className="ns-keycap ns-keycap-dark">⎵</span> {(gameState.stage === 'BETTING' || gameState.stage === 'RESULT') ? 'DEAL' : 'DRAW'}
                     </button>
                 </div>
             </div>

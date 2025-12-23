@@ -550,6 +550,59 @@ export default function EconomyApp() {
     trackSubmitted('remove_liquidity', `Submitted remove liquidity (shares=${shares})`, result);
   };
 
+  // Keyboard shortcuts for economy actions
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if typing in an input field
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+        return;
+      }
+
+      const k = e.key.toLowerCase();
+
+      // Global shortcuts
+      if (k === 'f' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        claimFaucet();
+        return;
+      }
+
+      // Tab-specific shortcuts
+      if (activeTab === 'swap') {
+        if (k === 't') {
+          e.preventDefault();
+          setSwapDirection((prev) => (prev === 'BUY_RNG' ? 'SELL_RNG' : 'BUY_RNG'));
+        }
+      } else if (activeTab === 'borrow') {
+        if (k === 'v') {
+          e.preventDefault();
+          createVault();
+        } else if (k === 'c') {
+          e.preventDefault();
+          depositCollateral();
+        } else if (k === 'b') {
+          e.preventDefault();
+          borrowVusdt();
+        } else if (k === 'r') {
+          e.preventDefault();
+          repayVusdt();
+        }
+      } else if (activeTab === 'liquidity') {
+        if (k === 'a') {
+          e.preventDefault();
+          addLiquidity();
+        } else if (k === 'x') {
+          e.preventDefault();
+          removeLiquidity();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, swapDirection]);
+
   return (
     <div className="min-h-screen bg-terminal-black text-white font-mono">
       <PageHeader

@@ -1,23 +1,10 @@
 
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { GameState } from '../../../types';
 import { getBaccaratValue } from '../../../utils/gameUtils';
+import { Hand } from '../GameComponents';
 import { cardIdToString } from '../../../utils/gameStateParser';
 import { MobileDrawer } from '../MobileDrawer';
-import { BaccaratCards3DWrapper } from '../3d/BaccaratCards3DWrapper';
-import { deriveSessionRoundId } from '../3d/engine/GuidedRound';
-
-// Simple mobile detection hook
-const useIsMobile = () => {
-    const [isMobile, setIsMobile] = useState(false);
-    useEffect(() => {
-        const check = () => setIsMobile(window.innerWidth < 640);
-        check();
-        window.addEventListener('resize', check);
-        return () => window.removeEventListener('resize', check);
-    }, []);
-    return isMobile;
-};
 
 type BetGroup = 'NONE' | 'BONUS';
 
@@ -40,15 +27,9 @@ export const BaccaratView = React.memo<{
     actions: any;
     lastWin?: number;
     playMode?: 'CASH' | 'FREEROLL' | null;
-    onAnimationBlockingChange?: (blocking: boolean) => void;
-}>(({ gameState, actions, lastWin, playMode, onAnimationBlockingChange }) => {
+}>(({ gameState, actions, lastWin, playMode }) => {
     const [leftSidebarView, setLeftSidebarView] = useState<'EXPOSURE' | 'SIDE_BETS'>('EXPOSURE');
     const [activeGroup, setActiveGroup] = useState<BetGroup>('NONE');
-    const isMobile = useIsMobile();
-    const roundId = useMemo(() => {
-        if (gameState.sessionId === null || !Number.isFinite(gameState.moveNumber)) return undefined;
-        return deriveSessionRoundId(gameState.sessionId, gameState.moveNumber);
-    }, [gameState.moveNumber, gameState.sessionId]);
     // Consolidate main bet and side bets for display
     const allBets = useMemo(() => [
         { type: gameState.baccaratSelection, amount: gameState.bet },
@@ -236,80 +217,74 @@ export const BaccaratView = React.memo<{
                         </div>
                     </MobileDrawer>
                 </div>
-                <BaccaratCards3DWrapper
-                    playerCards={gameState.playerCards}
-                    bankerCards={gameState.dealerCards}
-                    playerLabel={playerLabel}
-                    bankerLabel={bankerLabel}
-                    playerColor={playerColor}
-                    bankerColor={bankerColor}
-                    isPlayerSelected={isPlayerSelected}
-                    isBankerSelected={isBankerSelected}
-                    isDealing={gameState.message === 'DEALING...'}
-                    superMode={gameState.superMode}
-                    isMobile={isMobile}
-                    roundId={roundId}
-                    onAnimationBlockingChange={onAnimationBlockingChange}
-                >
-                    {/* Center Info */}
-                    <div className="text-center space-y-2 relative z-20 py-2 sm:py-4">
-                        <div className="text-lg sm:text-2xl font-bold text-terminal-gold tracking-widest leading-tight animate-pulse">
-                            {gameState.message}
-                        </div>
-                        <div className="flex flex-wrap items-center justify-center gap-2 text-[11px]">
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass(gameState.baccaratSelection)}`}>
-                                <span className={gameState.stage === 'RESULT' && getWinnerClass(gameState.baccaratSelection).includes('text-terminal-green') ? 'text-terminal-green' : 'text-white'}>
-                                    {gameState.baccaratSelection}
-                                </span> ${gameState.bet.toLocaleString()}
-                            </span>
-                            {sideBetAmounts.TIE > 0 && (
-                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('TIE')}`}>
-                                    TIE ${sideBetAmounts.TIE.toLocaleString()}
-                                </span>
-                            )}
-                            {sideBetAmounts.P_PAIR > 0 && (
-                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_PAIR')}`}>
-                                    P.PAIR ${sideBetAmounts.P_PAIR.toLocaleString()}
-                                </span>
-                            )}
-                            {sideBetAmounts.B_PAIR > 0 && (
-                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_PAIR')}`}>
-                                    B.PAIR ${sideBetAmounts.B_PAIR.toLocaleString()}
-                                </span>
-                            )}
-                            {sideBetAmounts.LUCKY6 > 0 && (
-                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('LUCKY6')}`}>
-                                    LUCKY6 ${sideBetAmounts.LUCKY6.toLocaleString()}
-                                </span>
-                            )}
-                            {sideBetAmounts.P_DRAGON > 0 && (
-                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_DRAGON')}`}>
-                                    P.DRAGON ${sideBetAmounts.P_DRAGON.toLocaleString()}
-                                </span>
-                            )}
-                            {sideBetAmounts.B_DRAGON > 0 && (
-                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_DRAGON')}`}>
-                                    B.DRAGON ${sideBetAmounts.B_DRAGON.toLocaleString()}
-                                </span>
-                            )}
-                            {sideBetAmounts.PANDA8 > 0 && (
-                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('PANDA8')}`}>
-                                    PANDA8 ${sideBetAmounts.PANDA8.toLocaleString()}
-                                </span>
-                            )}
-                            {sideBetAmounts.P_PERFECT_PAIR > 0 && (
-                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_PERFECT_PAIR')}`}>
-                                    P.PP ${sideBetAmounts.P_PERFECT_PAIR.toLocaleString()}
-                                </span>
-                            )}
-                            {sideBetAmounts.B_PERFECT_PAIR > 0 && (
-                                <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_PERFECT_PAIR')}`}>
-                                    B.PP ${sideBetAmounts.B_PERFECT_PAIR.toLocaleString()}
-                                </span>
-                            )}
-                        </div>
+                <div className="min-h-[180px] w-full max-w-2xl flex flex-col items-center justify-center gap-6">
+                    <div className="flex flex-col items-center gap-2 opacity-75">
+                        <span className={`text-sm font-bold tracking-widest ${bankerColor}`}>{bankerLabel}</span>
+                        <Hand cards={gameState.dealerCards} forcedColor={bankerColor} />
                     </div>
-                </BaccaratCards3DWrapper>
+                    <div className="flex flex-col items-center gap-2">
+                        <span className={`text-sm font-bold tracking-widest ${playerColor}`}>{playerLabel}</span>
+                        <Hand cards={gameState.playerCards} forcedColor={playerColor} />
+                    </div>
+                </div>
+                {/* Center Info */}
+                <div className="text-center space-y-2 relative z-20 py-2 sm:py-4">
+                    <div className="text-lg sm:text-2xl font-bold text-terminal-gold tracking-widest leading-tight animate-pulse">
+                        {gameState.message}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-2 text-[11px]">
+                        <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass(gameState.baccaratSelection)}`}>
+                            <span className={gameState.stage === 'RESULT' && getWinnerClass(gameState.baccaratSelection).includes('text-terminal-green') ? 'text-terminal-green' : 'text-white'}>
+                                {gameState.baccaratSelection}
+                            </span> ${gameState.bet.toLocaleString()}
+                        </span>
+                        {sideBetAmounts.TIE > 0 && (
+                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('TIE')}`}>
+                                TIE ${sideBetAmounts.TIE.toLocaleString()}
+                            </span>
+                        )}
+                        {sideBetAmounts.P_PAIR > 0 && (
+                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_PAIR')}`}>
+                                P.PAIR ${sideBetAmounts.P_PAIR.toLocaleString()}
+                            </span>
+                        )}
+                        {sideBetAmounts.B_PAIR > 0 && (
+                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_PAIR')}`}>
+                                B.PAIR ${sideBetAmounts.B_PAIR.toLocaleString()}
+                            </span>
+                        )}
+                        {sideBetAmounts.LUCKY6 > 0 && (
+                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('LUCKY6')}`}>
+                                LUCKY6 ${sideBetAmounts.LUCKY6.toLocaleString()}
+                            </span>
+                        )}
+                        {sideBetAmounts.P_DRAGON > 0 && (
+                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_DRAGON')}`}>
+                                P.DRAGON ${sideBetAmounts.P_DRAGON.toLocaleString()}
+                            </span>
+                        )}
+                        {sideBetAmounts.B_DRAGON > 0 && (
+                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_DRAGON')}`}>
+                                B.DRAGON ${sideBetAmounts.B_DRAGON.toLocaleString()}
+                            </span>
+                        )}
+                        {sideBetAmounts.PANDA8 > 0 && (
+                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('PANDA8')}`}>
+                                PANDA8 ${sideBetAmounts.PANDA8.toLocaleString()}
+                            </span>
+                        )}
+                        {sideBetAmounts.P_PERFECT_PAIR > 0 && (
+                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_PERFECT_PAIR')}`}>
+                                P.PP ${sideBetAmounts.P_PERFECT_PAIR.toLocaleString()}
+                            </span>
+                        )}
+                        {sideBetAmounts.B_PERFECT_PAIR > 0 && (
+                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_PERFECT_PAIR')}`}>
+                                B.PP ${sideBetAmounts.B_PERFECT_PAIR.toLocaleString()}
+                            </span>
+                        )}
+                    </div>
+                </div>
 
                 {/* Super Mode Info - Animated */}
                 {gameState.superMode?.isActive && (

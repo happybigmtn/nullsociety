@@ -5,22 +5,6 @@ import { Hand } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
 import { getVisibleHandValue } from '../../../utils/gameUtils';
-import { CardAnimationOverlay } from '../3d/CardAnimationOverlay';
-import { buildCardsById, buildRowSlots } from '../3d/cardLayouts';
-import { deriveSessionRoundId } from '../3d/engine/GuidedRound';
-import type { ChipStackConfig } from '../3d/chips/ChipStack3D';
-
-// Simple mobile detection hook
-const useIsMobile = () => {
-    const [isMobile, setIsMobile] = useState(false);
-    useEffect(() => {
-        const check = () => setIsMobile(window.innerWidth < 640);
-        check();
-        window.addEventListener('resize', check);
-        return () => window.removeEventListener('resize', check);
-    }, []);
-    return isMobile;
-};
 
 const getWarCardValue = (card?: Card | null) => {
     if (!card) return 0;
@@ -32,14 +16,13 @@ const getWarCardValue = (card?: Card | null) => {
     return Number.isFinite(parsed) ? parsed : 0;
 };
 
-export const GenericGameView = React.memo<{ gameState: GameState; actions: any; lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null; onAnimationBlockingChange?: (blocking: boolean) => void }>(({ gameState, actions, lastWin, playMode, onAnimationBlockingChange }) => {
+export const GenericGameView = React.memo<{ gameState: GameState; actions: any; lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
     const dealerValue = useMemo(() => getVisibleHandValue(gameState.dealerCards), [gameState.dealerCards]);
     const playerValue = useMemo(() => getVisibleHandValue(gameState.playerCards), [gameState.playerCards]);
     const gameTitle = useMemo(() => gameState.type.replace(/_/g, ' '), [gameState.type]);
     const isWarState = useMemo(() => gameState.type === GameType.CASINO_WAR && gameState.message.includes('WAR'), [gameState.type, gameState.message]);
     const isCasinoWarBetting = useMemo(() => gameState.type === GameType.CASINO_WAR && gameState.stage === 'BETTING', [gameState.type, gameState.stage]);
     const casinoWarTieBet = useMemo(() => gameState.casinoWarTieBet || 0, [gameState.casinoWarTieBet]);
-    const isMobile = useIsMobile();
     const isCasinoWar = gameState.type === GameType.CASINO_WAR;
     const warPlayerCard = gameState.playerCards[0];
     const warDealerCard = gameState.dealerCards[0];
@@ -60,67 +43,21 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any; 
     const warGlow = useMemo(() => (warAccentColor ? `${warAccentColor}33` : undefined), [warAccentColor]);
     const [warTrend, setWarTrend] = useState<Array<'player' | 'dealer' | 'tie'>>([]);
     const warTrendKeyRef = useRef<string>('');
-    const roundId = useMemo(() => {
+    const roundKey = useMemo(() => {
         if (gameState.sessionId === null || !Number.isFinite(gameState.moveNumber)) return undefined;
-        return deriveSessionRoundId(gameState.sessionId, gameState.moveNumber);
+        return `${gameState.sessionId}-${gameState.moveNumber}`;
     }, [gameState.moveNumber, gameState.sessionId]);
-    const animationActive = useMemo(
-        () => /DEALING|GOING TO WAR|SURRENDERING|WAITING FOR CHAIN/.test(gameState.message),
-        [gameState.message]
-    );
-    const dealerSlots = useMemo(() => buildRowSlots('dealer', 1, -1.2, { mirror: true, fan: 0 }), []);
-    const playerSlots = useMemo(() => buildRowSlots('player', 1, 1.2, { fan: 0 }), []);
-    const slots = useMemo(() => [...dealerSlots, ...playerSlots], [dealerSlots, playerSlots]);
-    const dealOrder = useMemo(() => ['player-0', 'dealer-0'], []);
-    const cardsById = useMemo(() => ({
-        ...buildCardsById('dealer', gameState.dealerCards, 1),
-        ...buildCardsById('player', gameState.playerCards, 1),
-    }), [gameState.dealerCards, gameState.playerCards]);
-    const chipStacks = useMemo<ChipStackConfig[] | undefined>(() => {
-        if (!isCasinoWar) return undefined;
-        const stacks: ChipStackConfig[] = [];
-        if (gameState.bet > 0) {
-            stacks.push({
-                id: 'war-main',
-                amount: gameState.bet,
-                position: [0, -0.08, 2.1],
-                seed: roundId ?? 0,
-            });
-        }
-        if (casinoWarTieBet > 0) {
-            stacks.push({
-                id: 'war-tie',
-                amount: casinoWarTieBet,
-                position: [0.6, -0.08, 1.7],
-                seed: (roundId ?? 0) + 11,
-            });
-        }
-        return stacks.length > 0 ? stacks : undefined;
-    }, [casinoWarTieBet, gameState.bet, isCasinoWar, roundId]);
     useEffect(() => {
         if (!isCasinoWar || !warOutcome) return;
-        const key = roundId !== undefined
-            ? `round-${roundId}`
+        const key = roundKey !== undefined
+            ? `round-${roundKey}`
             : `${warPlayerCard?.rank ?? ''}${warPlayerCard?.suit ?? ''}-${warDealerCard?.rank ?? ''}${warDealerCard?.suit ?? ''}`;
         if (warTrendKeyRef.current === key) return;
         warTrendKeyRef.current = key;
         setWarTrend((prev) => [...prev, warOutcome].slice(-10));
-    }, [isCasinoWar, roundId, warOutcome, warPlayerCard, warDealerCard]);
+    }, [isCasinoWar, roundKey, warOutcome, warPlayerCard, warDealerCard]);
     return (
         <>
-            <CardAnimationOverlay
-                slots={slots}
-                dealOrder={dealOrder}
-                cardsById={cardsById}
-                isActionActive={animationActive}
-                storageKey="casino-war-3d-mode"
-                guidedGameType="casinoWar"
-                roundId={roundId}
-                onAnimationBlockingChange={onAnimationBlockingChange}
-                isMobile={isMobile}
-                chipStacks={chipStacks}
-                accentColor={warAccentColor}
-            />
             <div
                 className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-6 md:gap-8 relative z-10 pt-8 sm:pt-10 pb-24 sm:pb-20"
                 style={warGlow ? { background: `radial-gradient(circle at 50% 20%, ${warGlow}, transparent 65%)` } : undefined}

@@ -1,21 +1,8 @@
 
-import React, { useMemo, useCallback, useEffect, useState } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { GameState, RouletteBet } from '../../../types';
 import { getRouletteColor, calculateRouletteExposure } from '../../../utils/gameUtils';
 import { MobileDrawer } from '../MobileDrawer';
-import { RouletteWheel3DWrapper } from '../3d/RouletteWheel3DWrapper';
-
-// Simple mobile detection hook
-const useIsMobile = () => {
-    const [isMobile, setIsMobile] = useState(false);
-    useEffect(() => {
-        const check = () => setIsMobile(window.innerWidth < 640);
-        check();
-        window.addEventListener('resize', check);
-        return () => window.removeEventListener('resize', check);
-    }, []);
-    return isMobile;
-};
 
 export const RouletteView = React.memo<{
     gameState: GameState;
@@ -23,31 +10,13 @@ export const RouletteView = React.memo<{
     actions: any;
     lastWin?: number;
     playMode?: 'CASH' | 'FREEROLL' | null;
-    onAnimationBlockingChange?: (blocking: boolean) => void;
-}>(({ gameState, numberInput = "", actions, lastWin, playMode, onAnimationBlockingChange }) => {
-    const isMobile = useIsMobile();
+}>(({ gameState, numberInput = "", actions, lastWin, playMode }) => {
     const lastNum = useMemo(() =>
         gameState.rouletteHistory.length > 0 ? gameState.rouletteHistory[gameState.rouletteHistory.length - 1] : null,
         [gameState.rouletteHistory]
     );
     const isSpinning = gameState.message === 'SPINNING ON CHAIN...';
     const betTypes = useMemo(() => new Set(gameState.rouletteBets.map((b) => b.type)), [gameState.rouletteBets]);
-    const lightningMultipliers = useMemo(() => {
-        if (!gameState.superMode?.isActive || !Array.isArray(gameState.superMode.multipliers)) return [];
-        const deduped = new Map<number, number>();
-        gameState.superMode.multipliers.forEach((entry) => {
-            const id = Number(entry?.id);
-            const multiplier = Number(entry?.multiplier);
-            if (!Number.isFinite(id) || !Number.isFinite(multiplier)) return;
-            if (id < 0 || id > 36) return;
-            const prev = deduped.get(id) ?? 0;
-            if (multiplier > prev) {
-                deduped.set(id, multiplier);
-            }
-        });
-        return Array.from(deduped.entries()).map(([number, multiplier]) => ({ number, multiplier }));
-    }, [gameState.superMode]);
-
     const totalBet = useMemo(() => gameState.rouletteBets.reduce((acc, b) => acc + b.amount, 0), [gameState.rouletteBets]);
 
     const insideBet = useMemo(() => {
@@ -200,15 +169,25 @@ export const RouletteView = React.memo<{
                 </div>
                 {/* Last Number Display */}
                 <div className="w-full flex-1 min-h-[320px] flex flex-col items-center justify-center gap-4">
-                     <RouletteWheel3DWrapper
-                         targetNumber={lastNum}
-                         resultId={gameState.rouletteHistory.length}
-                         isSpinning={isSpinning}
-                         onSpin={() => actions?.deal?.()}
-                         isMobile={isMobile}
-                         lightningMultipliers={lightningMultipliers}
-                         onAnimationBlockingChange={onAnimationBlockingChange}
-                     />
+                     <button
+                         type="button"
+                         onClick={() => actions?.deal?.()}
+                         className={`w-44 h-44 rounded-full border-4 flex items-center justify-center text-4xl font-black tracking-widest transition-transform ${
+                            getRouletteColor(lastNum ?? 0) === 'RED'
+                                ? 'border-terminal-accent text-terminal-accent'
+                                : getRouletteColor(lastNum ?? 0) === 'BLACK'
+                                    ? 'border-gray-500 text-white'
+                                    : 'border-terminal-green text-terminal-green'
+                         } ${isSpinning ? 'animate-roulette-spin' : ''}`}
+                         aria-label="Spin roulette"
+                     >
+                         {lastNum ?? '--'}
+                     </button>
+                     {isSpinning && (
+                         <div className="text-[10px] tracking-[0.4em] uppercase text-gray-500">
+                             spinning
+                         </div>
+                     )}
                      
                      {/* History */}
                      {gameState.rouletteHistory.length > 0 && (

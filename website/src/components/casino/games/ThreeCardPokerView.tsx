@@ -1,25 +1,9 @@
 
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 import { GameState } from '../../../types';
 import { Hand } from '../GameComponents';
 import { getVisibleHandValue } from '../../../utils/gameUtils';
 import { MobileDrawer } from '../MobileDrawer';
-import { GameControlBar } from '../GameControlBar';
-import { CardAnimationOverlay } from '../3d/CardAnimationOverlay';
-import { buildCardsById, buildRowSlots } from '../3d/cardLayouts';
-import { deriveSessionRoundId } from '../3d/engine/GuidedRound';
-
-// Simple mobile detection hook
-const useIsMobile = () => {
-    const [isMobile, setIsMobile] = useState(false);
-    useEffect(() => {
-        const check = () => setIsMobile(window.innerWidth < 640);
-        check();
-        window.addEventListener('resize', check);
-        return () => window.removeEventListener('resize', check);
-    }, []);
-    return isMobile;
-};
 
 interface ThreeCardPokerViewProps {
     gameState: GameState;
@@ -54,12 +38,7 @@ const getHandRankName = (cards: { rank: string; suit: string }[]): string => {
     return 'HIGH CARD';
 };
 
-export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null; onAnimationBlockingChange?: (blocking: boolean) => void }>(({ gameState, actions, lastWin, playMode, onAnimationBlockingChange }) => {
-    const isMobile = useIsMobile();
-    const roundId = useMemo(() => {
-        if (gameState.sessionId === null || !Number.isFinite(gameState.moveNumber)) return undefined;
-        return deriveSessionRoundId(gameState.sessionId, gameState.moveNumber);
-    }, [gameState.moveNumber, gameState.sessionId]);
+export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
     const playerRank = useMemo(() =>
         gameState.playerCards.length === 3 ? getHandRankName(gameState.playerCards) : '',
         [gameState.playerCards]
@@ -90,29 +69,8 @@ export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps & { lastWin
             gameState.threeCardProgressiveBet,
         ]
     );
-    const animationActive = useMemo(() => /DEALING|REVEALING/.test(gameState.message), [gameState.message]);
-    const dealerSlots = useMemo(() => buildRowSlots('dealer', 3, -1.5, { mirror: true, spacing: 1.35 }), []);
-    const playerSlots = useMemo(() => buildRowSlots('player', 3, 1.5, { spacing: 1.35 }), []);
-    const slots = useMemo(() => [...dealerSlots, ...playerSlots], [dealerSlots, playerSlots]);
-    const dealOrder = useMemo(() => ['player-0', 'dealer-0', 'player-1', 'dealer-1', 'player-2', 'dealer-2'], []);
-    const cardsById = useMemo(() => ({
-        ...buildCardsById('player', gameState.playerCards, 3),
-        ...buildCardsById('dealer', gameState.dealerCards, 3),
-    }), [gameState.playerCards, gameState.dealerCards]);
-
     return (
         <>
-            <CardAnimationOverlay
-                slots={slots}
-                dealOrder={dealOrder}
-                cardsById={cardsById}
-                isActionActive={animationActive}
-                storageKey="threecard-3d-mode"
-                guidedGameType="threeCard"
-                roundId={roundId}
-                onAnimationBlockingChange={onAnimationBlockingChange}
-                isMobile={isMobile}
-            />
             <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-6 md:gap-4 relative z-10 pt-8 sm:pt-10 pb-24 sm:pb-20 md:px-40">
                 <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">THREE CARD POKER</h1>
                 <div className="absolute top-2 left-2 z-40">

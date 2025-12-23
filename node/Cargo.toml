@@ -18,6 +18,10 @@ path = "src/bin/generate_keys.rs"
 name = "test-transactions"
 path = "src/bin/test_transactions.rs"
 
+[[bin]]
+name = "init-amm"
+path = "src/bin/init_amm.rs"
+
 [dependencies]
 nullspace-types = { workspace = true }
 nullspace-client = { workspace = true }

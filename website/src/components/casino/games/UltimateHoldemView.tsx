@@ -1,24 +1,8 @@
 
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 import { GameState } from '../../../types';
 import { Hand } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
-import { GameControlBar } from '../GameControlBar';
-import { CardAnimationOverlay } from '../3d/CardAnimationOverlay';
-import { buildCardsById, buildRowSlots } from '../3d/cardLayouts';
-import { deriveSessionRoundId } from '../3d/engine/GuidedRound';
-
-// Simple mobile detection hook
-const useIsMobile = () => {
-    const [isMobile, setIsMobile] = useState(false);
-    useEffect(() => {
-        const check = () => setIsMobile(window.innerWidth < 640);
-        check();
-        window.addEventListener('resize', check);
-        return () => window.removeEventListener('resize', check);
-    }, []);
-    return isMobile;
-};
 
 interface UltimateHoldemViewProps {
     gameState: GameState;
@@ -34,12 +18,7 @@ const getStageDescription = (stage: string, communityCards: number): string => {
     return '';
 };
 
-export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null; onAnimationBlockingChange?: (blocking: boolean) => void }>(({ gameState, actions, lastWin, playMode, onAnimationBlockingChange }) => {
-    const isMobile = useIsMobile();
-    const roundId = useMemo(() => {
-        if (gameState.sessionId === null || !Number.isFinite(gameState.moveNumber)) return undefined;
-        return deriveSessionRoundId(gameState.sessionId, gameState.moveNumber);
-    }, [gameState.moveNumber, gameState.sessionId]);
+export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
     const stageDesc = useMemo(() =>
         getStageDescription(gameState.stage, gameState.communityCards.length),
         [gameState.stage, gameState.communityCards.length]
@@ -59,56 +38,8 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
         [gameState.stage, gameState.dealerCards]
     );
 
-    const animationActive = useMemo(
-        () => /DEALING|CHECKING|BETTING|REVEALING|WAITING FOR CHAIN/.test(gameState.message),
-        [gameState.message]
-    );
-    const dealerSlots = useMemo(() => buildRowSlots('dealer', 2, -1.6, { mirror: true, spacing: 1.5 }), []);
-    const communitySlots = useMemo(() => buildRowSlots('community', 5, 0.1, { spacing: 1.35, fan: 0.05 }), []);
-    const bonusSlots = useMemo(() => buildRowSlots('bonus', 4, 0.85, { spacing: 1.2, fan: 0.04 }), []);
-    const playerSlots = useMemo(() => buildRowSlots('player', 2, 1.75, { spacing: 1.5 }), []);
-    const slots = useMemo(
-        () => [...dealerSlots, ...communitySlots, ...bonusSlots, ...playerSlots],
-        [dealerSlots, communitySlots, bonusSlots, playerSlots]
-    );
-    const dealOrder = useMemo(
-        () => [
-            'player-0',
-            'dealer-0',
-            'player-1',
-            'dealer-1',
-            'community-0',
-            'community-1',
-            'community-2',
-            'community-3',
-            'community-4',
-            'bonus-0',
-            'bonus-1',
-            'bonus-2',
-            'bonus-3',
-        ],
-        []
-    );
-    const cardsById = useMemo(() => ({
-        ...buildCardsById('player', gameState.playerCards, 2),
-        ...buildCardsById('dealer', gameState.dealerCards, 2),
-        ...buildCardsById('community', gameState.communityCards, 5),
-        ...buildCardsById('bonus', gameState.uthBonusCards, 4),
-    }), [gameState.playerCards, gameState.dealerCards, gameState.communityCards, gameState.uthBonusCards]);
-
     return (
         <>
-            <CardAnimationOverlay
-                slots={slots}
-                dealOrder={dealOrder}
-                cardsById={cardsById}
-                isActionActive={animationActive}
-                storageKey="uth-3d-mode"
-                guidedGameType="ultimateHoldem"
-                roundId={roundId}
-                onAnimationBlockingChange={onAnimationBlockingChange}
-                isMobile={isMobile}
-            />
             <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-6 md:gap-4 relative z-10 pt-8 sm:pt-10 pb-24 sm:pb-20 md:px-40">
                 <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">ULTIMATE TEXAS HOLD'EM</h1>
                 <div className="absolute top-2 left-2 z-40">
@@ -327,7 +258,7 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
                                                 : 'border-gray-700 bg-black/50 text-gray-400 hover:bg-gray-800'
                                         }`}
                                     >
-                                        TRIPS{(gameState.uthTripsBet || 0) > 0 ? ` $${gameState.uthTripsBet}` : ''}
+                                        <span className="ns-keycap">T</span> TRIPS{(gameState.uthTripsBet || 0) > 0 ? ` $${gameState.uthTripsBet}` : ''}
                                     </button>
                                     <button
                                         onClick={actions?.uthToggleSixCardBonus}
@@ -337,7 +268,7 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
                                                 : 'border-gray-700 bg-black/50 text-gray-400 hover:bg-gray-800'
                                         }`}
                                     >
-                                        6-CARD{(gameState.uthSixCardBonusBet || 0) > 0 ? ` $${gameState.uthSixCardBonusBet}` : ''}
+                                        <span className="ns-keycap">6</span> 6-CARD{(gameState.uthSixCardBonusBet || 0) > 0 ? ` $${gameState.uthSixCardBonusBet}` : ''}
                                     </button>
                                     <button
                                         onClick={actions?.uthToggleProgressive}
@@ -347,7 +278,7 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
                                                 : 'border-gray-700 bg-black/50 text-gray-400 hover:bg-gray-800'
                                         }`}
                                     >
-                                        PROG{(gameState.uthProgressiveBet || 0) > 0 ? ` $${gameState.uthProgressiveBet}` : ''}
+                                        <span className="ns-keycap">J</span> PROG{(gameState.uthProgressiveBet || 0) > 0 ? ` $${gameState.uthProgressiveBet}` : ''}
                                     </button>
                                 </div>
 
@@ -396,13 +327,13 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
                                     onClick={() => actions?.uhBet?.(4)}
                                     className="px-6 py-2 rounded border-2 font-bold text-sm font-mono tracking-widest uppercase transition-all border-terminal-gold text-terminal-gold hover:bg-terminal-gold/10"
                                 >
-                                    BET 4X
+                                    <span className="ns-keycap">4</span> BET 4X
                                 </button>
                                 <button
                                     onClick={() => actions?.uhBet?.(3)}
                                     className="px-6 py-2 rounded border-2 font-bold text-sm font-mono tracking-widest uppercase transition-all border-terminal-gold text-terminal-gold hover:bg-terminal-gold/10"
                                 >
-                                    BET 3X
+                                    <span className="ns-keycap">3</span> BET 3X
                                 </button>
                             </>
                         ) : gameState.communityCards.length === 3 ? (
@@ -410,14 +341,14 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
                                 onClick={() => actions?.uhBet?.(2)}
                                 className="px-6 py-2 rounded border-2 font-bold text-sm font-mono tracking-widest uppercase transition-all border-terminal-gold text-terminal-gold hover:bg-terminal-gold/10"
                             >
-                                BET 2X
+                                <span className="ns-keycap">2</span> BET 2X
                             </button>
                         ) : gameState.communityCards.length === 5 && !gameState.message.includes('REVEAL') ? (
                             <button
                                 onClick={actions?.uhFold}
                                 className="px-6 py-2 rounded border-2 font-bold text-sm font-mono tracking-widest uppercase transition-all border-terminal-accent text-terminal-accent hover:bg-terminal-accent/10"
                             >
-                                FOLD
+                                <span className="ns-keycap">F</span> FOLD
                             </button>
                         ) : null}
                     </div>
@@ -442,14 +373,14 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
                             } hover:scale-105 active:scale-95`}
                         >
                             {gameState.stage === 'BETTING'
-                                ? 'DEAL'
+                                ? <><span className="ns-keycap ns-keycap-dark">⎵</span> DEAL</>
                                 : gameState.stage === 'RESULT'
-                                    ? 'NEW HAND'
+                                    ? <><span className="ns-keycap ns-keycap-dark">⎵</span> NEW HAND</>
                                     : gameState.message.includes('REVEAL')
-                                        ? 'REVEAL'
+                                        ? <><span className="ns-keycap ns-keycap-dark">⎵</span> REVEAL</>
                                         : gameState.communityCards.length === 5
-                                            ? 'BET 1X'
-                                            : 'CHECK'}
+                                            ? <><span className="ns-keycap ns-keycap-dark">1</span> BET 1X</>
+                                            : <><span className="ns-keycap ns-keycap-dark">C</span> CHECK</>}
                         </button>
                     </div>
 
@@ -579,13 +510,13 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
                                             onClick={() => actions?.uhBet?.(4)}
                                             className="flex-1 py-3 rounded border-2 font-bold text-sm font-mono tracking-widest uppercase transition-all border-terminal-gold text-terminal-gold hover:bg-terminal-gold/10"
                                         >
-                                            BET 4X
+                                            <span className="ns-keycap">4</span> BET 4X
                                         </button>
                                         <button
                                             onClick={() => actions?.uhBet?.(3)}
                                             className="flex-1 py-3 rounded border-2 font-bold text-sm font-mono tracking-widest uppercase transition-all border-terminal-gold text-terminal-gold hover:bg-terminal-gold/10"
                                         >
-                                            BET 3X
+                                            <span className="ns-keycap">3</span> BET 3X
                                         </button>
                                     </>
                                 )}
@@ -594,7 +525,7 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
                                         onClick={() => actions?.uhBet?.(2)}
                                         className="flex-1 py-3 rounded border-2 font-bold text-sm font-mono tracking-widest uppercase transition-all border-terminal-gold text-terminal-gold hover:bg-terminal-gold/10"
                                     >
-                                        BET 2X
+                                        <span className="ns-keycap">2</span> BET 2X
                                     </button>
                                 )}
                                 {gameState.communityCards.length === 5 && (
@@ -602,7 +533,7 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
                                         onClick={actions?.uhFold}
                                         className="flex-1 py-3 rounded border-2 font-bold text-sm font-mono tracking-widest uppercase transition-all border-terminal-accent text-terminal-accent hover:bg-terminal-accent/10"
                                     >
-                                        FOLD
+                                        <span className="ns-keycap">F</span> FOLD
                                     </button>
                                 )}
                             </div>

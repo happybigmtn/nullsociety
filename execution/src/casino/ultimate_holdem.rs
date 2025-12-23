@@ -93,6 +93,7 @@ pub enum Action {
     Bet3x = 8,
     SetSixCardBonus = 9,
     SetProgressive = 10,
+    AtomicDeal = 11,
 }
 
 impl TryFrom<u8> for Action {
@@ -111,6 +112,7 @@ impl TryFrom<u8> for Action {
             8 => Ok(Action::Bet3x),
             9 => Ok(Action::SetSixCardBonus),
             10 => Ok(Action::SetProgressive),
+            11 => Ok(Action::AtomicDeal),
             _ => Err(GameError::InvalidPayload),
         }
     }

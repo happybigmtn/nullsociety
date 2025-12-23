@@ -2,7 +2,6 @@
  * 3D Dice Model with pip faces
  *
  * Renders a casino-style die with proper pip layout.
- * Uses terminal-green color scheme to match NullSociety branding.
  */
 import React, { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
@@ -16,11 +15,13 @@ export const DiceModel: React.FC<DiceModelProps> = React.memo(({ size = 1 }) => 
   const materials = useMemo(() => {
     return FACE_VALUES.map((value) => {
       const texture = getDiceFaceTexture(value);
-      return new THREE.MeshStandardMaterial({
+      return new THREE.MeshPhysicalMaterial({
         map: texture,
-        roughness: 0.28,
-        metalness: 0.18,
-        envMapIntensity: 0.6,
+        roughness: 0.32,
+        metalness: 0.0,
+        envMapIntensity: 0.7,
+        clearcoat: 0.4,
+        clearcoatRoughness: 0.25,
       });
     });
   }, []);

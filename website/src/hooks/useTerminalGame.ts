@@ -2127,8 +2127,18 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
             errorCode: e?.error_code ?? e?.errorCode,
           });
 
-          // If this error pertains to the current session, clear it so the user can retry.
-          if (errorSessionId !== null && current !== null && errorSessionId === current) {
+          // Determine if this is a recoverable error (InvalidMove, InvalidPayload)
+          // vs a fatal error (GameAlreadyComplete, InvalidState, DeckExhausted)
+          const lowerMessage = message.toLowerCase();
+          const isRecoverableError =
+            lowerMessage.includes('invalid move') ||
+            lowerMessage.includes('invalidmove') ||
+            lowerMessage.includes('invalid payload') ||
+            lowerMessage.includes('invalidpayload');
+
+          // Only clear the session for FATAL errors, not for recoverable ones like InvalidMove.
+          // InvalidMove just means "that move isn't valid right now" - the game continues.
+          if (errorSessionId !== null && current !== null && errorSessionId === current && !isRecoverableError) {
             currentSessionIdRef.current = null;
             setCurrentSessionId(null);
             isPendingRef.current = false;

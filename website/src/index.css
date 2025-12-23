@@ -186,16 +186,19 @@ body {
 
 @keyframes diceRoll {
   0% {
-    transform: translateY(0) rotate(0deg);
+    transform: translateY(0) rotate(0deg) scale(1);
   }
-  25% {
-    transform: translateY(-6px) rotate(14deg);
+  20% {
+    transform: translateY(-10px) rotate(140deg) scale(1.03);
   }
-  55% {
-    transform: translateY(2px) rotate(-10deg);
+  45% {
+    transform: translateY(6px) rotate(260deg) scale(0.98);
+  }
+  70% {
+    transform: translateY(-4px) rotate(320deg) scale(1.01);
   }
   100% {
-    transform: translateY(0) rotate(0deg);
+    transform: translateY(0) rotate(360deg) scale(1);
   }
 }
 

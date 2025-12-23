@@ -79,6 +79,7 @@ pub enum Move {
     Reveal = 4,
     SetSixCardBonus = 5,
     SetProgressive = 6,
+    AtomicDeal = 7,
 }
 
 impl TryFrom<u8> for Move {
@@ -93,6 +94,7 @@ impl TryFrom<u8> for Move {
             4 => Ok(Move::Reveal),
             5 => Ok(Move::SetSixCardBonus),
             6 => Ok(Move::SetProgressive),
+            7 => Ok(Move::AtomicDeal),
             _ => Err(GameError::InvalidPayload),
         }
     }

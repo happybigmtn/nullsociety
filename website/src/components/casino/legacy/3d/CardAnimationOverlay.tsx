@@ -320,8 +320,10 @@ export const CardAnimationOverlay: React.FC<CardAnimationOverlayProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [isAnimating, isExpanded, is3DMode]);
 
-  const expandedClasses = isExpanded && is3DMode
-    ? 'absolute inset-0 z-[60] bg-terminal-black/95 transition-all duration-300'
+  const overlayClasses = is3DMode
+    ? `absolute inset-0 transition-all duration-300 ${
+        isExpanded ? 'z-[60] bg-terminal-black/95 pointer-events-auto' : 'z-[5] pointer-events-none'
+      }`
     : '';
 
   return (
@@ -339,77 +341,75 @@ export const CardAnimationOverlay: React.FC<CardAnimationOverlayProps> = ({
       )}
 
       {is3DMode && (
-        <div className={`pointer-events-auto ${expandedClasses}`}>
-          {isExpanded && (
-            <div className="h-full w-full">
-              <Suspense fallback={<Scene3DLoader />}>
-                <CardTableScene3D
-                  slots={slots}
-                  dealOrder={dealOrder}
-                  cardsById={cardsById}
-                  dealId={dealId}
-                  dealSlots={dealSlots}
-                  revealSlots={revealSlots}
-                  isAnimating={isAnimating}
-                  onAnimationComplete={handleAnimationComplete}
-                  isMobile={isMobile}
-                  fullscreen={isExpanded}
-                  skipRequested={skipRequested}
-                  tableSize={tableSize}
-                  cardSize={cardSize}
-                  selectedHand={selectedHand}
-                  revealStaggerMs={revealStaggerMs}
-                  squeezeSlots={squeezeSlots}
-                  chipStacks={chipStacks}
-                  accentColor={accentColor}
-                  performanceKey={telemetryGame}
-                />
-              </Suspense>
+        <div className={overlayClasses}>
+          <div className="h-full w-full">
+            <Suspense fallback={<Scene3DLoader />}>
+              <CardTableScene3D
+                slots={slots}
+                dealOrder={dealOrder}
+                cardsById={cardsById}
+                dealId={dealId}
+                dealSlots={dealSlots}
+                revealSlots={revealSlots}
+                isAnimating={isAnimating}
+                onAnimationComplete={handleAnimationComplete}
+                isMobile={isMobile}
+                fullscreen={true}
+                skipRequested={skipRequested}
+                tableSize={tableSize}
+                cardSize={cardSize}
+                selectedHand={selectedHand}
+                revealStaggerMs={revealStaggerMs}
+                squeezeSlots={squeezeSlots}
+                chipStacks={chipStacks}
+                accentColor={accentColor}
+                performanceKey={telemetryGame}
+              />
+            </Suspense>
 
-              {!isAnimating && (
-                <div className="absolute top-4 left-1/2 -translate-x-1/2">
-                  <span className="text-xs font-mono text-gray-500 tracking-wider">READY</span>
-                </div>
-              )}
-              {isAnimating && dealSlots.length === 0 && revealSlots.length === 0 && (
-                <div className="absolute top-4 left-1/2 -translate-x-1/2">
-                  <span className="text-xs font-mono text-terminal-green animate-pulse font-bold tracking-wider">
-                    WAITING FOR CHAIN...
-                  </span>
-                </div>
-              )}
-              {feedback.show && (
-                <div className="absolute bottom-4 left-4 right-4 flex items-center justify-center">
-                  <div className="flex flex-col sm:flex-row items-center gap-2 rounded border border-terminal-green/40 bg-black/80 px-3 py-2 text-xs font-mono text-terminal-green shadow-lg">
-                    <span>3D feel smooth?</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => feedback.submit('positive')}
-                        className="px-2 py-1 rounded border border-terminal-green/60 hover:bg-terminal-green/20"
-                      >
-                        YES
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => feedback.submit('negative')}
-                        className="px-2 py-1 rounded border border-terminal-accent/60 text-terminal-accent hover:bg-terminal-accent/20"
-                      >
-                        NO
-                      </button>
-                      <button
-                        type="button"
-                        onClick={feedback.dismiss}
-                        className="px-2 py-1 rounded border border-gray-600/60 text-gray-400 hover:bg-gray-600/20"
-                      >
-                        LATER
-                      </button>
-                    </div>
+            {isExpanded && !isAnimating && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2">
+                <span className="text-xs font-mono text-gray-500 tracking-wider">READY</span>
+              </div>
+            )}
+            {isExpanded && isAnimating && dealSlots.length === 0 && revealSlots.length === 0 && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2">
+                <span className="text-xs font-mono text-terminal-green animate-pulse font-bold tracking-wider">
+                  WAITING FOR CHAIN...
+                </span>
+              </div>
+            )}
+            {isExpanded && feedback.show && (
+              <div className="absolute bottom-4 left-4 right-4 flex items-center justify-center">
+                <div className="flex flex-col sm:flex-row items-center gap-2 rounded border border-terminal-green/40 bg-black/80 px-3 py-2 text-xs font-mono text-terminal-green shadow-lg">
+                  <span>3D feel smooth?</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => feedback.submit('positive')}
+                      className="px-2 py-1 rounded border border-terminal-green/60 hover:bg-terminal-green/20"
+                    >
+                      YES
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => feedback.submit('negative')}
+                      className="px-2 py-1 rounded border border-terminal-accent/60 text-terminal-accent hover:bg-terminal-accent/20"
+                    >
+                      NO
+                    </button>
+                    <button
+                      type="button"
+                      onClick={feedback.dismiss}
+                      className="px-2 py-1 rounded border border-gray-600/60 text-gray-400 hover:bg-gray-600/20"
+                    >
+                      LATER
+                    </button>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </>

@@ -1,26 +1,10 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { GameState } from '../../../types';
 import { Hand } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
-import { GameControlBar } from '../GameControlBar';
 import { getVisibleHandValue } from '../../../utils/gameUtils';
 import { cardIdToString } from '../../../utils/gameStateParser';
-import { CardAnimationOverlay } from '../3d/CardAnimationOverlay';
-import { deriveSessionRoundId } from '../3d/engine/GuidedRound';
-import { buildCardsById, buildRowSlots } from '../3d/cardLayouts';
-
-// Simple mobile detection hook
-const useIsMobile = () => {
-    const [isMobile, setIsMobile] = useState(false);
-    useEffect(() => {
-        const check = () => setIsMobile(window.innerWidth < 640);
-        check();
-        window.addEventListener('resize', check);
-        return () => window.removeEventListener('resize', check);
-    }, []);
-    return isMobile;
-};
 
 const CHIP_VALUES = [1, 5, 25, 100, 500, 1000, 5000, 10000];
 
@@ -73,12 +57,10 @@ export const BlackjackView = React.memo<{
     playMode?: 'CASH' | 'FREEROLL' | null;
     currentBet?: number;
     onBetChange?: (bet: number) => void;
-    onAnimationBlockingChange?: (blocking: boolean) => void;
-}>(({ gameState, actions, lastWin, playMode, currentBet, onBetChange, onAnimationBlockingChange }) => {
+}>(({ gameState, actions, lastWin, playMode, currentBet, onBetChange }) => {
     const [showChipSelector, setShowChipSelector] = useState(false);
     const dealerValue = useMemo(() => getVisibleHandValue(gameState.dealerCards), [gameState.dealerCards]);
     const playerValue = useMemo(() => getVisibleHandValue(gameState.playerCards), [gameState.playerCards]);
-    const isMobile = useIsMobile();
     const showInsurancePrompt = useMemo(() => {
         if (gameState.stage !== 'PLAYING') return false;
         const msg = (gameState.message ?? '').toString().toUpperCase();
@@ -95,25 +77,6 @@ export const BlackjackView = React.memo<{
         gameState.playerCards[0]?.rank === gameState.playerCards[1]?.rank;
 
     const activeHandNumber = gameState.completedHands.length + 1;
-    const animationActive = useMemo(() => /DEALING|HITTING|STANDING|DOUBLING|SPLITTING|REVEALING/.test(gameState.message), [gameState.message]);
-    const roundId = useMemo(() => {
-        if (gameState.sessionId === null || !Number.isFinite(gameState.moveNumber)) return undefined;
-        return deriveSessionRoundId(gameState.sessionId, gameState.moveNumber);
-    }, [gameState.moveNumber, gameState.sessionId]);
-    const dealerSlots = useMemo(() => buildRowSlots('dealer', 6, -1.55, { mirror: true }), []);
-    const playerSlots = useMemo(() => buildRowSlots('player', 6, 1.55), []);
-    const slots = useMemo(() => [...dealerSlots, ...playerSlots], [dealerSlots, playerSlots]);
-    const dealOrder = useMemo(() => {
-        const order: string[] = [];
-        for (let i = 0; i < 6; i += 1) {
-            order.push(`player-${i}`, `dealer-${i}`);
-        }
-        return order;
-    }, []);
-    const cardsById = useMemo(() => ({
-        ...buildCardsById('player', gameState.playerCards, 6),
-        ...buildCardsById('dealer', gameState.dealerCards, 6),
-    }), [gameState.playerCards, gameState.dealerCards]);
 
     const formatCompletedTitle = (idx: number, h: any) => {
         const bet = typeof h?.bet === 'number' ? h.bet : 0;
@@ -134,17 +97,6 @@ export const BlackjackView = React.memo<{
     };
     return (
         <>
-            <CardAnimationOverlay
-                slots={slots}
-                dealOrder={dealOrder}
-                cardsById={cardsById}
-                isActionActive={animationActive}
-                storageKey="blackjack-3d-mode"
-                guidedGameType="blackjack"
-                roundId={roundId}
-                onAnimationBlockingChange={onAnimationBlockingChange}
-                isMobile={isMobile}
-            />
             <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-6 md:gap-8 relative z-10 pt-8 sm:pt-10 pb-24 sm:pb-20">
                 <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">BLACKJACK</h1>
                 <div className="absolute top-2 left-2 z-40">

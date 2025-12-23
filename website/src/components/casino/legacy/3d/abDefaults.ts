@@ -14,10 +14,11 @@ export const getAbBucket = (): AbBucket => {
 };
 
 export const getInitial3DMode = (storageKey: string) => {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === 'undefined') return true;
   const stored = localStorage.getItem(storageKey);
-  if (stored === 'true' || stored === 'false') return stored === 'true';
-  return getAbBucket() === '3d';
+  if (stored === 'true') return true;
+  localStorage.setItem(storageKey, 'true');
+  return true;
 };
 
 export const trackAbBucket = (game?: string) => {

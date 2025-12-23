@@ -21,7 +21,8 @@ import {
   type RandomSource,
 } from './diceUtils';
 import { ATTRACTOR_PRESETS, calculateAlignmentTorque, DICE_PHYSICS } from './physics';
-import CollisionSound from './audio/CollisionSound';
+import AudioManager from './audio/AudioManager';
+import { createDiceImpact, type ImpactMaterial } from './audio/proceduralSounds';
 import PositionalAudioEmitter from './audio/PositionalAudioEmitter';
 
 export interface PhysicsDiceRef {
@@ -62,7 +63,7 @@ interface PhysicsDiceProps {
   /** Enable collision audio */
   soundEnabled?: boolean;
   /** Collision material for audio */
-  soundMaterial?: 'plastic' | 'metal' | 'felt' | 'rubber' | 'wood';
+  soundMaterial?: ImpactMaterial;
   /** Audio volume scaling */
   soundVolume?: number;
 }
@@ -104,6 +105,7 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
     const staggerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const impactParticlesRef = useRef<ImpactParticlesHandle>(null);
     const lastImpactMsRef = useRef(0);
+    const lastSoundMsRef = useRef(0);
     const impactPointRef = useRef(new THREE.Vector3());
     const smoothSettleRef = useRef<{
       startMs: number;
@@ -120,6 +122,8 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
     const forceSettleHeight = 0.8;
     const smoothSettleDurationMs = 640;
     const impactCooldownMs = 90;
+    const soundVelocityThreshold = 1.2;
+    const audioManagerRef = useRef(AudioManager.getInstance());
 
     const clampToBounds = (translation: { x: number; y: number; z: number }) => {
       if (!settleBounds) return translation;
@@ -314,7 +318,38 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
       const intensity = Math.min(1, speed / 9);
       impactParticlesRef.current.emit(impactPointRef.current, intensity);
       lastImpactMsRef.current = now;
-    }, []);
+
+      if (!soundEnabled) return;
+      if (now - lastSoundMsRef.current < impactCooldownMs) return;
+      const targetVel = payload.target.rigidBody?.linvel();
+      const otherVel = payload.other.rigidBody?.linvel();
+      let impactSpeed = 0;
+      if (targetVel && otherVel) {
+        impactSpeed = Math.hypot(
+          targetVel.x - otherVel.x,
+          targetVel.y - otherVel.y,
+          targetVel.z - otherVel.z
+        );
+      } else if (targetVel) {
+        impactSpeed = Math.hypot(targetVel.x, targetVel.y, targetVel.z);
+      } else if (otherVel) {
+        impactSpeed = Math.hypot(otherVel.x, otherVel.y, otherVel.z);
+      }
+      if (impactSpeed < soundVelocityThreshold) return;
+      lastSoundMsRef.current = now;
+
+      const manager = audioManagerRef.current;
+      const ctx = manager.getContext();
+      const master = manager.getMasterGain();
+      if (!ctx || !master) return;
+      void manager.unlock();
+      const node = createDiceImpact(ctx, {
+        velocity: impactSpeed,
+        material: soundMaterial,
+        volume: soundVolume,
+      });
+      node.connect(master);
+    }, [soundEnabled, soundMaterial, soundVolume]);
 
     // Physics frame update for outcome targeting and rest detection
     useFrame(() => {
@@ -466,13 +501,6 @@ export const PhysicsDice = forwardRef<PhysicsDiceRef, PhysicsDiceProps>(
           onCollisionEnter={handleCollisionEnter}
         >
           <DiceModel size={size} />
-          <CollisionSound
-            enabled={soundEnabled}
-            material={soundMaterial}
-            velocityThreshold={1.2}
-            cooldownMs={impactCooldownMs}
-            volume={soundVolume}
-          />
           <PositionalAudioEmitter
             soundType="roll"
             enabled={soundEnabled}

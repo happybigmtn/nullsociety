@@ -249,14 +249,19 @@ export interface ThreeCardState {
 }
 
 /**
- * Three Card Poker State Format:
- * [playerCard1:u8] [playerCard2:u8] [playerCard3:u8]
- * [dealerCard1:u8] [dealerCard2:u8] [dealerCard3:u8]
- * [stage:u8]
+ * Three Card Poker State Format (matches Rust backend):
+ * [version:u8]           - byte 0: STATE_VERSION (1)
+ * [stage:u8]             - byte 1: 0=Betting, 1=Decision, 2=AwaitingReveal, 3=Complete
+ * [playerCard1..3:u8]    - bytes 2-4: player cards
+ * [dealerCard1..3:u8]    - bytes 5-7: dealer cards
+ * [pairplusBet:u64 BE]   - bytes 8-15
+ * [sixCardBet:u64 BE]    - bytes 16-23
+ * [progressiveBet:u64 BE] - bytes 24-31
  */
 export function parseThreeCardState(state: Uint8Array): ThreeCardState {
   // Default safe state for malformed input
-  if (!state || state.length < 7) {
+  // Minimum 8 bytes: version(1) + stage(1) + player(3) + dealer(3)
+  if (!state || state.length < 8) {
     return {
       playerCards: [DEFAULT_CARD, DEFAULT_CARD, DEFAULT_CARD],
       dealerCards: [DEFAULT_CARD, DEFAULT_CARD, DEFAULT_CARD],
@@ -264,20 +269,25 @@ export function parseThreeCardState(state: Uint8Array): ThreeCardState {
     };
   }
 
+  // byte 0 = version (skip)
+  // byte 1 = stage
+  const stageValue = state[1];
+  // 0=Betting, 1=Decision, 2=AwaitingReveal, 3=Complete
+  const stage = stageValue === 3 ? 'COMPLETE' : 'ANTE';
+
+  // bytes 2-4 = player cards
   const playerCards: [Card, Card, Card] = [
-    parseCard(state[0]),
-    parseCard(state[1]),
-    parseCard(state[2])
-  ];
-
-  const dealerCards: [Card, Card, Card] = [
+    parseCard(state[2]),
     parseCard(state[3]),
-    parseCard(state[4]),
-    parseCard(state[5])
+    parseCard(state[4])
   ];
 
-  const stageValue = state[6];
-  const stage = stageValue === 0 ? 'ANTE' : 'COMPLETE';
+  // bytes 5-7 = dealer cards
+  const dealerCards: [Card, Card, Card] = [
+    parseCard(state[5]),
+    parseCard(state[6]),
+    parseCard(state[7])
+  ];
 
   return { playerCards, dealerCards, stage };
 }
@@ -295,16 +305,22 @@ export interface UltimateHoldemState {
 }
 
 /**
- * Ultimate Hold'em State Format:
- * [stage:u8]
- * [playerCard1:u8] [playerCard2:u8]
- * [community1:u8] [community2:u8] [community3:u8] [community4:u8] [community5:u8]
- * [dealerCard1:u8] [dealerCard2:u8]
- * [playBetMultiplier:u8]
+ * Ultimate Hold'em State Format (matches Rust backend):
+ * [version:u8]           - byte 0: STATE_VERSION (1)
+ * [stage:u8]             - byte 1: 0=Betting, 1=Preflop, 2=Flop, 3=River, 4=AwaitingReveal, 5=Showdown
+ * [playerCard1..2:u8]    - bytes 2-3: player cards
+ * [community1..5:u8]     - bytes 4-8: community cards
+ * [dealerCard1..2:u8]    - bytes 9-10: dealer cards
+ * [playBetMultiplier:u8] - byte 11: play bet multiplier (0, 1, 2, 3, or 4)
+ * [bonus1..4:u8]         - bytes 12-15: bonus cards (for 6-card bonus)
+ * [tripsBet:u64 BE]      - bytes 16-23
+ * [sixCardBet:u64 BE]    - bytes 24-31
+ * [progressiveBet:u64 BE] - bytes 32-39
  */
 export function parseUltimateHoldemState(state: Uint8Array): UltimateHoldemState {
   // Default safe state for malformed input
-  if (!state || state.length < 11) {
+  // Minimum 12 bytes: version(1) + stage(1) + player(2) + community(5) + dealer(2) + mult(1)
+  if (!state || state.length < 12) {
     return {
       stage: 'PREFLOP',
       playerCards: [DEFAULT_CARD, DEFAULT_CARD],
@@ -314,30 +330,37 @@ export function parseUltimateHoldemState(state: Uint8Array): UltimateHoldemState
     };
   }
 
-  const stageValue = state[0];
-  const stage = stageValue === 0 ? 'PREFLOP' :
-                stageValue === 1 ? 'FLOP' :
-                stageValue === 2 ? 'RIVER' : 'SHOWDOWN';
+  // byte 0 = version (skip)
+  // byte 1 = stage
+  const stageValue = state[1];
+  // 0=Betting, 1=Preflop, 2=Flop, 3=River, 4=AwaitingReveal, 5=Showdown
+  const stage = stageValue === 0 || stageValue === 1 ? 'PREFLOP' :
+                stageValue === 2 ? 'FLOP' :
+                stageValue === 3 ? 'RIVER' : 'SHOWDOWN';
 
+  // bytes 2-3 = player cards
   const playerCards: [Card, Card] = [
-    parseCard(state[1]),
-    parseCard(state[2])
+    parseCard(state[2]),
+    parseCard(state[3])
   ];
 
+  // bytes 4-8 = community cards
   const communityCards: [Card, Card, Card, Card, Card] = [
-    parseCard(state[3]),
     parseCard(state[4]),
     parseCard(state[5]),
     parseCard(state[6]),
-    parseCard(state[7])
+    parseCard(state[7]),
+    parseCard(state[8])
   ];
 
+  // bytes 9-10 = dealer cards
   const dealerCards: [Card, Card] = [
-    parseCard(state[8]),
-    parseCard(state[9])
+    parseCard(state[9]),
+    parseCard(state[10])
   ];
 
-  const playBetMultiplier = state[10];
+  // byte 11 = play bet multiplier
+  const playBetMultiplier = state[11];
 
   return {
     stage,

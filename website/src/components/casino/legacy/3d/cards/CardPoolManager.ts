@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { Card } from '../../../../types';
-import { getCardBackTexture, getCardTexture } from '../cardTextures';
+import { getCardBackTexture, getCardNormalMap, getCardRoughnessMap, getCardTexture } from '../cardTextures';
 
 export interface PooledCard {
   mesh: THREE.Mesh;
@@ -13,9 +13,9 @@ interface PoolConfig {
   size?: [number, number, number];
 }
 
-const SELECTED_COLOR = new THREE.Color('#22ff88');
-const OPPONENT_COLOR = new THREE.Color('#f87171');
-const NEUTRAL_COLOR = new THREE.Color('#e5e7eb');
+const SELECTED_COLOR = new THREE.Color('#d6b56f');
+const OPPONENT_COLOR = new THREE.Color('#7a2f2f');
+const NEUTRAL_COLOR = new THREE.Color('#e6dccb');
 
 export class CardPoolManager {
   private readonly poolSize: number;
@@ -56,27 +56,39 @@ export class CardPoolManager {
   }
 
   private createCard(): PooledCard {
-    const frontMaterial = new THREE.MeshStandardMaterial({
-      roughness: 0.45,
-      metalness: 0.1,
-      envMapIntensity: 0.4,
+    const normalMap = getCardNormalMap();
+    const roughnessMap = getCardRoughnessMap();
+
+    const frontMaterial = new THREE.MeshPhysicalMaterial({
+      roughness: 0.35,
+      metalness: 0.0,
+      envMapIntensity: 0.6,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.2,
+      normalMap,
+      roughnessMap,
+      normalScale: new THREE.Vector2(0.25, 0.25),
     });
 
-    const backMaterial = new THREE.MeshStandardMaterial({
+    const backMaterial = new THREE.MeshPhysicalMaterial({
       map: getCardBackTexture(),
-      transparent: true,
-      roughness: 0.4,
-      metalness: 0.15,
-      envMapIntensity: 0.3,
+      roughness: 0.5,
+      metalness: 0.0,
+      envMapIntensity: 0.55,
+      clearcoat: 0.3,
+      clearcoatRoughness: 0.25,
+      normalMap,
+      roughnessMap,
+      normalScale: new THREE.Vector2(0.2, 0.2),
     });
 
     const edgeMaterial = new THREE.MeshStandardMaterial({
       color: NEUTRAL_COLOR,
       emissive: NEUTRAL_COLOR,
-      emissiveIntensity: 0.15,
-      roughness: 0.3,
-      metalness: 0.6,
-      envMapIntensity: 0.5,
+      emissiveIntensity: 0.05,
+      roughness: 0.55,
+      metalness: 0.05,
+      envMapIntensity: 0.4,
     });
 
     const materials = [edgeMaterial, edgeMaterial, edgeMaterial, edgeMaterial, frontMaterial, backMaterial];
@@ -89,6 +101,8 @@ export class CardPoolManager {
       }
       mesh.visible = true;
       frontMaterial.map = card.isHidden ? getCardBackTexture() : getCardTexture(card);
+      frontMaterial.roughnessMap = roughnessMap;
+      frontMaterial.normalMap = normalMap;
       frontMaterial.needsUpdate = true;
 
       const isSelected = options?.isSelected;
@@ -96,7 +110,7 @@ export class CardPoolManager {
         isSelected === true ? SELECTED_COLOR : isSelected === false ? OPPONENT_COLOR : NEUTRAL_COLOR;
       edgeMaterial.color.copy(edgeColor);
       edgeMaterial.emissive.copy(edgeColor);
-      edgeMaterial.emissiveIntensity = isSelected !== undefined ? 0.5 : 0.15;
+      edgeMaterial.emissiveIntensity = isSelected !== undefined ? 0.18 : 0.05;
       edgeMaterial.needsUpdate = true;
     };
 

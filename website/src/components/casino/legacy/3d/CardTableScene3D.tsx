@@ -17,6 +17,8 @@ import { SqueezeCard3D } from './cards/SqueezeCard3D';
 import { ChipStack3D, type ChipStackConfig } from './chips/ChipStack3D';
 import PerformanceOverlay from './PerformanceOverlay';
 import PerformanceSampler from './PerformanceSampler';
+import { createMaterialFromPreset, createPhysicalMaterialFromPreset } from './materials/MaterialConfig';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
 // Default timing constants
 const DEAL_INTERVAL_MS = 130;
@@ -147,6 +149,22 @@ function CardTableScene({
     y: tableSize?.y ?? CARD_SCENE_CONFIG.table.y,
   };
   const resolvedCardSize = cardSize ?? CARD_SCENE_CONFIG.cardSize;
+  const feltMaterial = useMemo(
+    () => createMaterialFromPreset('felt', { color: '#0f2b22', envMapIntensity: 0.2, roughness: 0.93 }),
+    []
+  );
+  const railMaterial = useMemo(
+    () => createPhysicalMaterialFromPreset('polishedWood', { color: '#3b2314', roughness: 0.42, clearcoat: 0.45 }),
+    []
+  );
+  const feltGeometry = useMemo(
+    () => new RoundedBoxGeometry(tableConfig.width, tableConfig.depth, 0.08, 6, 0.18),
+    [tableConfig.depth, tableConfig.width]
+  );
+  const railGeometry = useMemo(
+    () => new RoundedBoxGeometry(tableConfig.width + 0.8, tableConfig.depth + 0.8, 0.4, 6, 0.28),
+    [tableConfig.depth, tableConfig.width]
+  );
 
   if (rigsRef.current.length === 0) {
     rigsRef.current = slotInfos.map((slot, index) => {
@@ -400,8 +418,8 @@ function CardTableScene({
 
   return (
     <>
-      {/* Pure black void */}
-      <color attach="background" args={['#000000']} />
+      {/* Studio backdrop */}
+      <color attach="background" args={['#0b0b0c']} />
       <CasinoEnvironment />
       <LightingRig
         preset="vip"
@@ -411,7 +429,9 @@ function CardTableScene({
         accentLights={accentLights}
       />
 
-      {/* No table - cards float in void */}
+      {/* Table surface */}
+      <mesh geometry={railGeometry} position={[0, tableConfig.y - 0.18, 0]} material={railMaterial} />
+      <mesh geometry={feltGeometry} position={[0, tableConfig.y, 0]} material={feltMaterial} />
 
       {chipStacks?.map((stack) => (
         <ChipStack3D key={stack.id} {...stack} />

@@ -1,7 +1,7 @@
 import React, { forwardRef, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { Card } from '../../../types';
-import { getCardBackTexture, getCardTexture } from './cardTextures';
+import { getCardBackTexture, getCardNormalMap, getCardRoughnessMap, getCardTexture } from './cardTextures';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
 export type CardHand = 'player' | 'banker' | null;
@@ -13,10 +13,10 @@ interface Card3DProps {
   isSelected?: boolean; // When true, use green; when false, use red; when undefined, use hand-based default
 }
 
-// Selection-based colors - matches nullspace logo green and opponent red
-const SELECTED_COLOR = new THREE.Color('#22ff88'); // Neon green (nullspace logo color)
-const OPPONENT_COLOR = new THREE.Color('#f87171'); // Bright red
-const NEUTRAL_COLOR = new THREE.Color('#e5e7eb'); // Light gray/white edge
+// Selection-based colors - subtle, photorealistic accents
+const SELECTED_COLOR = new THREE.Color('#d6b56f'); // Warm gold
+const OPPONENT_COLOR = new THREE.Color('#7a2f2f'); // Deep wine
+const NEUTRAL_COLOR = new THREE.Color('#e6dccb'); // Warm ivory edge
 
 export const Card3D = forwardRef<THREE.Group, Card3DProps>(({ card, size = [1.1, 1.6, 0.03], hand = null, isSelected }, ref) => {
   const [width, height, thickness] = size;
@@ -29,6 +29,8 @@ export const Card3D = forwardRef<THREE.Group, Card3DProps>(({ card, size = [1.1,
     return getCardTexture(card);
   }, [card]);
   const backTexture = useMemo(() => getCardBackTexture(), []);
+  const normalMap = useMemo(() => getCardNormalMap(), []);
+  const roughnessMap = useMemo(() => getCardRoughnessMap(), []);
 
   const geometry = useMemo(() => {
     return new RoundedBoxGeometry(width, height, depthForRadius, 4, cornerRadius);
@@ -43,26 +45,35 @@ export const Card3D = forwardRef<THREE.Group, Card3DProps>(({ card, size = [1.1,
   }, [isSelected]);
 
   // Emissive glow for the edge - stronger for selected/opponent cards
-  const emissiveIntensity = isSelected !== undefined ? 0.5 : 0.15;
+  const emissiveIntensity = isSelected !== undefined ? 0.18 : 0.05;
 
   const frontMaterial = useMemo(() => {
-    return new THREE.MeshStandardMaterial({
+    return new THREE.MeshPhysicalMaterial({
       map: frontTexture,
-      roughness: 0.45,
-      metalness: 0.1,
-      envMapIntensity: 0.4,
+      roughness: 0.35,
+      metalness: 0.0,
+      envMapIntensity: 0.6,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.2,
+      normalMap,
+      roughnessMap,
+      normalScale: new THREE.Vector2(0.25, 0.25),
     });
-  }, [frontTexture]);
+  }, [frontTexture, normalMap, roughnessMap]);
 
   const backMaterial = useMemo(() => {
-    return new THREE.MeshStandardMaterial({
+    return new THREE.MeshPhysicalMaterial({
       map: backTexture,
-      transparent: true,
-      roughness: 0.4,
-      metalness: 0.15,
-      envMapIntensity: 0.3,
+      roughness: 0.5,
+      metalness: 0.0,
+      envMapIntensity: 0.55,
+      clearcoat: 0.3,
+      clearcoatRoughness: 0.25,
+      normalMap,
+      roughnessMap,
+      normalScale: new THREE.Vector2(0.2, 0.2),
     });
-  }, [backTexture]);
+  }, [backTexture, normalMap, roughnessMap]);
 
   // Glowing edge material based on hand
   const edgeMaterial = useMemo(() => {
@@ -70,9 +81,9 @@ export const Card3D = forwardRef<THREE.Group, Card3DProps>(({ card, size = [1.1,
       color: edgeColor,
       emissive: edgeColor,
       emissiveIntensity: emissiveIntensity,
-      roughness: 0.3,
-      metalness: 0.6,
-      envMapIntensity: 0.5,
+      roughness: 0.55,
+      metalness: 0.05,
+      envMapIntensity: 0.4,
     });
   }, [edgeColor, emissiveIntensity]);
 

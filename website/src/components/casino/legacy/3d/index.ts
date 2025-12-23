@@ -6,7 +6,6 @@
  */
 
 export { CrapsScene3D } from './CrapsScene3D';
-export { BaccaratScene3D } from './BaccaratScene3D';
 export { BaccaratCards3DWrapper } from './BaccaratCards3DWrapper';
 export { CardAnimationOverlay } from './CardAnimationOverlay';
 export { CardTableScene3D } from './CardTableScene3D';
@@ -18,8 +17,6 @@ export { SicBoDice3DWrapper } from './SicBoDice3DWrapper';
 export * from './cardLayouts';
 export { PhysicsDice } from './PhysicsDice';
 export { DiceModel } from './DiceModel';
-export { PowerMeter } from './PowerMeter';
-export { Slingshot } from './Slingshot';
 export * from './diceUtils';
 export * from './cards';
 export * from './chips';
@@ -29,5 +26,4 @@ export { default as LightningEffect } from './effects/LightningEffect';
 export { default as SqueezeCard } from './effects/SqueezeCard';
 export { default as AudioManager } from './audio/AudioManager';
 export { default as AmbientSoundscape } from './audio/AmbientSoundscape';
-export { default as CollisionSound } from './audio/CollisionSound';
 export { default as PositionalAudioEmitter } from './audio/PositionalAudioEmitter';

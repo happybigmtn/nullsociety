@@ -96,8 +96,67 @@ export const Chip: React.FC<{ value: number }> = ({ value }) => (
   </div>
 );
 
+const DICE_PIP_POSITIONS: Record<number, [number, number][]> = {
+  1: [[0, 0]],
+  2: [[-0.2, 0.2], [0.2, -0.2]],
+  3: [[-0.2, 0.2], [0, 0], [0.2, -0.2]],
+  4: [[-0.2, 0.2], [0.2, 0.2], [-0.2, -0.2], [0.2, -0.2]],
+  5: [[-0.2, 0.2], [0.2, 0.2], [0, 0], [-0.2, -0.2], [0.2, -0.2]],
+  6: [[-0.2, 0.25], [0.2, 0.25], [-0.2, 0], [0.2, 0], [-0.2, -0.25], [0.2, -0.25]],
+};
+
+const diceFaceCache = new Map<number, string>();
+
+const getDiceFaceDataUrl = (value: number) => {
+  const cached = diceFaceCache.get(value);
+  if (cached) return cached;
+  if (typeof document === 'undefined') return '';
+
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+
+  const gradient = ctx.createLinearGradient(0, 0, size, size);
+  gradient.addColorStop(0, '#fbf7f1');
+  gradient.addColorStop(1, '#e9ded1');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+
+  ctx.strokeStyle = '#e3dacd';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(2, 2, size - 4, size - 4);
+
+  const pips = DICE_PIP_POSITIONS[value] || [];
+  const pipRadius = size * 0.075;
+
+  for (const [px, py] of pips) {
+    const x = size / 2 + px * size;
+    const y = size / 2 - py * size;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.arc(x + size * 0.015, y + size * 0.015, pipRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#b12024';
+    ctx.beginPath();
+    ctx.arc(x, y, pipRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#e7b1b1';
+    ctx.beginPath();
+    ctx.arc(x - pipRadius * 0.3, y - pipRadius * 0.3, pipRadius * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const dataUrl = canvas.toDataURL('image/png');
+  diceFaceCache.set(value, dataUrl);
+  return dataUrl;
+};
+
 export const DiceRender: React.FC<{ value: number; delayMs?: number }> = ({ value, delayMs }) => {
   const [animKey, setAnimKey] = useState(0);
+  const faceUrl = useMemo(() => getDiceFaceDataUrl(value), [value]);
 
   useEffect(() => {
     setAnimKey((k) => k + 1);
@@ -106,10 +165,21 @@ export const DiceRender: React.FC<{ value: number; delayMs?: number }> = ({ valu
   return (
     <div
       key={animKey}
-      style={delayMs !== undefined ? ({ animationDelay: `${delayMs}ms` } as React.CSSProperties) : undefined}
-      className="w-14 h-14 sm:w-16 sm:h-16 bg-terminal-black border border-terminal-green rounded flex items-center justify-center shadow-[0_0_12px_rgba(0,0,0,0.6)] animate-dice-roll"
+      style={{
+        animationDelay: delayMs !== undefined ? `${delayMs}ms` : undefined,
+        backgroundImage: faceUrl ? `url(${faceUrl})` : undefined,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundColor: '#f6f2ea',
+        borderColor: '#e3dacd',
+        boxShadow:
+          'inset 0 2px 6px rgba(255,255,255,0.7), inset 0 -3px 6px rgba(0,0,0,0.2), 0 10px 18px rgba(0,0,0,0.35)',
+      }}
+      className="w-14 h-14 sm:w-16 sm:h-16 border rounded-xl flex items-center justify-center animate-dice-roll"
     >
-        <span className="text-2xl sm:text-3xl font-black text-terminal-green tabular-nums">{value}</span>
+        {!faceUrl && (
+          <span className="text-2xl sm:text-3xl font-black text-terminal-green tabular-nums">{value}</span>
+        )}
     </div>
   );
 };

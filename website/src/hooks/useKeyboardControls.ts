@@ -182,7 +182,16 @@ export const useKeyboardControls = ({
             }
 
             // Game Actions
-            if (e.key === ' ') { e.preventDefault(); gameActions.deal(); return; }
+            // SPACE: deal() globally, but drawVideoPoker() during Video Poker PLAYING stage
+            if (e.key === ' ') {
+                e.preventDefault();
+                if (gameState.type === GameType.VIDEO_POKER && gameState.stage === 'PLAYING') {
+                    gameActions.drawVideoPoker();
+                } else {
+                    gameActions.deal();
+                }
+                return;
+            }
             if (e.key.toLowerCase() === 'z') gameActions.toggleShield();
             if (e.key.toLowerCase() === 'x') {
                 // In craps, `x` is reserved for NEXT bets; allow Shift+X for the double modifier.
@@ -206,7 +215,7 @@ export const useKeyboardControls = ({
                 if (k === 'i') gameActions.bjInsurance(true);
                 if (k === 'n') gameActions.bjInsurance(false);
             } else if (gameState.type === GameType.VIDEO_POKER) {
-                if (k === 'd') gameActions.drawVideoPoker();
+                // SPACE for deal/draw is handled globally above
                 // 1-5 toggle hold on cards (Ctrl+1-9 are reserved for bet sizing)
                 if (['1','2','3','4','5'].includes(e.key)) {
                     gameActions.toggleHold(parseInt(e.key)-1);

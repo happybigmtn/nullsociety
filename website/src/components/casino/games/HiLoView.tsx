@@ -1,25 +1,10 @@
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { GameState, Card } from '../../../types';
 import { Hand } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
 import { getHiLoRank } from '../../../utils/gameUtils';
-import { CardAnimationOverlay } from '../3d/CardAnimationOverlay';
-import { buildRowSlots } from '../3d/cardLayouts';
-import { deriveSessionRoundId } from '../3d/engine/GuidedRound';
-
-// Simple mobile detection hook
-const useIsMobile = () => {
-    const [isMobile, setIsMobile] = useState(false);
-    useEffect(() => {
-        const check = () => setIsMobile(window.innerWidth < 640);
-        check();
-        window.addEventListener('resize', check);
-        return () => window.removeEventListener('resize', check);
-    }, []);
-    return isMobile;
-};
 
 interface HiLoViewProps {
     gameState: GameState;
@@ -33,27 +18,15 @@ interface HiLoViewProps {
     };
 }
 
-export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null; onAnimationBlockingChange?: (blocking: boolean) => void }>(({ gameState, deck, actions, lastWin, playMode, onAnimationBlockingChange }) => {
+export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, deck, actions, lastWin, playMode }) => {
     // Keep the prop for compatibility (other games use the shared deck), but HiLo projections
     // must not depend on the local deck (on-chain play doesn't have a local deck).
     void deck;
 
-    const isMobile = useIsMobile();
-    const roundId = useMemo(() => {
-        if (gameState.sessionId === null || !Number.isFinite(gameState.moveNumber)) return undefined;
-        return deriveSessionRoundId(gameState.sessionId, gameState.moveNumber);
-    }, [gameState.moveNumber, gameState.sessionId]);
     const currentCard = gameState.playerCards[gameState.playerCards.length - 1];
     const currentRank = currentCard ? getHiLoRank(currentCard) : 7; // 1..13, default to middle
     const isAtAce = currentRank === 1;
     const isAtKing = currentRank === 13;
-    const animationActive = useMemo(
-        () => /GUESSING|CASHING OUT|WAITING FOR CHAIN|DEALING/.test(gameState.message),
-        [gameState.message]
-    );
-    const cardSlots = useMemo(() => buildRowSlots('card', 1, 0.85, { fan: 0 }), []);
-    const dealOrder = useMemo(() => ['card-0'], []);
-    const cardsById = useMemo(() => ({ 'card-0': currentCard ?? null }), [currentCard]);
 
     const nextGuessMultiplier = useCallback(
         (guess: 'HIGHER' | 'LOWER' | 'SAME') => {
@@ -86,17 +59,6 @@ export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number; playMode?
 
     return (
         <>
-            <CardAnimationOverlay
-                slots={cardSlots}
-                dealOrder={dealOrder}
-                cardsById={cardsById}
-                isActionActive={animationActive}
-                storageKey="hilo-3d-mode"
-                guidedGameType="hilo"
-                roundId={roundId}
-                onAnimationBlockingChange={onAnimationBlockingChange}
-                isMobile={isMobile}
-            />
             <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-6 md:gap-8 relative z-10 pt-8 sm:pt-10 pb-32">
                 <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">HILO</h1>
                 <div className="absolute top-2 left-2 z-40">

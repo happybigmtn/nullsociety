@@ -114,9 +114,19 @@ if [ "$NO_BUILD" = true ]; then
         echo -e "${RED}Error: Binaries not found. Run without --no-build first.${NC}"
         exit 1
     fi
+    # Warn if init-amm missing for fresh starts
+    if [ "$FRESH" = true ] && [ ! -f "target/release/init-amm" ]; then
+        echo -e "${YELLOW}Warning: init-amm not found. AMM will not be initialized.${NC}"
+        echo -e "${YELLOW}Run without --no-build once to build init-amm.${NC}"
+    fi
 else
     echo -e "${CYAN}Building binaries...${NC}"
     cargo build --release -p nullspace-simulator -p nullspace-node 2>&1 | tail -5
+    # Also build init-amm for fresh starts
+    if [ "$FRESH" = true ]; then
+        echo -e "${CYAN}Building init-amm for AMM initialization...${NC}"
+        cargo build --release --bin init-amm 2>&1 | tail -2
+    fi
 fi
 
 # Create data directories
@@ -155,6 +165,16 @@ for i in $(seq 0 $((NODES - 1))); do
     PIDS+=($!)
     sleep 0.5  # Brief stagger for peer discovery
 done
+
+# Wait a bit for consensus to stabilize
+echo "Waiting for consensus to stabilize..."
+sleep 3
+
+# Initialize AMM if fresh start
+if [ "$FRESH" = true ] && [ -f "target/release/init-amm" ]; then
+    echo -e "${CYAN}Initializing AMM pool with liquidity...${NC}"
+    ./target/release/init-amm --url http://localhost:8080 || echo -e "${YELLOW}AMM init failed (may already exist)${NC}"
+fi
 
 echo
 echo -e "${GREEN}=== Local Consensus Network Running ===${NC}"

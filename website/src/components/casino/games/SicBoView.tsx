@@ -4,19 +4,7 @@ import { GameState, SicBoBet } from '../../../types';
 import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
 import { getSicBoTotalItems, getSicBoCombinationItems, calculateSicBoTotalExposure, calculateSicBoCombinationExposure } from '../../../utils/gameUtils';
-import { SicBoDice3DWrapper } from '../3d/SicBoDice3DWrapper';
-
-// Simple mobile detection hook
-const useIsMobile = () => {
-    const [isMobile, setIsMobile] = useState(false);
-    useEffect(() => {
-        const check = () => setIsMobile(window.innerWidth < 640);
-        check();
-        window.addEventListener('resize', check);
-        return () => window.removeEventListener('resize', check);
-    }, []);
-    return isMobile;
-};
+import { DiceRender } from '../GameComponents';
 
 export const SicBoView = React.memo<{
     gameState: GameState;
@@ -24,16 +12,12 @@ export const SicBoView = React.memo<{
     actions: any;
     lastWin?: number;
     playMode?: 'CASH' | 'FREEROLL' | null;
-    onAnimationBlockingChange?: (blocking: boolean) => void;
-}>(({ gameState, numberInput = "", actions, lastWin, playMode, onAnimationBlockingChange }) => {
+}>(({ gameState, numberInput = "", actions, lastWin, playMode }) => {
 
     const totalItems = useMemo(() => getSicBoTotalItems(), []);
     const combinationItems = useMemo(() => getSicBoCombinationItems(), []);
     const betTypes = useMemo(() => new Set(gameState.sicBoBets.map((b) => b.type)), [gameState.sicBoBets]);
     const [tapPicks, setTapPicks] = useState<number[]>([]);
-    const isMobile = useIsMobile();
-    const isRolling = gameState.message === 'ROLLING...';
-
     useEffect(() => {
         setTapPicks([]);
     }, [gameState.sicBoInputMode]);
@@ -243,14 +227,18 @@ export const SicBoView = React.memo<{
                     </MobileDrawer>
                 </div>
                 {/* Dice Display */}
-                <SicBoDice3DWrapper
-                    diceValues={gameState.dice}
-                    resultId={gameState.sicBoHistory.length}
-                    isRolling={isRolling}
-                    onRoll={() => actions?.deal?.()}
-                    isMobile={isMobile}
-                    onAnimationBlockingChange={onAnimationBlockingChange}
-                />
+                <div className="min-h-[96px] flex gap-8 items-center justify-center">
+                    {gameState.dice.length > 0 && (
+                        <div className="flex flex-col gap-2 items-center">
+                            <span className="text-xs uppercase tracking-widest text-gray-500">ROLL</span>
+                            <div className="flex gap-4">
+                                {gameState.dice.map((d, i) => (
+                                    <DiceRender key={`${gameState.sicBoHistory.length}-${i}`} value={d} delayMs={i * 60} />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
 
                 {/* Center Info */}
                 <div className="text-center space-y-3 relative z-20">
