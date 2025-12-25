@@ -154,6 +154,18 @@ export const BorrowPanel: React.FC<BorrowPanelProps> = ({
           <div>
             Fees: <span className="text-white">{house?.accumulatedFees ?? 0}</span>
           </div>
+          <div>
+            vUSDT debt: <span className="text-white">{house?.totalVusdtDebt ?? 0}</span>
+          </div>
+          <div>
+            Stability fees: <span className="text-white">{house?.stabilityFeesAccrued ?? 0}</span>
+          </div>
+          <div>
+            Recovery pool: <span className="text-white">{house?.recoveryPoolVusdt ?? 0}</span>
+          </div>
+          <div>
+            Recovered: <span className="text-white">{house?.recoveryPoolRetired ?? 0}</span>
+          </div>
         </div>
       </details>
     </section>

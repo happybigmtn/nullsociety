@@ -11,9 +11,9 @@ This document is the canonical roadmap for RNG token distribution + liquidity ac
 | Freeroll bonus pool | up to 15% | 150,000,000 | Phase 2 BOGO bonus for successful CCA bidders (not airdropped) | **Not implemented** |
 | Phase 2 auction sale | 20% | 200,000,000 | Ethereum CCA raising USDT; proceeds seed a v4 pool | **Not implemented** |
 | Liquidity reserve | 10% | 100,000,000 | Paired with auction proceeds at clearing price | **Not implemented** |
-| Player snapshot + rewards | 35% | 350,000,000 | Phase 1 earnings + allocations | **Partially implemented** |
-| Treasury / ops / partnerships | 15% | 150,000,000 | Treasury allocations + market-making | **Not implemented (treasury ledger/vesting)** |
-| Team / investor vesting | 5% | 50,000,000 | Time-locked vesting | **Not implemented (treasury ledger/vesting)** |
+| Player snapshot + rewards | 35% | 350,000,000 | Phase 1 earnings + allocations | **Partially implemented (credits ledger + emissions; snapshot tooling pending)** |
+| Treasury / ops / partnerships | 15% | 150,000,000 | Treasury allocations + market-making | **Ledger implemented; vesting enforcement pending** |
+| Team / investor vesting | 5% | 50,000,000 | Time-locked vesting | **Ledger implemented; vesting enforcement pending** |
 
 Baseline example totals 100%. Final allocation must be reconciled to Phase 1
 snapshot data before launch.
@@ -25,8 +25,8 @@ On each tournament start, the executor mints a **per-tournament prize pool**:
 
 Current protocol constants:
 - `types/src/casino/constants.rs`: `TOTAL_SUPPLY = 1_000_000_000`
-- `types/src/casino/constants.rs`: `ANNUAL_EMISSION_RATE_BPS = 500` (5%/year)
-- `types/src/casino/constants.rs`: `REWARD_POOL_BPS = 2500` (25% cap)
+- `types/src/casino/constants.rs`: `ANNUAL_EMISSION_RATE_BPS = 300` (3%/year)
+- `types/src/casino/constants.rs`: `REWARD_POOL_BPS = 1500` (15% cap)
 - `types/src/casino/constants.rs`: `TOURNAMENTS_PER_DAY = 240` (1m registration + 5m active schedule)
 
 Policy target update (Phase 2 plan):
@@ -35,15 +35,15 @@ Policy target update (Phase 2 plan):
   airdrop.
 
 This yields approximately:
-- Annual emission target: `50,000,000 RNG/year`
-- Daily emission target: `~136,986 RNG/day`
-- Per-tournament prize pool: `~570 RNG/tournament` (integer division rounding)
+- Annual emission target: `30,000,000 RNG/year`
+- Daily emission target: `~82,192 RNG/day`
+- Per-tournament prize pool: `~342 RNG/tournament` (integer division rounding)
 
 The executor tracks `HouseState.total_issuance` and caps total freeroll issuance to
-`25% * TOTAL_SUPPLY` today (policy target is 15% with Phase 2 bonus gating).
+`15% * TOTAL_SUPPLY` today (Phase 2 bonus gating).
 
 Policy update (Phase 1 -> Phase 2):
-- Transition freeroll payouts to a non-transferable credit ledger (not direct
+- Freeroll payouts track a non-transferable credit ledger (not direct
   RNG minting).
 - Credits become eligibility for Phase 2 auction bonuses, with vesting.
 
@@ -73,7 +73,7 @@ The current “economy” lives inside the casino state machine. RNG is represen
   - Dashboard: `website/src/components/EconomyDashboard.jsx` reads `website/public/economy_log.json`
 
 ### What does NOT exist yet (and is required for the roadmap)
-- A real **treasury / vesting ledger** for the reserve and auction pools.
+- Treasury / allocation ledger exists; vesting enforcement is still pending.
 - A protocol-native **token ledger** (CTI-20 / “real RNG token”) separate from casino player state.
 - Any Ethereum contracts (ERC-20 RNG on Ethereum, auctions, Uniswap pool launch tooling).
 - Any bridge contracts or canonical supply enforcement across chains.
@@ -170,17 +170,13 @@ Then implement a bridge that is **supply-preserving**:
 ## Next Steps (Concrete, Codebase-Aligned)
 
 ### Immediate (this repo)
-1. Add a treasury + allocation document (and eventually code) for the updated
-   Phase 2 split (20% auction, 10% liquidity, up to 15% bonus, remaining
-   balances to players/treasury/team).
-2. Implement website UI flows for:
-   - AMM swap + LP management,
-   - vault borrow/repay,
-   - price + TVL + LP share price display from chain state.
-3. Add execution events for AMM/vault/stake actions so the UI can rely on updates instead of polling.
-4. Update `client/examples/simulation_ecosystem.rs` assumptions to match the
-   Phase 2 allocation (20/10/15 bonus plus remaining buckets).
-5. Decide whether Stage 1 needs an explicit time-limited “finalize” step; if yes, design new state + instructions.
+- [ ] Complete treasury vesting enforcement for Phase 2 allocation buckets.
+- [x] Implement website UI flows for AMM swap + LP management, vault borrow/repay,
+  and price/TVL/LP share metrics.
+- [x] Add execution events for AMM/vault/stake actions so the UI can rely on updates instead of polling.
+- [x] Update `client/examples/simulation_ecosystem.rs` assumptions to match the
+  Phase 2 allocation (20/10/15 bonus plus remaining buckets).
+- [ ] Decide whether Stage 1 needs an explicit time-limited “finalize” step; if yes, design new state + instructions.
 
 ### New repos / new modules (Phase 2/3)
 6. Create an `evm/` workspace (or separate repo) for Ethereum contracts + deployment scripts.

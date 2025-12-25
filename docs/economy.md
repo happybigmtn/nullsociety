@@ -32,9 +32,8 @@ Related references:
 - Staking: stake RNG (chips) for voting power; epoch rewards from positive
   `HouseState.net_pnl`
 - House accounting: `net_pnl`, `accumulated_fees`, `total_burned`, `total_issuance`
-- Freeroll emissions: currently capped at 25% of total supply over ~5 years
-  (policy target: 15% with Phase 2 auction gating)
-- Freeroll credit ledger: not implemented; required for Phase 2 bonus eligibility.
+- Freeroll emissions: capped at 15% of total supply with Phase 2 auction gating.
+- Freeroll credit ledger: implemented (separate balance with vesting + expiry).
 
 ## Threat Model
 - Sybil farming: many accounts maximize freerolls and internal rewards.
@@ -124,18 +123,11 @@ Down-only mitigation toolkit:
 - Treasury buyback and burn using accumulated fees during severe sell pressure.
 - Freeroll credits redeemable only via auction, with bonus vesting in Phase 2.
 
-### Missing DeFi Primitives (add in Phase 1)
-1) Stability fee and liquidations for vUSDT.
-   - Interest accrues on debt, paid in vUSDT or RNG.
-   - Liquidation auctions or fixed penalty and system buyout.
-2) Savings or deposit market for vUSDT.
+### Remaining DeFi Gaps (Phase 1)
+1) Savings or deposit market for vUSDT.
    - vUSDT holders can earn a rate from stability fees.
-3) Treasury and vesting ledger (required).
-   - Track treasury, auction, liquidity reserve, and player allocations on-chain.
-4) Policy module for risk parameters.
-   - Fee bands, sell tax bands, swap caps, and LTV limits.
-5) Freeroll credit ledger for Phase 2 bonus eligibility (implemented; add UI).
-6) Debt ceiling + circuit breaker for vUSDT borrow.
+2) Treasury vesting enforcement and allocation controls (ledger exists; vesting gates pending).
+3) Optional auction bootstrap finalization (if we want a locked closing price for Phase 2).
 
 ### Sybil Mitigation Strategy (Phase 1)
 Economic controls:
