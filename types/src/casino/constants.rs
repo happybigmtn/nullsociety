@@ -28,6 +28,8 @@ pub const INITIAL_CHIPS: u64 = 1_000;
 /// Daily freeroll entry limits.
 pub const FREEROLL_DAILY_LIMIT_FREE: u8 = 1;
 pub const FREEROLL_DAILY_LIMIT_MEMBER: u8 = 10;
+/// Trial cap for new accounts before the membership perk fully unlocks.
+pub const FREEROLL_DAILY_LIMIT_TRIAL: u8 = 3;
 
 /// Tokenomics Constants
 pub const TOTAL_SUPPLY: u64 = 1_000_000_000;

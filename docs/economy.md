@@ -32,6 +32,7 @@ Related references:
 - Staking: stake RNG (chips) for voting power; epoch rewards from positive
   `HouseState.net_pnl`
 - House accounting: `net_pnl`, `accumulated_fees`, `total_burned`, `total_issuance`
+- Savings pool: deposit vUSDT to earn stability fee distribution.
 - Freeroll emissions: capped at 15% of total supply with Phase 2 auction gating.
 - Freeroll credit ledger: implemented (separate balance with vesting + expiry).
 
@@ -124,10 +125,8 @@ Down-only mitigation toolkit:
 - Freeroll credits redeemable only via auction, with bonus vesting in Phase 2.
 
 ### Remaining DeFi Gaps (Phase 1)
-1) Savings or deposit market for vUSDT.
-   - vUSDT holders can earn a rate from stability fees.
-2) Treasury vesting enforcement and allocation controls (ledger exists; vesting gates pending).
-3) Optional auction bootstrap finalization (if we want a locked closing price for Phase 2).
+1) Treasury vesting enforcement and allocation controls (ledger exists; vesting gates pending).
+2) Optional auction bootstrap finalization (if we want a locked closing price for Phase 2).
 
 ### Sybil Mitigation Strategy (Phase 1)
 Economic controls:

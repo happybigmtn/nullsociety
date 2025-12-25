@@ -70,6 +70,9 @@ mod tags {
         pub const FUND_RECOVERY_POOL: u8 = 33;
         pub const RETIRE_VAULT_DEBT: u8 = 34;
         pub const RETIRE_WORST_VAULT_DEBT: u8 = 35;
+        pub const DEPOSIT_SAVINGS: u8 = 36;
+        pub const WITHDRAW_SAVINGS: u8 = 37;
+        pub const CLAIM_SAVINGS_REWARDS: u8 = 38;
     }
 
     pub mod key {
@@ -98,6 +101,9 @@ mod tags {
 
         // Registry (21)
         pub const VAULT_REGISTRY: u8 = 21;
+        // Savings (22-23)
+        pub const SAVINGS_POOL: u8 = 22;
+        pub const SAVINGS_BALANCE: u8 = 23;
     }
 
     pub mod value {
@@ -127,6 +133,9 @@ mod tags {
 
         // Registry (21)
         pub const VAULT_REGISTRY: u8 = 21;
+        // Savings (22-23)
+        pub const SAVINGS_POOL: u8 = 22;
+        pub const SAVINGS_BALANCE: u8 = 23;
     }
 
     pub mod event {
@@ -167,6 +176,10 @@ mod tags {
         pub const RECOVERY_POOL_FUNDED: u8 = 45;
         pub const RECOVERY_POOL_RETIRED: u8 = 46;
         pub const TREASURY_UPDATED: u8 = 47;
+        // Savings events (48-50)
+        pub const SAVINGS_DEPOSITED: u8 = 48;
+        pub const SAVINGS_WITHDRAWN: u8 = 49;
+        pub const SAVINGS_REWARDS_CLAIMED: u8 = 50;
     }
 }
 
@@ -431,6 +444,18 @@ pub enum Instruction {
     /// Admin: retire vUSDT debt using recovery pool, selecting highest-risk vault.
     /// Binary: [35] [amount:u64 BE]
     RetireWorstVaultDebt { amount: u64 },
+
+    /// Deposit vUSDT into the savings pool.
+    /// Binary: [36] [amount:u64 BE]
+    DepositSavings { amount: u64 },
+
+    /// Withdraw vUSDT from the savings pool.
+    /// Binary: [37] [amount:u64 BE]
+    WithdrawSavings { amount: u64 },
+
+    /// Claim accrued savings rewards.
+    /// Binary: [38]
+    ClaimSavingsRewards,
 }
 
 impl Write for Instruction {
@@ -569,6 +594,17 @@ impl Write for Instruction {
                 tags::instruction::RETIRE_WORST_VAULT_DEBT.write(writer);
                 amount.write(writer);
             }
+            Self::DepositSavings { amount } => {
+                tags::instruction::DEPOSIT_SAVINGS.write(writer);
+                amount.write(writer);
+            }
+            Self::WithdrawSavings { amount } => {
+                tags::instruction::WITHDRAW_SAVINGS.write(writer);
+                amount.write(writer);
+            }
+            Self::ClaimSavingsRewards => {
+                tags::instruction::CLAIM_SAVINGS_REWARDS.write(writer);
+            }
         }
     }
 }
@@ -696,6 +732,13 @@ impl Read for Instruction {
             tags::instruction::RETIRE_WORST_VAULT_DEBT => Self::RetireWorstVaultDebt {
                 amount: u64::read(reader)?,
             },
+            tags::instruction::DEPOSIT_SAVINGS => Self::DepositSavings {
+                amount: u64::read(reader)?,
+            },
+            tags::instruction::WITHDRAW_SAVINGS => Self::WithdrawSavings {
+                amount: u64::read(reader)?,
+            },
+            tags::instruction::CLAIM_SAVINGS_REWARDS => Self::ClaimSavingsRewards,
 
             i => return Err(Error::InvalidEnum(i)),
         };
@@ -754,6 +797,10 @@ impl EncodeSize for Instruction {
                     target.encode_size() + amount.encode_size()
                 }
                 Self::RetireWorstVaultDebt { amount } => amount.encode_size(),
+                Self::DepositSavings { amount } | Self::WithdrawSavings { amount } => {
+                    amount.encode_size()
+                }
+                Self::ClaimSavingsRewards => 0,
             }
     }
 }
@@ -1058,6 +1105,10 @@ pub enum Key {
 
     // Registry (Tag 21)
     VaultRegistry,
+
+    // Savings (Tags 22-23)
+    SavingsPool,
+    SavingsBalance(PublicKey),
 }
 
 impl Write for Key {
@@ -1104,6 +1155,11 @@ impl Write for Key {
             Self::Policy => tags::key::POLICY.write(writer),
             Self::Treasury => tags::key::TREASURY.write(writer),
             Self::VaultRegistry => tags::key::VAULT_REGISTRY.write(writer),
+            Self::SavingsPool => tags::key::SAVINGS_POOL.write(writer),
+            Self::SavingsBalance(pk) => {
+                tags::key::SAVINGS_BALANCE.write(writer);
+                pk.write(writer);
+            }
         }
     }
 }
@@ -1134,6 +1190,8 @@ impl Read for Key {
             tags::key::POLICY => Self::Policy,
             tags::key::TREASURY => Self::Treasury,
             tags::key::VAULT_REGISTRY => Self::VaultRegistry,
+            tags::key::SAVINGS_POOL => Self::SavingsPool,
+            tags::key::SAVINGS_BALANCE => Self::SavingsBalance(PublicKey::read(reader)?),
 
             i => return Err(Error::InvalidEnum(i)),
         };
@@ -1163,10 +1221,12 @@ impl EncodeSize for Key {
                 Self::Vault(_) => PublicKey::SIZE,
                 Self::AmmPool => 0,
                 Self::LpBalance(_) => PublicKey::SIZE,
-                Self::Policy => 0,
-                Self::Treasury => 0,
-                Self::VaultRegistry => 0,
-            }
+            Self::Policy => 0,
+            Self::Treasury => 0,
+            Self::VaultRegistry => 0,
+            Self::SavingsPool => 0,
+            Self::SavingsBalance(_) => PublicKey::SIZE,
+        }
     }
 }
 
@@ -1205,6 +1265,10 @@ pub enum Value {
 
     // Registry (Tag 21)
     VaultRegistry(crate::casino::VaultRegistry),
+
+    // Savings (Tags 22-23)
+    SavingsPool(crate::casino::SavingsPool),
+    SavingsBalance(crate::casino::SavingsBalance),
 }
 
 impl Write for Value {
@@ -1276,6 +1340,14 @@ impl Write for Value {
                 tags::value::VAULT_REGISTRY.write(writer);
                 registry.write(writer);
             }
+            Self::SavingsPool(pool) => {
+                tags::value::SAVINGS_POOL.write(writer);
+                pool.write(writer);
+            }
+            Self::SavingsBalance(balance) => {
+                tags::value::SAVINGS_BALANCE.write(writer);
+                balance.write(writer);
+            }
         }
     }
 }
@@ -1318,6 +1390,12 @@ impl Read for Value {
             tags::value::VAULT_REGISTRY => {
                 Self::VaultRegistry(crate::casino::VaultRegistry::read(reader)?)
             }
+            tags::value::SAVINGS_POOL => {
+                Self::SavingsPool(crate::casino::SavingsPool::read(reader)?)
+            }
+            tags::value::SAVINGS_BALANCE => {
+                Self::SavingsBalance(crate::casino::SavingsBalance::read(reader)?)
+            }
 
             i => return Err(Error::InvalidEnum(i)),
         };
@@ -1353,6 +1431,8 @@ impl EncodeSize for Value {
                 Self::Policy(policy) => policy.encode_size(),
                 Self::Treasury(treasury) => treasury.encode_size(),
                 Self::VaultRegistry(registry) => registry.encode_size(),
+                Self::SavingsPool(pool) => pool.encode_size(),
+                Self::SavingsBalance(balance) => balance.encode_size(),
             }
     }
 }
@@ -1523,6 +1603,31 @@ pub enum Event {
         amount: u64,
         new_debt: u64,
         pool_balance: u64,
+    },
+
+    // Savings events (tags 48-50)
+    SavingsDeposited {
+        player: PublicKey,
+        amount: u64,
+        new_balance: u64,
+        savings_balance: crate::casino::SavingsBalance,
+        pool: crate::casino::SavingsPool,
+        player_balances: crate::casino::PlayerBalanceSnapshot,
+    },
+    SavingsWithdrawn {
+        player: PublicKey,
+        amount: u64,
+        new_balance: u64,
+        savings_balance: crate::casino::SavingsBalance,
+        pool: crate::casino::SavingsPool,
+        player_balances: crate::casino::PlayerBalanceSnapshot,
+    },
+    SavingsRewardsClaimed {
+        player: PublicKey,
+        amount: u64,
+        savings_balance: crate::casino::SavingsBalance,
+        pool: crate::casino::SavingsPool,
+        player_balances: crate::casino::PlayerBalanceSnapshot,
     },
 
     // Staking events (tags 37-40)
@@ -1859,6 +1964,52 @@ impl Write for Event {
                 new_debt.write(writer);
                 pool_balance.write(writer);
             }
+            Self::SavingsDeposited {
+                player,
+                amount,
+                new_balance,
+                savings_balance,
+                pool,
+                player_balances,
+            } => {
+                tags::event::SAVINGS_DEPOSITED.write(writer);
+                player.write(writer);
+                amount.write(writer);
+                new_balance.write(writer);
+                savings_balance.write(writer);
+                pool.write(writer);
+                player_balances.write(writer);
+            }
+            Self::SavingsWithdrawn {
+                player,
+                amount,
+                new_balance,
+                savings_balance,
+                pool,
+                player_balances,
+            } => {
+                tags::event::SAVINGS_WITHDRAWN.write(writer);
+                player.write(writer);
+                amount.write(writer);
+                new_balance.write(writer);
+                savings_balance.write(writer);
+                pool.write(writer);
+                player_balances.write(writer);
+            }
+            Self::SavingsRewardsClaimed {
+                player,
+                amount,
+                savings_balance,
+                pool,
+                player_balances,
+            } => {
+                tags::event::SAVINGS_REWARDS_CLAIMED.write(writer);
+                player.write(writer);
+                amount.write(writer);
+                savings_balance.write(writer);
+                pool.write(writer);
+                player_balances.write(writer);
+            }
 
             // Staking events (tags 37-40)
             Self::Staked {
@@ -2143,6 +2294,29 @@ impl Read for Event {
                 amount: u64::read(reader)?,
                 new_debt: u64::read(reader)?,
                 pool_balance: u64::read(reader)?,
+            },
+            tags::event::SAVINGS_DEPOSITED => Self::SavingsDeposited {
+                player: PublicKey::read(reader)?,
+                amount: u64::read(reader)?,
+                new_balance: u64::read(reader)?,
+                savings_balance: crate::casino::SavingsBalance::read(reader)?,
+                pool: crate::casino::SavingsPool::read(reader)?,
+                player_balances: crate::casino::PlayerBalanceSnapshot::read(reader)?,
+            },
+            tags::event::SAVINGS_WITHDRAWN => Self::SavingsWithdrawn {
+                player: PublicKey::read(reader)?,
+                amount: u64::read(reader)?,
+                new_balance: u64::read(reader)?,
+                savings_balance: crate::casino::SavingsBalance::read(reader)?,
+                pool: crate::casino::SavingsPool::read(reader)?,
+                player_balances: crate::casino::PlayerBalanceSnapshot::read(reader)?,
+            },
+            tags::event::SAVINGS_REWARDS_CLAIMED => Self::SavingsRewardsClaimed {
+                player: PublicKey::read(reader)?,
+                amount: u64::read(reader)?,
+                savings_balance: crate::casino::SavingsBalance::read(reader)?,
+                pool: crate::casino::SavingsPool::read(reader)?,
+                player_balances: crate::casino::PlayerBalanceSnapshot::read(reader)?,
             },
             tags::event::STAKED => Self::Staked {
                 player: PublicKey::read(reader)?,
@@ -2429,6 +2603,49 @@ impl EncodeSize for Event {
                         + amount.encode_size()
                         + new_debt.encode_size()
                         + pool_balance.encode_size()
+                }
+                Self::SavingsDeposited {
+                    player,
+                    amount,
+                    new_balance,
+                    savings_balance,
+                    pool,
+                    player_balances,
+                } => {
+                    player.encode_size()
+                        + amount.encode_size()
+                        + new_balance.encode_size()
+                        + savings_balance.encode_size()
+                        + pool.encode_size()
+                        + player_balances.encode_size()
+                }
+                Self::SavingsWithdrawn {
+                    player,
+                    amount,
+                    new_balance,
+                    savings_balance,
+                    pool,
+                    player_balances,
+                } => {
+                    player.encode_size()
+                        + amount.encode_size()
+                        + new_balance.encode_size()
+                        + savings_balance.encode_size()
+                        + pool.encode_size()
+                        + player_balances.encode_size()
+                }
+                Self::SavingsRewardsClaimed {
+                    player,
+                    amount,
+                    savings_balance,
+                    pool,
+                    player_balances,
+                } => {
+                    player.encode_size()
+                        + amount.encode_size()
+                        + savings_balance.encode_size()
+                        + pool.encode_size()
+                        + player_balances.encode_size()
                 }
                 Self::Staked {
                     player,

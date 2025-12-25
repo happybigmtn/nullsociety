@@ -672,6 +672,41 @@ export class NonceManager {
   }
 
   /**
+   * Submit a savings deposit transaction.
+   * @param {bigint|number} amount - Amount of vUSDT to deposit
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
+   */
+  async submitDepositSavings(amount) {
+    return this.submitTransaction(
+      (nonce) => this.wasm.createDepositSavingsTransaction(nonce, amount),
+      'depositSavings'
+    );
+  }
+
+  /**
+   * Submit a savings withdraw transaction.
+   * @param {bigint|number} amount - Amount of vUSDT to withdraw
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
+   */
+  async submitWithdrawSavings(amount) {
+    return this.submitTransaction(
+      (nonce) => this.wasm.createWithdrawSavingsTransaction(nonce, amount),
+      'withdrawSavings'
+    );
+  }
+
+  /**
+   * Submit a savings rewards claim transaction.
+   * @returns {Promise<{status: string, txHash?: string, txDigest?: string}>} Transaction result
+   */
+  async submitClaimSavingsRewards() {
+    return this.submitTransaction(
+      (nonce) => this.wasm.createClaimSavingsRewardsTransaction(nonce),
+      'claimSavingsRewards'
+    );
+  }
+
+  /**
    * Submit a stake transaction.
    * @param {bigint|number} amount - Amount of RNG to stake
    * @param {bigint|number} duration - Lock duration (in blocks/views)

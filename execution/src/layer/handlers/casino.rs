@@ -1263,10 +1263,20 @@ impl<'a, S: State> Layer<'a, S> {
             player.tournament.tournaments_played_today = 0;
         }
 
-        let daily_limit = if player.tournament.daily_limit > 0 {
+        let base_limit = if player.tournament.daily_limit > 0 {
             player.tournament.daily_limit
         } else {
             nullspace_types::casino::FREEROLL_DAILY_LIMIT_FREE
+        };
+        let account_age = if player.profile.created_ts == 0 {
+            0
+        } else {
+            current_time_sec.saturating_sub(player.profile.created_ts)
+        };
+        let daily_limit = if account_age < nullspace_types::casino::ACCOUNT_TIER_NEW_SECS {
+            base_limit.min(nullspace_types::casino::FREEROLL_DAILY_LIMIT_TRIAL)
+        } else {
+            base_limit
         };
         if player.tournament.tournaments_played_today >= daily_limit {
             let message = format!(

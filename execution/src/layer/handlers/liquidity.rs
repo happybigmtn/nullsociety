@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 const BASIS_POINTS_SCALE: u128 = 10_000;
 const MAX_BASIS_POINTS: u16 = 10_000;
 const SECONDS_PER_YEAR: u64 = 365 * 24 * 60 * 60;
+const SAVINGS_REWARD_SCALE: u128 = nullspace_types::casino::STAKING_REWARD_SCALE;
 
 fn admin_public_key() -> Option<PublicKey> {
     static ADMIN_KEY: OnceLock<Option<PublicKey>> = OnceLock::new();
@@ -106,6 +107,59 @@ fn accrue_vault_debt(
     }
     vault.last_accrual_ts = now;
     interest
+}
+
+fn distribute_savings_rewards(pool: &mut nullspace_types::casino::SavingsPool) {
+    if pool.total_deposits == 0 || pool.pending_rewards == 0 {
+        return;
+    }
+    let delta = (pool.pending_rewards as u128)
+        .saturating_mul(SAVINGS_REWARD_SCALE)
+        .checked_div(pool.total_deposits as u128)
+        .unwrap_or(0);
+    if delta == 0 {
+        return;
+    }
+    let distributed = delta
+        .saturating_mul(pool.total_deposits as u128)
+        .checked_div(SAVINGS_REWARD_SCALE)
+        .unwrap_or(0) as u64;
+    pool.reward_per_share_x18 = pool.reward_per_share_x18.saturating_add(delta);
+    pool.pending_rewards = pool.pending_rewards.saturating_sub(distributed);
+}
+
+fn settle_savings_rewards(
+    balance: &mut nullspace_types::casino::SavingsBalance,
+    pool: &nullspace_types::casino::SavingsPool,
+) -> Result<(), &'static str> {
+    if balance.deposit_balance == 0 {
+        balance.reward_debt_x18 = 0;
+        return Ok(());
+    }
+    let current_debt = (balance.deposit_balance as u128)
+        .checked_mul(pool.reward_per_share_x18)
+        .ok_or("savings reward debt overflow")?;
+    let pending_x18 = current_debt
+        .checked_sub(balance.reward_debt_x18)
+        .ok_or("savings reward debt underflow")?;
+    let pending = pending_x18 / SAVINGS_REWARD_SCALE;
+    let pending: u64 = pending.try_into().map_err(|_| "savings reward overflow")?;
+    balance.unclaimed_rewards = balance
+        .unclaimed_rewards
+        .checked_add(pending)
+        .ok_or("savings reward overflow")?;
+    balance.reward_debt_x18 = current_debt;
+    Ok(())
+}
+
+fn sync_savings_reward_debt(
+    balance: &mut nullspace_types::casino::SavingsBalance,
+    pool: &nullspace_types::casino::SavingsPool,
+) -> Result<(), &'static str> {
+    balance.reward_debt_x18 = (balance.deposit_balance as u128)
+        .checked_mul(pool.reward_per_share_x18)
+        .ok_or("savings reward debt overflow")?;
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -267,6 +321,18 @@ fn invalid_amm_state(public: &PublicKey) -> Vec<Event> {
 impl<'a, S: State> Layer<'a, S> {
     // === Liquidity / Vault Handlers ===
 
+    async fn allocate_savings_rewards(&mut self, amount: u64) -> anyhow::Result<()> {
+        if amount == 0 {
+            return Ok(());
+        }
+        let mut pool = self.get_or_init_savings_pool().await?;
+        pool.total_rewards_accrued = pool.total_rewards_accrued.saturating_add(amount);
+        pool.pending_rewards = pool.pending_rewards.saturating_add(amount);
+        distribute_savings_rewards(&mut pool);
+        self.insert(Key::SavingsPool, Value::SavingsPool(pool));
+        Ok(())
+    }
+
     pub(in crate::layer) async fn handle_create_vault(
         &mut self,
         public: &PublicKey,
@@ -379,7 +445,8 @@ impl<'a, S: State> Layer<'a, S> {
         let mut house = self.get_or_init_house().await?;
         let policy = self.get_or_init_policy().await?;
         let now = current_time_sec(self.seed.view);
-        accrue_vault_debt(&mut vault, &mut house, now, &policy);
+        let interest = accrue_vault_debt(&mut vault, &mut house, now, &policy);
+        self.allocate_savings_rewards(interest).await?;
 
         let amm = self.get_or_init_amm().await?;
         if validate_amm_state(&amm).is_err() {
@@ -526,7 +593,8 @@ impl<'a, S: State> Layer<'a, S> {
         let mut house = self.get_or_init_house().await?;
         let policy = self.get_or_init_policy().await?;
         let now = current_time_sec(self.seed.view);
-        accrue_vault_debt(&mut vault, &mut house, now, &policy);
+        let interest = accrue_vault_debt(&mut vault, &mut house, now, &policy);
+        self.allocate_savings_rewards(interest).await?;
 
         if player.balances.vusdt_balance < amount {
             return Ok(casino_error_vec(
@@ -1061,7 +1129,8 @@ impl<'a, S: State> Layer<'a, S> {
         let mut house = self.get_or_init_house().await?;
         let policy = self.get_or_init_policy().await?;
         let now = current_time_sec(self.seed.view);
-        accrue_vault_debt(&mut vault, &mut house, now, &policy);
+        let interest = accrue_vault_debt(&mut vault, &mut house, now, &policy);
+        self.allocate_savings_rewards(interest).await?;
 
         if vault.debt_vusdt == 0 || vault.collateral_rng == 0 {
             return Ok(casino_error_vec(
@@ -1363,7 +1432,8 @@ impl<'a, S: State> Layer<'a, S> {
         let mut house = self.get_or_init_house().await?;
         let policy = self.get_or_init_policy().await?;
         let now = current_time_sec(self.seed.view);
-        accrue_vault_debt(&mut vault, &mut house, now, &policy);
+        let interest = accrue_vault_debt(&mut vault, &mut house, now, &policy);
+        self.allocate_savings_rewards(interest).await?;
 
         let available = house.recovery_pool_vusdt.min(vault.debt_vusdt);
         let retire_amount = amount.min(available);
@@ -1485,6 +1555,217 @@ impl<'a, S: State> Layer<'a, S> {
         };
 
         self.handle_retire_vault_debt(public, &target, amount).await
+    }
+
+    pub(in crate::layer) async fn handle_savings_deposit(
+        &mut self,
+        public: &PublicKey,
+        amount: u64,
+    ) -> anyhow::Result<Vec<Event>> {
+        if amount == 0 {
+            return Ok(vec![]);
+        }
+
+        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await? {
+            Some(Value::CasinoPlayer(p)) => p,
+            _ => return Ok(vec![]),
+        };
+
+        if player.balances.vusdt_balance < amount {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
+                "Insufficient vUSDT",
+            ));
+        }
+
+        let mut pool = self.get_or_init_savings_pool().await?;
+        let mut balance = self.get_or_init_savings_balance(public).await?;
+        distribute_savings_rewards(&mut pool);
+        if let Err(err) = settle_savings_rewards(&mut balance, &pool) {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                err,
+            ));
+        }
+
+        player.balances.vusdt_balance -= amount;
+        balance.deposit_balance = balance.deposit_balance.saturating_add(amount);
+        pool.total_deposits = pool.total_deposits.saturating_add(amount);
+        if let Err(err) = sync_savings_reward_debt(&mut balance, &pool) {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                err,
+            ));
+        }
+
+        let new_balance = balance.deposit_balance;
+        let player_balances =
+            nullspace_types::casino::PlayerBalanceSnapshot::from_player(&player);
+        let balance_snapshot = balance.clone();
+        let pool_snapshot = pool.clone();
+
+        self.insert(
+            Key::CasinoPlayer(public.clone()),
+            Value::CasinoPlayer(player),
+        );
+        self.insert(
+            Key::SavingsBalance(public.clone()),
+            Value::SavingsBalance(balance),
+        );
+        self.insert(Key::SavingsPool, Value::SavingsPool(pool));
+
+        Ok(vec![Event::SavingsDeposited {
+            player: public.clone(),
+            amount,
+            new_balance,
+            savings_balance: balance_snapshot,
+            pool: pool_snapshot,
+            player_balances,
+        }])
+    }
+
+    pub(in crate::layer) async fn handle_savings_withdraw(
+        &mut self,
+        public: &PublicKey,
+        amount: u64,
+    ) -> anyhow::Result<Vec<Event>> {
+        if amount == 0 {
+            return Ok(vec![]);
+        }
+
+        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await? {
+            Some(Value::CasinoPlayer(p)) => p,
+            _ => return Ok(vec![]),
+        };
+
+        let mut pool = self.get_or_init_savings_pool().await?;
+        let mut balance = self.get_or_init_savings_balance(public).await?;
+
+        if balance.deposit_balance < amount {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
+                "Insufficient savings balance",
+            ));
+        }
+
+        distribute_savings_rewards(&mut pool);
+        if let Err(err) = settle_savings_rewards(&mut balance, &pool) {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                err,
+            ));
+        }
+
+        balance.deposit_balance = balance.deposit_balance.saturating_sub(amount);
+        pool.total_deposits = pool.total_deposits.saturating_sub(amount);
+        if let Err(err) = sync_savings_reward_debt(&mut balance, &pool) {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                err,
+            ));
+        }
+
+        player.balances.vusdt_balance = player.balances.vusdt_balance.saturating_add(amount);
+
+        let new_balance = balance.deposit_balance;
+        let player_balances =
+            nullspace_types::casino::PlayerBalanceSnapshot::from_player(&player);
+        let balance_snapshot = balance.clone();
+        let pool_snapshot = pool.clone();
+
+        self.insert(
+            Key::CasinoPlayer(public.clone()),
+            Value::CasinoPlayer(player),
+        );
+        self.insert(
+            Key::SavingsBalance(public.clone()),
+            Value::SavingsBalance(balance),
+        );
+        self.insert(Key::SavingsPool, Value::SavingsPool(pool));
+
+        Ok(vec![Event::SavingsWithdrawn {
+            player: public.clone(),
+            amount,
+            new_balance,
+            savings_balance: balance_snapshot,
+            pool: pool_snapshot,
+            player_balances,
+        }])
+    }
+
+    pub(in crate::layer) async fn handle_savings_claim(
+        &mut self,
+        public: &PublicKey,
+    ) -> anyhow::Result<Vec<Event>> {
+        let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await? {
+            Some(Value::CasinoPlayer(p)) => p,
+            _ => return Ok(vec![]),
+        };
+
+        let mut pool = self.get_or_init_savings_pool().await?;
+        let mut balance = self.get_or_init_savings_balance(public).await?;
+
+        distribute_savings_rewards(&mut pool);
+        if let Err(err) = settle_savings_rewards(&mut balance, &pool) {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                err,
+            ));
+        }
+
+        let available = pool
+            .total_rewards_accrued
+            .saturating_sub(pool.total_rewards_paid);
+        let payout = balance.unclaimed_rewards.min(available);
+        if payout == 0 {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "No savings rewards available",
+            ));
+        }
+
+        balance.unclaimed_rewards = balance.unclaimed_rewards.saturating_sub(payout);
+        pool.total_rewards_paid = pool.total_rewards_paid.saturating_add(payout);
+        player.balances.vusdt_balance = player.balances.vusdt_balance.saturating_add(payout);
+
+        let player_balances =
+            nullspace_types::casino::PlayerBalanceSnapshot::from_player(&player);
+        let balance_snapshot = balance.clone();
+        let pool_snapshot = pool.clone();
+
+        self.insert(
+            Key::CasinoPlayer(public.clone()),
+            Value::CasinoPlayer(player),
+        );
+        self.insert(
+            Key::SavingsBalance(public.clone()),
+            Value::SavingsBalance(balance),
+        );
+        self.insert(Key::SavingsPool, Value::SavingsPool(pool));
+
+        Ok(vec![Event::SavingsRewardsClaimed {
+            player: public.clone(),
+            amount: payout,
+            savings_balance: balance_snapshot,
+            pool: pool_snapshot,
+            player_balances,
+        }])
     }
 }
 

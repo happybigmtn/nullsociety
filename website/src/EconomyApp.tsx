@@ -47,6 +47,8 @@ export default function EconomyApp() {
   const [policy, setPolicy] = useState<any | null>(null);
   const [staker, setStaker] = useState<any | null>(null);
   const [treasury, setTreasury] = useState<any | null>(null);
+  const [savingsPool, setSavingsPool] = useState<any | null>(null);
+  const [savingsBalance, setSavingsBalance] = useState<any | null>(null);
   const POLL_TICK_MS = 5000;
   const POLL_VISIBLE_MS = 15000;
   const POLL_HIDDEN_MS = 60000;
@@ -63,6 +65,8 @@ export default function EconomyApp() {
   const [addLiqRng, setAddLiqRng] = useState('0');
   const [addLiqVusdt, setAddLiqVusdt] = useState('0');
   const [removeLiqShares, setRemoveLiqShares] = useState('0');
+  const [savingsDepositAmount, setSavingsDepositAmount] = useState('0');
+  const [savingsWithdrawAmount, setSavingsWithdrawAmount] = useState('0');
 
   const pushActivity = (message: string, level: ActivityLevel = 'info') => {
     logActivity('economy', message, level);
@@ -163,6 +167,12 @@ export default function EconomyApp() {
     const applyTreasury = (next: any) => {
       if (next) setTreasury(next);
     };
+    const applySavingsPool = (next: any) => {
+      if (next) setSavingsPool(next);
+    };
+    const applySavingsBalance = (next: any) => {
+      if (next) setSavingsBalance(next);
+    };
     const applyLpBalance = (balance: any) => {
       if (balance !== undefined && balance !== null) {
         setLpBalance({ balance });
@@ -238,6 +248,39 @@ export default function EconomyApp() {
     const unsubTreasury = connection.onEvent('TreasuryUpdated', (e: any) => {
       applyTreasury(e?.treasury);
     });
+    const unsubSavingsDeposit = connection.onEvent('SavingsDeposited', (e: any) => {
+      if (e?.player?.toLowerCase?.() !== pkHexLower) return;
+      const amount = e?.amount ?? 0;
+      const msg = `Savings deposit: +${amount} vUSDT`;
+      trackTxConfirmed({ surface: 'economy', kind: 'savings_deposit', finalMessage: msg, pubkeyHex: pkHex });
+      pushToast('success', msg);
+      applySavingsBalance(e?.savingsBalance);
+      applySavingsPool(e?.pool);
+      applyPlayerBalances(e?.playerBalances);
+      track('economy.savings.deposit', { amount });
+    });
+    const unsubSavingsWithdraw = connection.onEvent('SavingsWithdrawn', (e: any) => {
+      if (e?.player?.toLowerCase?.() !== pkHexLower) return;
+      const amount = e?.amount ?? 0;
+      const msg = `Savings withdraw: -${amount} vUSDT`;
+      trackTxConfirmed({ surface: 'economy', kind: 'savings_withdraw', finalMessage: msg, pubkeyHex: pkHex });
+      pushToast('success', msg);
+      applySavingsBalance(e?.savingsBalance);
+      applySavingsPool(e?.pool);
+      applyPlayerBalances(e?.playerBalances);
+      track('economy.savings.withdraw', { amount });
+    });
+    const unsubSavingsClaim = connection.onEvent('SavingsRewardsClaimed', (e: any) => {
+      if (e?.player?.toLowerCase?.() !== pkHexLower) return;
+      const amount = e?.amount ?? 0;
+      const msg = `Savings rewards claimed: ${amount} vUSDT`;
+      trackTxConfirmed({ surface: 'economy', kind: 'savings_claim', finalMessage: msg, pubkeyHex: pkHex });
+      pushToast('success', msg);
+      applySavingsBalance(e?.savingsBalance);
+      applySavingsPool(e?.pool);
+      applyPlayerBalances(e?.playerBalances);
+      track('economy.savings.claim', { amount });
+    });
     const unsubRepay = connection.onEvent('VusdtRepaid', (e: any) => {
       if (e?.player?.toLowerCase?.() !== pkHexLower) return;
       const amount = e?.amount ?? 0;
@@ -302,6 +345,9 @@ export default function EconomyApp() {
         unsubBorrow?.();
         unsubPolicy?.();
         unsubTreasury?.();
+        unsubSavingsDeposit?.();
+        unsubSavingsWithdraw?.();
+        unsubSavingsClaim?.();
         unsubRepay?.();
         unsubSwap?.();
         unsubLiqAdd?.();
@@ -333,7 +379,7 @@ export default function EconomyApp() {
       lastPollAtRef.current = now;
       inFlight = true;
       try {
-        const [p, v, a, lp, h, s, pol, t] = await Promise.all([
+        const [p, v, a, lp, h, s, pol, t, sp, sb] = await Promise.all([
           client.getCasinoPlayer(pk),
           client.getVault(pk),
           client.getAmmPool(),
@@ -342,6 +388,8 @@ export default function EconomyApp() {
           client.getStaker(pk),
           client.getPolicy(),
           client.getTreasury(),
+          client.getSavingsPool(),
+          client.getSavingsBalance(pk),
         ]);
         setPlayer(p);
         setIsRegistered(!!p);
@@ -352,6 +400,8 @@ export default function EconomyApp() {
         setStaker(s);
         setPolicy(pol);
         setTreasury(t);
+        setSavingsPool(sp);
+        setSavingsBalance(sb);
       } catch {
         // ignore transient errors
       } finally {
@@ -542,6 +592,73 @@ export default function EconomyApp() {
     }
     track('economy.vault.repay.submitted', { amount: amt.toString() });
     trackSubmitted('repay', `Submitted repay (${amt} vUSDT)`, result);
+  };
+
+  const depositSavings = async () => {
+    const client = getReadyClient();
+    if (!client) return;
+    await ensureRegistered();
+    if (!player) {
+      pushActivity('Register to continue');
+      return;
+    }
+    const amt = parseAmount(savingsDepositAmount);
+    if (amt === null || amt <= 0n) {
+      pushActivity('Deposit amount must be greater than zero');
+      return;
+    }
+    const balance = BigInt(player?.vusdtBalance ?? 0);
+    if (amt > balance) {
+      pushActivity('Not enough vUSDT');
+      return;
+    }
+    const result = await client.nonceManager.submitDepositSavings(amt.toString());
+    if (result?.txHash) {
+      setLastTxSig(result.txHash);
+      setLastTxDigest(result.txDigest ?? null);
+    }
+    track('economy.savings.deposit.submitted', { amount: amt.toString() });
+    trackSubmitted('savings_deposit', `Submitted savings deposit (${amt} vUSDT)`, result);
+  };
+
+  const withdrawSavings = async () => {
+    const client = getReadyClient();
+    if (!client) return;
+    await ensureRegistered();
+    if (!savingsBalance) {
+      pushActivity('No savings balance');
+      return;
+    }
+    const amt = parseAmount(savingsWithdrawAmount);
+    if (amt === null || amt <= 0n) {
+      pushActivity('Withdraw amount must be greater than zero');
+      return;
+    }
+    const balance = BigInt(savingsBalance?.depositBalance ?? 0);
+    if (amt > balance) {
+      pushActivity('Withdraw exceeds savings balance');
+      return;
+    }
+    const result = await client.nonceManager.submitWithdrawSavings(amt.toString());
+    if (result?.txHash) {
+      setLastTxSig(result.txHash);
+      setLastTxDigest(result.txDigest ?? null);
+    }
+    track('economy.savings.withdraw.submitted', { amount: amt.toString() });
+    trackSubmitted('savings_withdraw', `Submitted savings withdraw (${amt} vUSDT)`, result);
+  };
+
+  const claimSavingsRewards = async () => {
+    const client = getReadyClient();
+    if (!client) return;
+    await ensureRegistered();
+    const result = await client.nonceManager.submitClaimSavingsRewards();
+    if (result?.txHash) {
+      setLastTxSig(result.txHash);
+      setLastTxDigest(result.txDigest ?? null);
+    }
+    track('economy.savings.claim.submitted');
+    trackSubmitted('savings_claim', 'Submitted savings rewards claim', result);
   };
 
   const submitSwap = async ({
@@ -847,16 +964,25 @@ export default function EconomyApp() {
               vault={vault}
               vaultDerived={vaultDerived}
               house={house}
+              savingsPool={savingsPool}
+              savingsBalance={savingsBalance}
               collateralAmount={collateralAmount}
               borrowAmount={borrowAmount}
               repayAmount={repayAmount}
+              savingsDepositAmount={savingsDepositAmount}
+              savingsWithdrawAmount={savingsWithdrawAmount}
               setCollateralAmount={setCollateralAmount}
               setBorrowAmount={setBorrowAmount}
               setRepayAmount={setRepayAmount}
+              setSavingsDepositAmount={setSavingsDepositAmount}
+              setSavingsWithdrawAmount={setSavingsWithdrawAmount}
               onCreateVault={createVault}
               onDepositCollateral={depositCollateral}
               onBorrowVusdt={borrowVusdt}
               onRepayVusdt={repayVusdt}
+              onDepositSavings={depositSavings}
+              onWithdrawSavings={withdrawSavings}
+              onClaimSavingsRewards={claimSavingsRewards}
             />
           </Suspense>
         ) : null}

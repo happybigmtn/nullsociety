@@ -326,6 +326,13 @@ impl<'a, S: State> Layer<'a, S> {
                 self.handle_retire_worst_vault_debt(public, *amount)
                     .await
             }
+            Instruction::DepositSavings { amount } => {
+                self.handle_savings_deposit(public, *amount).await
+            }
+            Instruction::WithdrawSavings { amount } => {
+                self.handle_savings_withdraw(public, *amount).await
+            }
+            Instruction::ClaimSavingsRewards => self.handle_savings_claim(public).await,
             _ => anyhow::bail!(
                 "internal error: apply_liquidity called with non-liquidity instruction"
             ),
@@ -366,7 +373,10 @@ impl<'a, S: State> Layer<'a, S> {
             | Instruction::SetTreasury { .. }
             | Instruction::FundRecoveryPool { .. }
             | Instruction::RetireVaultDebt { .. }
-            | Instruction::RetireWorstVaultDebt { .. } => {
+            | Instruction::RetireWorstVaultDebt { .. }
+            | Instruction::DepositSavings { .. }
+            | Instruction::WithdrawSavings { .. }
+            | Instruction::ClaimSavingsRewards => {
                 self.apply_liquidity(public, instruction).await
             }
         }
@@ -408,6 +418,23 @@ impl<'a, S: State> Layer<'a, S> {
         Ok(match self.get(&Key::VaultRegistry).await? {
             Some(Value::VaultRegistry(registry)) => registry,
             _ => nullspace_types::casino::VaultRegistry::default(),
+        })
+    }
+
+    async fn get_or_init_savings_pool(&mut self) -> Result<nullspace_types::casino::SavingsPool> {
+        Ok(match self.get(&Key::SavingsPool).await? {
+            Some(Value::SavingsPool(pool)) => pool,
+            _ => nullspace_types::casino::SavingsPool::default(),
+        })
+    }
+
+    async fn get_or_init_savings_balance(
+        &mut self,
+        public: &PublicKey,
+    ) -> Result<nullspace_types::casino::SavingsBalance> {
+        Ok(match self.get(&Key::SavingsBalance(public.clone())).await? {
+            Some(Value::SavingsBalance(balance)) => balance,
+            _ => nullspace_types::casino::SavingsBalance::default(),
         })
     }
 

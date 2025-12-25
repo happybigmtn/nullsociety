@@ -144,6 +144,9 @@ define_instruction_kinds! {
     FundRecoveryPool = 24 => Instruction::FundRecoveryPool { .. } => "FundRecoveryPool" => Instruction::FundRecoveryPool { amount: 1 },
     RetireVaultDebt = 25 => Instruction::RetireVaultDebt { .. } => "RetireVaultDebt" => Instruction::RetireVaultDebt { target: ed25519::PrivateKey::from_seed(3).public_key(), amount: 1 },
     RetireWorstVaultDebt = 26 => Instruction::RetireWorstVaultDebt { .. } => "RetireWorstVaultDebt" => Instruction::RetireWorstVaultDebt { amount: 1 },
+    DepositSavings = 27 => Instruction::DepositSavings { .. } => "DepositSavings" => Instruction::DepositSavings { amount: 1 },
+    WithdrawSavings = 28 => Instruction::WithdrawSavings { .. } => "WithdrawSavings" => Instruction::WithdrawSavings { amount: 1 },
+    ClaimSavingsRewards = 29 => Instruction::ClaimSavingsRewards => "ClaimSavingsRewards" => Instruction::ClaimSavingsRewards,
 }
 
 /// Helper to convert serde_json::Value to a plain JavaScript object
@@ -509,6 +512,38 @@ impl Transaction {
         Ok(Transaction { inner: tx })
     }
 
+    /// Sign a new savings deposit transaction.
+    #[wasm_bindgen]
+    pub fn deposit_savings(
+        signer: &Signer,
+        nonce: u64,
+        amount: u64,
+    ) -> Result<Transaction, JsValue> {
+        let instruction = Instruction::DepositSavings { amount };
+        let tx = ExecutionTransaction::sign(&signer.private_key, nonce, instruction);
+        Ok(Transaction { inner: tx })
+    }
+
+    /// Sign a new savings withdraw transaction.
+    #[wasm_bindgen]
+    pub fn withdraw_savings(
+        signer: &Signer,
+        nonce: u64,
+        amount: u64,
+    ) -> Result<Transaction, JsValue> {
+        let instruction = Instruction::WithdrawSavings { amount };
+        let tx = ExecutionTransaction::sign(&signer.private_key, nonce, instruction);
+        Ok(Transaction { inner: tx })
+    }
+
+    /// Sign a new savings reward claim transaction.
+    #[wasm_bindgen]
+    pub fn claim_savings_rewards(signer: &Signer, nonce: u64) -> Result<Transaction, JsValue> {
+        let instruction = Instruction::ClaimSavingsRewards;
+        let tx = ExecutionTransaction::sign(&signer.private_key, nonce, instruction);
+        Ok(Transaction { inner: tx })
+    }
+
     /// Sign a new AMM swap transaction.
     #[wasm_bindgen]
     pub fn swap(
@@ -662,6 +697,23 @@ pub fn encode_treasury_key() -> Vec<u8> {
 pub fn encode_vault_registry_key() -> Vec<u8> {
     let key = Key::VaultRegistry;
     key.encode().to_vec()
+}
+
+/// Encode the savings pool key.
+#[wasm_bindgen]
+pub fn encode_savings_pool_key() -> Vec<u8> {
+    let key = Key::SavingsPool;
+    key.encode().to_vec()
+}
+
+/// Encode a savings balance key.
+#[wasm_bindgen]
+pub fn encode_savings_balance_key(public_key: &[u8]) -> Result<Vec<u8>, JsValue> {
+    let mut buf = public_key;
+    let pk = ed25519::PublicKey::read(&mut buf)
+        .map_err(|e| JsValue::from_str(&format!("Invalid public key: {e:?}")))?;
+    let key = Key::SavingsBalance(pk);
+    Ok(key.encode().to_vec())
 }
 
 /// Encode a staker key.
@@ -954,6 +1006,24 @@ fn decode_value(value: Value) -> Result<JsValue, JsValue> {
             serde_json::json!({
                 "type": "VaultRegistry",
                 "vaults": vaults
+            })
+        }
+        Value::SavingsPool(pool) => {
+            serde_json::json!({
+                "type": "SavingsPool",
+                "total_deposits": pool.total_deposits,
+                "reward_per_share_x18": pool.reward_per_share_x18.to_string(),
+                "pending_rewards": pool.pending_rewards,
+                "total_rewards_accrued": pool.total_rewards_accrued,
+                "total_rewards_paid": pool.total_rewards_paid
+            })
+        }
+        Value::SavingsBalance(balance) => {
+            serde_json::json!({
+                "type": "SavingsBalance",
+                "deposit_balance": balance.deposit_balance,
+                "reward_debt_x18": balance.reward_debt_x18.to_string(),
+                "unclaimed_rewards": balance.unclaimed_rewards
             })
         }
         Value::LpBalance(bal) => {
@@ -1552,6 +1622,115 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                 "amount": amount,
                 "new_debt": new_debt,
                 "pool_balance": pool_balance
+            })
+        }
+        Event::SavingsDeposited {
+            player,
+            amount,
+            new_balance,
+            savings_balance,
+            pool,
+            player_balances,
+        } => {
+            serde_json::json!({
+                "type": "SavingsDeposited",
+                "player": hex(&player.encode()),
+                "amount": amount,
+                "new_balance": new_balance,
+                "savings_balance": {
+                    "deposit_balance": savings_balance.deposit_balance,
+                    "reward_debt_x18": savings_balance.reward_debt_x18.to_string(),
+                    "unclaimed_rewards": savings_balance.unclaimed_rewards
+                },
+                "pool": {
+                    "total_deposits": pool.total_deposits,
+                    "reward_per_share_x18": pool.reward_per_share_x18.to_string(),
+                    "pending_rewards": pool.pending_rewards,
+                    "total_rewards_accrued": pool.total_rewards_accrued,
+                    "total_rewards_paid": pool.total_rewards_paid
+                },
+                "player_balances": {
+                    "chips": player_balances.chips,
+                    "vusdt_balance": player_balances.vusdt_balance,
+                    "shields": player_balances.shields,
+                    "doubles": player_balances.doubles,
+                    "tournament_chips": player_balances.tournament_chips,
+                    "tournament_shields": player_balances.tournament_shields,
+                    "tournament_doubles": player_balances.tournament_doubles,
+                    "active_tournament": player_balances.active_tournament
+                }
+            })
+        }
+        Event::SavingsWithdrawn {
+            player,
+            amount,
+            new_balance,
+            savings_balance,
+            pool,
+            player_balances,
+        } => {
+            serde_json::json!({
+                "type": "SavingsWithdrawn",
+                "player": hex(&player.encode()),
+                "amount": amount,
+                "new_balance": new_balance,
+                "savings_balance": {
+                    "deposit_balance": savings_balance.deposit_balance,
+                    "reward_debt_x18": savings_balance.reward_debt_x18.to_string(),
+                    "unclaimed_rewards": savings_balance.unclaimed_rewards
+                },
+                "pool": {
+                    "total_deposits": pool.total_deposits,
+                    "reward_per_share_x18": pool.reward_per_share_x18.to_string(),
+                    "pending_rewards": pool.pending_rewards,
+                    "total_rewards_accrued": pool.total_rewards_accrued,
+                    "total_rewards_paid": pool.total_rewards_paid
+                },
+                "player_balances": {
+                    "chips": player_balances.chips,
+                    "vusdt_balance": player_balances.vusdt_balance,
+                    "shields": player_balances.shields,
+                    "doubles": player_balances.doubles,
+                    "tournament_chips": player_balances.tournament_chips,
+                    "tournament_shields": player_balances.tournament_shields,
+                    "tournament_doubles": player_balances.tournament_doubles,
+                    "active_tournament": player_balances.active_tournament
+                }
+            })
+        }
+        Event::SavingsRewardsClaimed {
+            player,
+            amount,
+            savings_balance,
+            pool,
+            player_balances,
+        } => {
+            serde_json::json!({
+                "type": "SavingsRewardsClaimed",
+                "player": hex(&player.encode()),
+                "amount": amount,
+                "savings_balance": {
+                    "deposit_balance": savings_balance.deposit_balance,
+                    "reward_debt_x18": savings_balance.reward_debt_x18.to_string(),
+                    "unclaimed_rewards": savings_balance.unclaimed_rewards
+                },
+                "pool": {
+                    "total_deposits": pool.total_deposits,
+                    "reward_per_share_x18": pool.reward_per_share_x18.to_string(),
+                    "pending_rewards": pool.pending_rewards,
+                    "total_rewards_accrued": pool.total_rewards_accrued,
+                    "total_rewards_paid": pool.total_rewards_paid
+                },
+                "player_balances": {
+                    "chips": player_balances.chips,
+                    "vusdt_balance": player_balances.vusdt_balance,
+                    "shields": player_balances.shields,
+                    "doubles": player_balances.doubles,
+                    "tournament_chips": player_balances.tournament_chips,
+                    "tournament_shields": player_balances.tournament_shields,
+                    "tournament_doubles": player_balances.tournament_doubles,
+                    "active_tournament": player_balances.active_tournament
+                }
             })
         }
 

@@ -1022,6 +1022,43 @@ export class CasinoClient {
   }
 
   /**
+   * Get savings pool state.
+   * @returns {Promise<Object|null>} SavingsPool data or null if not found
+   */
+  async getSavingsPool() {
+    const keyBytes = this.wasm.encodeSavingsPoolKey();
+    const result = await this.queryState(keyBytes);
+
+    if (result.found && result.value) {
+      if (result.value.type === 'SavingsPool') {
+        return snakeToCamel(result.value);
+      }
+      return null;
+    }
+
+    return null;
+  }
+
+  /**
+   * Get savings balance state for an account.
+   * @param {Uint8Array} publicKeyBytes - Account public key
+   * @returns {Promise<Object|null>} SavingsBalance data or null if not found
+   */
+  async getSavingsBalance(publicKeyBytes) {
+    const keyBytes = this.wasm.encodeSavingsBalanceKey(publicKeyBytes);
+    const result = await this.queryState(keyBytes);
+
+    if (result.found && result.value) {
+      if (result.value.type === 'SavingsBalance') {
+        return snakeToCamel(result.value);
+      }
+      return null;
+    }
+
+    return null;
+  }
+
+  /**
    * Get staker state for an account.
    * @param {Uint8Array} publicKeyBytes - Account public key
    * @returns {Promise<Object|null>} Staker data or null if not found

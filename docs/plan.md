@@ -120,7 +120,7 @@ Goal: operate as a closed economy with strong internal DeFi loops before any ext
 - [x] Expand domestic DeFi UX and analytics:
   - swap/borrow panels show caps, tax bands, and health metrics
   - conversion funnel metrics tracked via tx submission/confirmation telemetry
-- [ ] Add a vUSDT savings/deposit market funded by stability fees.
+- [x] Add a vUSDT savings/deposit market funded by stability fees.
 - [ ] Marketing-friendly economic loops:
   - tournaments, freerolls, and staking yield as primary retention hooks
   - LP rewards (if funded by treasury) as liquidity growth lever
@@ -155,7 +155,7 @@ Goal: open controlled convertibility using a continuous clearing auction and ext
 
 ## Sybil + Abuse Mitigation (Phase 1)
 - [x] Account age + stake tiering for LTV (Tier 2 unlock).
-- [ ] Account age gating for freeroll limits and membership perks.
+- [x] Account age gating for freeroll limits and membership perks.
 - [ ] Proof-of-play weighting for freeroll rewards (session count/duration).
 - [ ] Heuristic sybil detection pipeline (device/IP/time clustering).
 - [ ] Rate-limit faucet and tournament churn beyond current caps.
@@ -191,7 +191,7 @@ Phase 1 (Commonware codebase):
   to preserve supply accounting and prevent accidental externalization.
 - [x] Implement stability fees, liquidation path, and a system debt ceiling.
 - [ ] Add treasury + vesting ledger for Phase 2 allocation buckets (ledger + UI in place; vesting enforcement pending).
-- [ ] Add vUSDT savings/deposit market funded by stability fees.
+- [x] Add vUSDT savings/deposit market funded by stability fees.
 - [x] Add recovery-pool debt retirement hooks (vUSDT debt burn + audit trail).
 - [x] Add recovery-pool payout ordering (LTV risk + debt age) to reduce
   insolvency risk.
@@ -220,6 +220,8 @@ Phase 2 (EVM + bridge workstream):
 - [x] Borrow panel surfaces recovery-pool and vUSDT debt metrics (debug view).
 - [x] Vault registry key exposed via WASM/client for audits and admin tools.
 - [x] Markdown documentation consolidated under `docs/`.
+- [x] vUSDT savings pool (deposit/withdraw/claim) with stability-fee funding.
+- [x] Freeroll daily limits enforce account age gating for new accounts.
 - [x] Stripe test membership created for tier `member` ($5/month).
   - Product: `prod_TfP7ygigcze2Ar`
   - Price: `price_1Si4J93nipX4Oc41ak3eP67k`

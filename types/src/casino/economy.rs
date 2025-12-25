@@ -291,6 +291,110 @@ impl EncodeSize for Vault {
     }
 }
 
+/// vUSDT savings pool state (funded by stability fees).
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct SavingsPool {
+    pub total_deposits: u64,
+    pub reward_per_share_x18: u128,
+    pub pending_rewards: u64,
+    pub total_rewards_accrued: u64,
+    pub total_rewards_paid: u64,
+}
+
+impl Write for SavingsPool {
+    fn write(&self, writer: &mut impl BufMut) {
+        self.total_deposits.write(writer);
+        self.reward_per_share_x18.write(writer);
+        self.pending_rewards.write(writer);
+        self.total_rewards_accrued.write(writer);
+        self.total_rewards_paid.write(writer);
+    }
+}
+
+impl Read for SavingsPool {
+    type Cfg = ();
+
+    fn read_cfg(reader: &mut impl Buf, _: &Self::Cfg) -> Result<Self, Error> {
+        Ok(Self {
+            total_deposits: u64::read(reader)?,
+            reward_per_share_x18: if reader.remaining() >= 16 {
+                u128::read(reader)?
+            } else {
+                0
+            },
+            pending_rewards: if reader.remaining() >= u64::SIZE {
+                u64::read(reader)?
+            } else {
+                0
+            },
+            total_rewards_accrued: if reader.remaining() >= u64::SIZE {
+                u64::read(reader)?
+            } else {
+                0
+            },
+            total_rewards_paid: if reader.remaining() >= u64::SIZE {
+                u64::read(reader)?
+            } else {
+                0
+            },
+        })
+    }
+}
+
+impl EncodeSize for SavingsPool {
+    fn encode_size(&self) -> usize {
+        self.total_deposits.encode_size()
+            + self.reward_per_share_x18.encode_size()
+            + self.pending_rewards.encode_size()
+            + self.total_rewards_accrued.encode_size()
+            + self.total_rewards_paid.encode_size()
+    }
+}
+
+/// Per-player savings balance and reward tracking.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct SavingsBalance {
+    pub deposit_balance: u64,
+    pub reward_debt_x18: u128,
+    pub unclaimed_rewards: u64,
+}
+
+impl Write for SavingsBalance {
+    fn write(&self, writer: &mut impl BufMut) {
+        self.deposit_balance.write(writer);
+        self.reward_debt_x18.write(writer);
+        self.unclaimed_rewards.write(writer);
+    }
+}
+
+impl Read for SavingsBalance {
+    type Cfg = ();
+
+    fn read_cfg(reader: &mut impl Buf, _: &Self::Cfg) -> Result<Self, Error> {
+        Ok(Self {
+            deposit_balance: u64::read(reader)?,
+            reward_debt_x18: if reader.remaining() >= 16 {
+                u128::read(reader)?
+            } else {
+                0
+            },
+            unclaimed_rewards: if reader.remaining() >= u64::SIZE {
+                u64::read(reader)?
+            } else {
+                0
+            },
+        })
+    }
+}
+
+impl EncodeSize for SavingsBalance {
+    fn encode_size(&self) -> usize {
+        self.deposit_balance.encode_size()
+            + self.reward_debt_x18.encode_size()
+            + self.unclaimed_rewards.encode_size()
+    }
+}
+
 /// Registry of vault owners for recovery pool ordering and audits.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct VaultRegistry {

@@ -13,32 +13,50 @@ type BorrowPanelProps = {
   vault: any | null;
   vaultDerived: VaultDerived;
   house: any | null;
+  savingsPool: any | null;
+  savingsBalance: any | null;
   collateralAmount: string;
   borrowAmount: string;
   repayAmount: string;
+  savingsDepositAmount: string;
+  savingsWithdrawAmount: string;
   setCollateralAmount: (value: string) => void;
   setBorrowAmount: (value: string) => void;
   setRepayAmount: (value: string) => void;
+  setSavingsDepositAmount: (value: string) => void;
+  setSavingsWithdrawAmount: (value: string) => void;
   onCreateVault: () => void;
   onDepositCollateral: () => void;
   onBorrowVusdt: () => void;
   onRepayVusdt: () => void;
+  onDepositSavings: () => void;
+  onWithdrawSavings: () => void;
+  onClaimSavingsRewards: () => void;
 };
 
 export const BorrowPanel: React.FC<BorrowPanelProps> = ({
   vault,
   vaultDerived,
   house,
+  savingsPool,
+  savingsBalance,
   collateralAmount,
   borrowAmount,
   repayAmount,
+  savingsDepositAmount,
+  savingsWithdrawAmount,
   setCollateralAmount,
   setBorrowAmount,
   setRepayAmount,
+  setSavingsDepositAmount,
+  setSavingsWithdrawAmount,
   onCreateVault,
   onDepositCollateral,
   onBorrowVusdt,
   onRepayVusdt,
+  onDepositSavings,
+  onWithdrawSavings,
+  onClaimSavingsRewards,
 }) => {
   const health = useMemo(() => {
     const ltvBps = vaultDerived.ltvBps;
@@ -136,6 +154,69 @@ export const BorrowPanel: React.FC<BorrowPanelProps> = ({
             onClick={onRepayVusdt}
           >
             Repay
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-6 border-t border-gray-800 pt-4">
+        <div className="text-[10px] text-gray-500 tracking-widest">SAVINGS (vUSDT)</div>
+        <div className="grid grid-cols-2 gap-3 text-sm mt-3">
+          <div className="border border-gray-800 rounded p-3 bg-black/30">
+            <div className="text-[10px] text-gray-500 tracking-widest">DEPOSIT BALANCE</div>
+            <div className="text-white mt-1">{savingsBalance?.depositBalance ?? 0}</div>
+          </div>
+          <div className="border border-gray-800 rounded p-3 bg-black/30">
+            <div className="text-[10px] text-gray-500 tracking-widest">UNCLAIMED</div>
+            <div className="text-white mt-1">{savingsBalance?.unclaimedRewards ?? 0}</div>
+          </div>
+          <div className="border border-gray-800 rounded p-3 bg-black/30">
+            <div className="text-[10px] text-gray-500 tracking-widest">POOL TVL</div>
+            <div className="text-white mt-1">{savingsPool?.totalDeposits ?? 0}</div>
+          </div>
+          <div className="border border-gray-800 rounded p-3 bg-black/30">
+            <div className="text-[10px] text-gray-500 tracking-widest">REWARDS ACCRUED</div>
+            <div className="text-white mt-1">{savingsPool?.totalRewardsAccrued ?? 0}</div>
+          </div>
+        </div>
+
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              className="flex-1 bg-gray-950 border border-gray-800 rounded px-2 py-1 text-xs"
+              value={savingsDepositAmount}
+              onChange={(e) => setSavingsDepositAmount(e.target.value)}
+              placeholder="Deposit (vUSDT)"
+              inputMode="numeric"
+              pattern="[0-9]*"
+            />
+            <button
+              className="text-xs px-3 py-1 rounded border border-terminal-green text-terminal-green hover:bg-terminal-green/10"
+              onClick={onDepositSavings}
+            >
+              Deposit
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              className="flex-1 bg-gray-950 border border-gray-800 rounded px-2 py-1 text-xs"
+              value={savingsWithdrawAmount}
+              onChange={(e) => setSavingsWithdrawAmount(e.target.value)}
+              placeholder="Withdraw (vUSDT)"
+              inputMode="numeric"
+              pattern="[0-9]*"
+            />
+            <button
+              className="text-xs px-3 py-1 rounded border border-gray-700 text-gray-300 hover:border-gray-500"
+              onClick={onWithdrawSavings}
+            >
+              Withdraw
+            </button>
+          </div>
+          <button
+            className="w-full text-xs px-3 py-2 rounded border border-terminal-gold text-terminal-gold hover:bg-terminal-gold/10"
+            onClick={onClaimSavingsRewards}
+          >
+            Claim Savings Rewards
           </button>
         </div>
       </div>

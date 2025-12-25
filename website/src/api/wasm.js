@@ -125,6 +125,16 @@ export class WasmWrapper {
     return this.wasm.encode_vault_registry_key();
   }
 
+  // Encode savings pool key
+  encodeSavingsPoolKey() {
+    return this.wasm.encode_savings_pool_key();
+  }
+
+  // Encode savings balance key
+  encodeSavingsBalanceKey(publicKeyBytes) {
+    return this.wasm.encode_savings_balance_key(publicKeyBytes);
+  }
+
   // Encode staker key
   encodeStakerKey(publicKeyBytes) {
     return this.wasm.encode_staker_key(publicKeyBytes);
@@ -563,6 +573,44 @@ export class WasmWrapper {
       this.keypair,
       BigInt(nonce),
       BigInt(shares)
+    );
+    return tx.encode();
+  }
+
+  // Create a savings deposit transaction
+  createDepositSavingsTransaction(nonce, amount) {
+    if (!this.keypair) {
+      throw new Error('Keypair not initialized');
+    }
+    const tx = this.wasm.Transaction.deposit_savings(
+      this.keypair,
+      BigInt(nonce),
+      BigInt(amount)
+    );
+    return tx.encode();
+  }
+
+  // Create a savings withdraw transaction
+  createWithdrawSavingsTransaction(nonce, amount) {
+    if (!this.keypair) {
+      throw new Error('Keypair not initialized');
+    }
+    const tx = this.wasm.Transaction.withdraw_savings(
+      this.keypair,
+      BigInt(nonce),
+      BigInt(amount)
+    );
+    return tx.encode();
+  }
+
+  // Create a savings claim transaction
+  createClaimSavingsRewardsTransaction(nonce) {
+    if (!this.keypair) {
+      throw new Error('Keypair not initialized');
+    }
+    const tx = this.wasm.Transaction.claim_savings_rewards(
+      this.keypair,
+      BigInt(nonce)
     );
     return tx.encode();
   }
