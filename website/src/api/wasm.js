@@ -110,6 +110,21 @@ export class WasmWrapper {
     return this.wasm.encode_house_key();
   }
 
+  // Encode policy key
+  encodePolicyKey() {
+    return this.wasm.encode_policy_key();
+  }
+
+  // Encode treasury key
+  encodeTreasuryKey() {
+    return this.wasm.encode_treasury_key();
+  }
+
+  // Encode vault registry key
+  encodeVaultRegistryKey() {
+    return this.wasm.encode_vault_registry_key();
+  }
+
   // Encode staker key
   encodeStakerKey(publicKeyBytes) {
     return this.wasm.encode_staker_key(publicKeyBytes);

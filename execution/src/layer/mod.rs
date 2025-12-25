@@ -308,6 +308,24 @@ impl<'a, S: State> Layer<'a, S> {
             Instruction::RemoveLiquidity { shares } => {
                 self.handle_remove_liquidity(public, *shares).await
             }
+            Instruction::LiquidateVault { target } => {
+                self.handle_liquidate_vault(public, target).await
+            }
+            Instruction::SetPolicy { policy } => self.handle_set_policy(public, policy).await,
+            Instruction::SetTreasury { treasury } => {
+                self.handle_set_treasury(public, treasury).await
+            }
+            Instruction::FundRecoveryPool { amount } => {
+                self.handle_fund_recovery_pool(public, *amount).await
+            }
+            Instruction::RetireVaultDebt { target, amount } => {
+                self.handle_retire_vault_debt(public, target, *amount)
+                    .await
+            }
+            Instruction::RetireWorstVaultDebt { amount } => {
+                self.handle_retire_worst_vault_debt(public, *amount)
+                    .await
+            }
             _ => anyhow::bail!(
                 "internal error: apply_liquidity called with non-liquidity instruction"
             ),
@@ -342,7 +360,13 @@ impl<'a, S: State> Layer<'a, S> {
             | Instruction::RepayUSDT { .. }
             | Instruction::Swap { .. }
             | Instruction::AddLiquidity { .. }
-            | Instruction::RemoveLiquidity { .. } => {
+            | Instruction::RemoveLiquidity { .. }
+            | Instruction::LiquidateVault { .. }
+            | Instruction::SetPolicy { .. }
+            | Instruction::SetTreasury { .. }
+            | Instruction::FundRecoveryPool { .. }
+            | Instruction::RetireVaultDebt { .. }
+            | Instruction::RetireWorstVaultDebt { .. } => {
                 self.apply_liquidity(public, instruction).await
             }
         }
@@ -361,6 +385,29 @@ impl<'a, S: State> Layer<'a, S> {
             _ => nullspace_types::casino::AmmPool::new(
                 nullspace_types::casino::AMM_DEFAULT_FEE_BASIS_POINTS,
             ),
+        })
+    }
+
+    async fn get_or_init_policy(&mut self) -> Result<nullspace_types::casino::PolicyState> {
+        Ok(match self.get(&Key::Policy).await? {
+            Some(Value::Policy(policy)) => policy,
+            _ => nullspace_types::casino::PolicyState::default(),
+        })
+    }
+
+    async fn get_or_init_treasury(&mut self) -> Result<nullspace_types::casino::TreasuryState> {
+        Ok(match self.get(&Key::Treasury).await? {
+            Some(Value::Treasury(treasury)) => treasury,
+            _ => nullspace_types::casino::TreasuryState::default(),
+        })
+    }
+
+    async fn get_or_init_vault_registry(
+        &mut self,
+    ) -> Result<nullspace_types::casino::VaultRegistry> {
+        Ok(match self.get(&Key::VaultRegistry).await? {
+            Some(Value::VaultRegistry(registry)) => registry,
+            _ => nullspace_types::casino::VaultRegistry::default(),
         })
     }
 

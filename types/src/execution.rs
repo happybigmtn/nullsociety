@@ -62,6 +62,14 @@ mod tags {
 
         // Tournaments (29)
         pub const CASINO_END_TOURNAMENT: u8 = 29;
+
+        // Economy admin + risk controls (30-34)
+        pub const LIQUIDATE_VAULT: u8 = 30;
+        pub const SET_POLICY: u8 = 31;
+        pub const SET_TREASURY: u8 = 32;
+        pub const FUND_RECOVERY_POOL: u8 = 33;
+        pub const RETIRE_VAULT_DEBT: u8 = 34;
+        pub const RETIRE_WORST_VAULT_DEBT: u8 = 35;
     }
 
     pub mod key {
@@ -83,6 +91,13 @@ mod tags {
 
         // LP balance (18)
         pub const LP_BALANCE: u8 = 18;
+
+        // Policy + Treasury (19-20)
+        pub const POLICY: u8 = 19;
+        pub const TREASURY: u8 = 20;
+
+        // Registry (21)
+        pub const VAULT_REGISTRY: u8 = 21;
     }
 
     pub mod value {
@@ -105,6 +120,13 @@ mod tags {
 
         // LP balance (18)
         pub const LP_BALANCE: u8 = 18;
+
+        // Policy + Treasury (19-20)
+        pub const POLICY: u8 = 19;
+        pub const TREASURY: u8 = 20;
+
+        // Registry (21)
+        pub const VAULT_REGISTRY: u8 = 21;
     }
 
     pub mod event {
@@ -138,6 +160,13 @@ mod tags {
         pub const UNSTAKED: u8 = 38;
         pub const EPOCH_PROCESSED: u8 = 39;
         pub const REWARDS_CLAIMED: u8 = 40;
+
+        // Economy admin events (43-47)
+        pub const POLICY_UPDATED: u8 = 43;
+        pub const VAULT_LIQUIDATED: u8 = 44;
+        pub const RECOVERY_POOL_FUNDED: u8 = 45;
+        pub const RECOVERY_POOL_RETIRED: u8 = 46;
+        pub const TREASURY_UPDATED: u8 = 47;
     }
 }
 
@@ -378,6 +407,30 @@ pub enum Instruction {
     /// End a tournament and distribute prizes.
     /// Binary: [29] [tournamentId:u64 BE]
     CasinoEndTournament { tournament_id: u64 },
+
+    /// Liquidate an undercollateralized vault.
+    /// Binary: [30] [target:PublicKey]
+    LiquidateVault { target: PublicKey },
+
+    /// Admin: update economy policy parameters.
+    /// Binary: [31] [policy:PolicyState]
+    SetPolicy { policy: crate::casino::PolicyState },
+
+    /// Admin: set treasury allocation ledger.
+    /// Binary: [32] [treasury:TreasuryState]
+    SetTreasury { treasury: crate::casino::TreasuryState },
+
+    /// Admin: fund recovery pool balance.
+    /// Binary: [33] [amount:u64 BE]
+    FundRecoveryPool { amount: u64 },
+
+    /// Admin: retire vUSDT debt using recovery pool.
+    /// Binary: [34] [target:PublicKey] [amount:u64 BE]
+    RetireVaultDebt { target: PublicKey, amount: u64 },
+
+    /// Admin: retire vUSDT debt using recovery pool, selecting highest-risk vault.
+    /// Binary: [35] [amount:u64 BE]
+    RetireWorstVaultDebt { amount: u64 },
 }
 
 impl Write for Instruction {
@@ -491,6 +544,31 @@ impl Write for Instruction {
                 tags::instruction::CASINO_END_TOURNAMENT.write(writer);
                 tournament_id.write(writer);
             }
+            Self::LiquidateVault { target } => {
+                tags::instruction::LIQUIDATE_VAULT.write(writer);
+                target.write(writer);
+            }
+            Self::SetPolicy { policy } => {
+                tags::instruction::SET_POLICY.write(writer);
+                policy.write(writer);
+            }
+            Self::SetTreasury { treasury } => {
+                tags::instruction::SET_TREASURY.write(writer);
+                treasury.write(writer);
+            }
+            Self::FundRecoveryPool { amount } => {
+                tags::instruction::FUND_RECOVERY_POOL.write(writer);
+                amount.write(writer);
+            }
+            Self::RetireVaultDebt { target, amount } => {
+                tags::instruction::RETIRE_VAULT_DEBT.write(writer);
+                target.write(writer);
+                amount.write(writer);
+            }
+            Self::RetireWorstVaultDebt { amount } => {
+                tags::instruction::RETIRE_WORST_VAULT_DEBT.write(writer);
+                amount.write(writer);
+            }
         }
     }
 }
@@ -599,6 +677,25 @@ impl Read for Instruction {
             tags::instruction::CASINO_END_TOURNAMENT => Self::CasinoEndTournament {
                 tournament_id: u64::read(reader)?,
             },
+            tags::instruction::LIQUIDATE_VAULT => Self::LiquidateVault {
+                target: PublicKey::read(reader)?,
+            },
+            tags::instruction::SET_POLICY => Self::SetPolicy {
+                policy: crate::casino::PolicyState::read(reader)?,
+            },
+            tags::instruction::SET_TREASURY => Self::SetTreasury {
+                treasury: crate::casino::TreasuryState::read(reader)?,
+            },
+            tags::instruction::FUND_RECOVERY_POOL => Self::FundRecoveryPool {
+                amount: u64::read(reader)?,
+            },
+            tags::instruction::RETIRE_VAULT_DEBT => Self::RetireVaultDebt {
+                target: PublicKey::read(reader)?,
+                amount: u64::read(reader)?,
+            },
+            tags::instruction::RETIRE_WORST_VAULT_DEBT => Self::RetireWorstVaultDebt {
+                amount: u64::read(reader)?,
+            },
 
             i => return Err(Error::InvalidEnum(i)),
         };
@@ -649,6 +746,14 @@ impl EncodeSize for Instruction {
                 } => rng_amount.encode_size() + usdt_amount.encode_size(),
                 Self::RemoveLiquidity { shares } => shares.encode_size(),
                 Self::CasinoEndTournament { tournament_id } => tournament_id.encode_size(),
+                Self::LiquidateVault { target } => target.encode_size(),
+                Self::SetPolicy { policy } => policy.encode_size(),
+                Self::SetTreasury { treasury } => treasury.encode_size(),
+                Self::FundRecoveryPool { amount } => amount.encode_size(),
+                Self::RetireVaultDebt { target, amount } => {
+                    target.encode_size() + amount.encode_size()
+                }
+                Self::RetireWorstVaultDebt { amount } => amount.encode_size(),
             }
     }
 }
@@ -946,6 +1051,13 @@ pub enum Key {
 
     // LP Balance (Tag 18)
     LpBalance(PublicKey),
+
+    // Policy + Treasury (Tags 19-20)
+    Policy,
+    Treasury,
+
+    // Registry (Tag 21)
+    VaultRegistry,
 }
 
 impl Write for Key {
@@ -989,6 +1101,9 @@ impl Write for Key {
                 tags::key::LP_BALANCE.write(writer);
                 pk.write(writer);
             }
+            Self::Policy => tags::key::POLICY.write(writer),
+            Self::Treasury => tags::key::TREASURY.write(writer),
+            Self::VaultRegistry => tags::key::VAULT_REGISTRY.write(writer),
         }
     }
 }
@@ -1016,6 +1131,9 @@ impl Read for Key {
             tags::key::VAULT => Self::Vault(PublicKey::read(reader)?),
             tags::key::AMM_POOL => Self::AmmPool,
             tags::key::LP_BALANCE => Self::LpBalance(PublicKey::read(reader)?),
+            tags::key::POLICY => Self::Policy,
+            tags::key::TREASURY => Self::Treasury,
+            tags::key::VAULT_REGISTRY => Self::VaultRegistry,
 
             i => return Err(Error::InvalidEnum(i)),
         };
@@ -1045,6 +1163,9 @@ impl EncodeSize for Key {
                 Self::Vault(_) => PublicKey::SIZE,
                 Self::AmmPool => 0,
                 Self::LpBalance(_) => PublicKey::SIZE,
+                Self::Policy => 0,
+                Self::Treasury => 0,
+                Self::VaultRegistry => 0,
             }
     }
 }
@@ -1077,6 +1198,13 @@ pub enum Value {
 
     // LP Balance (Tag 18)
     LpBalance(u64),
+
+    // Policy + Treasury (Tags 19-20)
+    Policy(crate::casino::PolicyState),
+    Treasury(crate::casino::TreasuryState),
+
+    // Registry (Tag 21)
+    VaultRegistry(crate::casino::VaultRegistry),
 }
 
 impl Write for Value {
@@ -1136,6 +1264,18 @@ impl Write for Value {
                 tags::value::LP_BALANCE.write(writer);
                 bal.write(writer);
             }
+            Self::Policy(policy) => {
+                tags::value::POLICY.write(writer);
+                policy.write(writer);
+            }
+            Self::Treasury(treasury) => {
+                tags::value::TREASURY.write(writer);
+                treasury.write(writer);
+            }
+            Self::VaultRegistry(registry) => {
+                tags::value::VAULT_REGISTRY.write(writer);
+                registry.write(writer);
+            }
         }
     }
 }
@@ -1173,6 +1313,11 @@ impl Read for Value {
             tags::value::VAULT => Self::Vault(crate::casino::Vault::read(reader)?),
             tags::value::AMM_POOL => Self::AmmPool(crate::casino::AmmPool::read(reader)?),
             tags::value::LP_BALANCE => Self::LpBalance(u64::read(reader)?),
+            tags::value::POLICY => Self::Policy(crate::casino::PolicyState::read(reader)?),
+            tags::value::TREASURY => Self::Treasury(crate::casino::TreasuryState::read(reader)?),
+            tags::value::VAULT_REGISTRY => {
+                Self::VaultRegistry(crate::casino::VaultRegistry::read(reader)?)
+            }
 
             i => return Err(Error::InvalidEnum(i)),
         };
@@ -1205,6 +1350,9 @@ impl EncodeSize for Value {
                 Self::Vault(vault) => vault.encode_size(),
                 Self::AmmPool(pool) => pool.encode_size(),
                 Self::LpBalance(bal) => bal.encode_size(),
+                Self::Policy(policy) => policy.encode_size(),
+                Self::Treasury(treasury) => treasury.encode_size(),
+                Self::VaultRegistry(registry) => registry.encode_size(),
             }
     }
 }
@@ -1348,6 +1496,33 @@ pub enum Event {
         lp_balance: u64,
         amm: crate::casino::AmmPool,
         player_balances: crate::casino::PlayerBalanceSnapshot,
+    },
+
+    // Economy admin events (tags 43-47)
+    PolicyUpdated {
+        policy: crate::casino::PolicyState,
+    },
+    TreasuryUpdated {
+        treasury: crate::casino::TreasuryState,
+    },
+    VaultLiquidated {
+        liquidator: PublicKey,
+        target: PublicKey,
+        repay_amount: u64,
+        collateral_seized: u64,
+        remaining_debt: u64,
+        remaining_collateral: u64,
+        penalty_to_house: u64,
+    },
+    RecoveryPoolFunded {
+        amount: u64,
+        new_balance: u64,
+    },
+    RecoveryPoolRetired {
+        target: PublicKey,
+        amount: u64,
+        new_debt: u64,
+        pool_balance: u64,
     },
 
     // Staking events (tags 37-40)
@@ -1640,6 +1815,51 @@ impl Write for Event {
                 player_balances.write(writer);
             }
 
+            // Economy admin events (tags 43-47)
+            Self::PolicyUpdated { policy } => {
+                tags::event::POLICY_UPDATED.write(writer);
+                policy.write(writer);
+            }
+            Self::TreasuryUpdated { treasury } => {
+                tags::event::TREASURY_UPDATED.write(writer);
+                treasury.write(writer);
+            }
+            Self::VaultLiquidated {
+                liquidator,
+                target,
+                repay_amount,
+                collateral_seized,
+                remaining_debt,
+                remaining_collateral,
+                penalty_to_house,
+            } => {
+                tags::event::VAULT_LIQUIDATED.write(writer);
+                liquidator.write(writer);
+                target.write(writer);
+                repay_amount.write(writer);
+                collateral_seized.write(writer);
+                remaining_debt.write(writer);
+                remaining_collateral.write(writer);
+                penalty_to_house.write(writer);
+            }
+            Self::RecoveryPoolFunded { amount, new_balance } => {
+                tags::event::RECOVERY_POOL_FUNDED.write(writer);
+                amount.write(writer);
+                new_balance.write(writer);
+            }
+            Self::RecoveryPoolRetired {
+                target,
+                amount,
+                new_debt,
+                pool_balance,
+            } => {
+                tags::event::RECOVERY_POOL_RETIRED.write(writer);
+                target.write(writer);
+                amount.write(writer);
+                new_debt.write(writer);
+                pool_balance.write(writer);
+            }
+
             // Staking events (tags 37-40)
             Self::Staked {
                 player,
@@ -1899,6 +2119,31 @@ impl Read for Event {
                 amm: crate::casino::AmmPool::read(reader)?,
                 player_balances: crate::casino::PlayerBalanceSnapshot::read(reader)?,
             },
+            tags::event::POLICY_UPDATED => Self::PolicyUpdated {
+                policy: crate::casino::PolicyState::read(reader)?,
+            },
+            tags::event::TREASURY_UPDATED => Self::TreasuryUpdated {
+                treasury: crate::casino::TreasuryState::read(reader)?,
+            },
+            tags::event::VAULT_LIQUIDATED => Self::VaultLiquidated {
+                liquidator: PublicKey::read(reader)?,
+                target: PublicKey::read(reader)?,
+                repay_amount: u64::read(reader)?,
+                collateral_seized: u64::read(reader)?,
+                remaining_debt: u64::read(reader)?,
+                remaining_collateral: u64::read(reader)?,
+                penalty_to_house: u64::read(reader)?,
+            },
+            tags::event::RECOVERY_POOL_FUNDED => Self::RecoveryPoolFunded {
+                amount: u64::read(reader)?,
+                new_balance: u64::read(reader)?,
+            },
+            tags::event::RECOVERY_POOL_RETIRED => Self::RecoveryPoolRetired {
+                target: PublicKey::read(reader)?,
+                amount: u64::read(reader)?,
+                new_debt: u64::read(reader)?,
+                pool_balance: u64::read(reader)?,
+            },
             tags::event::STAKED => Self::Staked {
                 player: PublicKey::read(reader)?,
                 amount: u64::read(reader)?,
@@ -2151,6 +2396,39 @@ impl EncodeSize for Event {
                         + lp_balance.encode_size()
                         + amm.encode_size()
                         + player_balances.encode_size()
+                }
+                Self::PolicyUpdated { policy } => policy.encode_size(),
+                Self::TreasuryUpdated { treasury } => treasury.encode_size(),
+                Self::VaultLiquidated {
+                    liquidator,
+                    target,
+                    repay_amount,
+                    collateral_seized,
+                    remaining_debt,
+                    remaining_collateral,
+                    penalty_to_house,
+                } => {
+                    liquidator.encode_size()
+                        + target.encode_size()
+                        + repay_amount.encode_size()
+                        + collateral_seized.encode_size()
+                        + remaining_debt.encode_size()
+                        + remaining_collateral.encode_size()
+                        + penalty_to_house.encode_size()
+                }
+                Self::RecoveryPoolFunded { amount, new_balance } => {
+                    amount.encode_size() + new_balance.encode_size()
+                }
+                Self::RecoveryPoolRetired {
+                    target,
+                    amount,
+                    new_debt,
+                    pool_balance,
+                } => {
+                    target.encode_size()
+                        + amount.encode_size()
+                        + new_debt.encode_size()
+                        + pool_balance.encode_size()
                 }
                 Self::Staked {
                     player,

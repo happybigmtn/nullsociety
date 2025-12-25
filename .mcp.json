@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "convex": {
+      "command": "npx",
+      "args": ["-y", "convex@latest", "mcp", "start"],
+      "cwd": "/home/r/Coding/nullspace/website"
+    }
+  }
+}

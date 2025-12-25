@@ -44,6 +44,9 @@ export default function EconomyApp() {
   const [amm, setAmm] = useState<any | null>(null);
   const [lpBalance, setLpBalance] = useState<any | null>(null);
   const [house, setHouse] = useState<any | null>(null);
+  const [policy, setPolicy] = useState<any | null>(null);
+  const [staker, setStaker] = useState<any | null>(null);
+  const [treasury, setTreasury] = useState<any | null>(null);
   const POLL_TICK_MS = 5000;
   const POLL_VISIBLE_MS = 15000;
   const POLL_HIDDEN_MS = 60000;
@@ -154,6 +157,12 @@ export default function EconomyApp() {
     const applyHouse = (house: any) => {
       if (house) setHouse(house);
     };
+    const applyPolicy = (next: any) => {
+      if (next) setPolicy(next);
+    };
+    const applyTreasury = (next: any) => {
+      if (next) setTreasury(next);
+    };
     const applyLpBalance = (balance: any) => {
       if (balance !== undefined && balance !== null) {
         setLpBalance({ balance });
@@ -223,6 +232,12 @@ export default function EconomyApp() {
       applyPlayerBalances(e?.playerBalances);
       track('economy.vault.borrowed', { amount });
     });
+    const unsubPolicy = connection.onEvent('PolicyUpdated', (e: any) => {
+      applyPolicy(e?.policy);
+    });
+    const unsubTreasury = connection.onEvent('TreasuryUpdated', (e: any) => {
+      applyTreasury(e?.treasury);
+    });
     const unsubRepay = connection.onEvent('VusdtRepaid', (e: any) => {
       if (e?.player?.toLowerCase?.() !== pkHexLower) return;
       const amount = e?.amount ?? 0;
@@ -285,6 +300,8 @@ export default function EconomyApp() {
         unsubVaultCreated?.();
         unsubCollateral?.();
         unsubBorrow?.();
+        unsubPolicy?.();
+        unsubTreasury?.();
         unsubRepay?.();
         unsubSwap?.();
         unsubLiqAdd?.();
@@ -316,12 +333,15 @@ export default function EconomyApp() {
       lastPollAtRef.current = now;
       inFlight = true;
       try {
-        const [p, v, a, lp, h] = await Promise.all([
+        const [p, v, a, lp, h, s, pol, t] = await Promise.all([
           client.getCasinoPlayer(pk),
           client.getVault(pk),
           client.getAmmPool(),
           client.getLpBalance(pk),
           client.getHouse(),
+          client.getStaker(pk),
+          client.getPolicy(),
+          client.getTreasury(),
         ]);
         setPlayer(p);
         setIsRegistered(!!p);
@@ -329,6 +349,9 @@ export default function EconomyApp() {
         setAmm(a);
         setLpBalance(lp);
         setHouse(h);
+        setStaker(s);
+        setPolicy(pol);
+        setTreasury(t);
       } catch {
         // ignore transient errors
       } finally {
@@ -366,10 +389,23 @@ export default function EconomyApp() {
     const priceDen = ammDerived.reserveRng > 0n ? ammDerived.reserveRng : 1n;
     const collateralValue = priceDen > 0n ? (collateral * priceNum) / priceDen : 0n;
     const ltvBps = collateralValue > 0n ? Number((debt * 10_000n) / collateralValue) : 0;
-    const maxDebt = collateralValue / 2n;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const createdTs = Number(player?.createdTs ?? 0);
+    const stakedBalance = Number(staker?.balance ?? 0);
+    const matureAgeSec = 30 * 24 * 60 * 60;
+    const tier2StakeMin = 1000;
+    const isMature = createdTs > 0 && nowSec - createdTs >= matureAgeSec;
+    const isTier2 = isMature && stakedBalance >= tier2StakeMin;
+    const maxLtvBps = isTier2
+      ? Number(policy?.maxLtvBpsMature ?? 4500)
+      : Number(policy?.maxLtvBpsNew ?? 3000);
+    const liquidationThresholdBps = Number(policy?.liquidationThresholdBps ?? 6000);
+    const stabilityFeeAprBps = Number(policy?.stabilityFeeAprBps ?? 800);
+    const maxDebt = (collateralValue * BigInt(maxLtvBps)) / 10_000n;
     const availableDebt = maxDebt > debt ? maxDebt - debt : 0n;
-    return { ltvBps, availableDebt };
-  }, [ammDerived.reserveRng, ammDerived.reserveVusdt, vault]);
+    const tierLabel = isTier2 ? 'Tier 2' : isMature ? 'Tier 1' : 'Tier 0';
+    return { ltvBps, availableDebt, maxLtvBps, liquidationThresholdBps, stabilityFeeAprBps, tierLabel };
+  }, [ammDerived.reserveRng, ammDerived.reserveVusdt, policy, player?.createdTs, staker?.balance, vault]);
 
   const ensureRegistered = async () => {
     const client = getReadyClient();
@@ -665,7 +701,13 @@ export default function EconomyApp() {
         right={
           <>
             <AuthStatusPill publicKeyHex={connection.keypair?.publicKeyHex ?? null} />
-            <WalletPill rng={player?.chips} vusdt={player?.vusdtBalance} pubkeyHex={connection.keypair?.publicKeyHex} />
+            <WalletPill
+              rng={player?.chips}
+              vusdt={player?.vusdtBalance}
+              credits={player?.freerollCredits}
+              creditsLocked={player?.freerollCreditsLocked}
+              pubkeyHex={connection.keypair?.publicKeyHex}
+            />
             {lastTxSig ? (
               lastTxDigest ? (
                 <Link
@@ -706,8 +748,26 @@ export default function EconomyApp() {
 	            <div>Registered: <span className={isRegistered ? 'text-terminal-green' : 'text-terminal-accent'}>{isRegistered ? 'YES' : 'NO'}</span></div>
 	            <div>RNG: <span className="text-white">{player?.chips ?? 0}</span></div>
 	            <div>vUSDT: <span className="text-white">{player?.vusdtBalance ?? 0}</span></div>
+            <div>
+              Credits:{' '}
+              <span className="text-white">{player?.freerollCredits ?? 0}</span>
+              <span className="text-[10px] text-gray-500"> / locked {player?.freerollCreditsLocked ?? 0}</span>
+            </div>
 	            <div className="text-[10px] text-gray-600 break-all">PK: {connection.keypair?.publicKeyHex ?? '—'}</div>
 	          </div>
+            {treasury ? (
+              <div className="mt-4 border-t border-gray-800 pt-3 space-y-1 text-[10px] text-gray-400">
+                <div className="tracking-widest text-gray-500">TREASURY</div>
+                <div className="grid grid-cols-2 gap-2 text-gray-300">
+                  <div>Auction: <span className="text-white">{treasury.auctionAllocationRng ?? 0}</span></div>
+                  <div>Liquidity: <span className="text-white">{treasury.liquidityReserveRng ?? 0}</span></div>
+                  <div>Bonus: <span className="text-white">{treasury.bonusPoolRng ?? 0}</span></div>
+                  <div>Players: <span className="text-white">{treasury.playerAllocationRng ?? 0}</span></div>
+                  <div>Treasury: <span className="text-white">{treasury.treasuryAllocationRng ?? 0}</span></div>
+                  <div>Team: <span className="text-white">{treasury.teamAllocationRng ?? 0}</span></div>
+                </div>
+              </div>
+            ) : null}
 
           <div className="mt-4 space-y-2">
             <div className="flex items-center gap-2">
@@ -734,13 +794,14 @@ export default function EconomyApp() {
         </section>
 
         {activeTab === 'swap' ? (
-          <SwapPanel
-            amm={amm}
-            ammDerived={ammDerived}
-            player={player}
-            swapDirection={swapDirection}
-            slippageBps={slippageBps}
-            swapAmountIn={swapAmountIn}
+            <SwapPanel
+              amm={amm}
+              ammDerived={ammDerived}
+              player={player}
+              policy={policy}
+              swapDirection={swapDirection}
+              slippageBps={slippageBps}
+              swapAmountIn={swapAmountIn}
             setSwapDirection={setSwapDirection}
             setSlippageBps={setSlippageBps}
             setSwapAmountIn={setSwapAmountIn}

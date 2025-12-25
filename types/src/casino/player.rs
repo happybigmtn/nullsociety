@@ -1,5 +1,5 @@
 use bytes::{Buf, BufMut};
-use commonware_codec::{EncodeSize, Error, Read, ReadExt, ReadRangeExt, Write};
+use commonware_codec::{EncodeSize, Error, FixedSize, Read, ReadExt, ReadRangeExt, Write};
 use commonware_cryptography::ed25519::PublicKey;
 use thiserror::Error as ThisError;
 
@@ -23,12 +23,17 @@ pub struct PlayerProfile {
     pub name: String,
     pub rank: u32,
     pub is_kyc_verified: bool,
+    pub created_ts: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct PlayerBalances {
     pub chips: u64,
     pub vusdt_balance: u64,
+    pub freeroll_credits: u64,
+    pub freeroll_credits_locked: u64,
+    pub freeroll_credits_unlock_start_ts: u64,
+    pub freeroll_credits_unlock_end_ts: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -58,6 +63,9 @@ pub struct PlayerTournamentState {
 pub struct PlayerSessionState {
     pub active_session: Option<u64>,
     pub last_deposit_block: u64,
+    pub daily_flow_day: u64,
+    pub daily_net_sell: u64,
+    pub daily_net_buy: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -91,10 +99,15 @@ impl Player {
                 name,
                 rank: 0,
                 is_kyc_verified: false,
+                created_ts: 0,
             },
             balances: PlayerBalances {
                 chips: INITIAL_CHIPS,
                 vusdt_balance: 0,
+                freeroll_credits: 0,
+                freeroll_credits_locked: 0,
+                freeroll_credits_unlock_start_ts: 0,
+                freeroll_credits_unlock_end_ts: 0,
             },
             modifiers: PlayerModifiers {
                 shields: STARTING_SHIELDS,
@@ -117,6 +130,9 @@ impl Player {
                 active_session: None,
                 // Allow an immediate first faucet deposit
                 last_deposit_block: 0,
+                daily_flow_day: 0,
+                daily_net_sell: 0,
+                daily_net_buy: 0,
             },
         }
     }
@@ -232,6 +248,14 @@ impl Write for Player {
         self.tournament.last_tournament_ts.write(writer);
         self.profile.is_kyc_verified.write(writer);
         self.tournament.daily_limit.write(writer);
+        self.profile.created_ts.write(writer);
+        self.session.daily_flow_day.write(writer);
+        self.session.daily_net_sell.write(writer);
+        self.session.daily_net_buy.write(writer);
+        self.balances.freeroll_credits.write(writer);
+        self.balances.freeroll_credits_locked.write(writer);
+        self.balances.freeroll_credits_unlock_start_ts.write(writer);
+        self.balances.freeroll_credits_unlock_end_ts.write(writer);
     }
 }
 
@@ -264,6 +288,46 @@ impl Read for Player {
         } else {
             FREEROLL_DAILY_LIMIT_FREE
         };
+        let created_ts = if reader.remaining() >= u64::SIZE {
+            u64::read(reader)?
+        } else {
+            0
+        };
+        let daily_flow_day = if reader.remaining() >= u64::SIZE {
+            u64::read(reader)?
+        } else {
+            0
+        };
+        let daily_net_sell = if reader.remaining() >= u64::SIZE {
+            u64::read(reader)?
+        } else {
+            0
+        };
+        let daily_net_buy = if reader.remaining() >= u64::SIZE {
+            u64::read(reader)?
+        } else {
+            0
+        };
+        let freeroll_credits = if reader.remaining() >= u64::SIZE {
+            u64::read(reader)?
+        } else {
+            0
+        };
+        let freeroll_credits_locked = if reader.remaining() >= u64::SIZE {
+            u64::read(reader)?
+        } else {
+            0
+        };
+        let freeroll_credits_unlock_start_ts = if reader.remaining() >= u64::SIZE {
+            u64::read(reader)?
+        } else {
+            0
+        };
+        let freeroll_credits_unlock_end_ts = if reader.remaining() >= u64::SIZE {
+            u64::read(reader)?
+        } else {
+            0
+        };
 
         Ok(Self {
             nonce,
@@ -271,10 +335,15 @@ impl Read for Player {
                 name,
                 rank,
                 is_kyc_verified,
+                created_ts,
             },
             balances: PlayerBalances {
                 chips,
                 vusdt_balance,
+                freeroll_credits,
+                freeroll_credits_locked,
+                freeroll_credits_unlock_start_ts,
+                freeroll_credits_unlock_end_ts,
             },
             modifiers: PlayerModifiers {
                 shields,
@@ -296,6 +365,9 @@ impl Read for Player {
             session: PlayerSessionState {
                 active_session,
                 last_deposit_block,
+                daily_flow_day,
+                daily_net_sell,
+                daily_net_buy,
             },
         })
     }
@@ -324,6 +396,14 @@ impl EncodeSize for Player {
             + self.tournament.last_tournament_ts.encode_size()
             + self.profile.is_kyc_verified.encode_size()
             + self.tournament.daily_limit.encode_size()
+            + self.profile.created_ts.encode_size()
+            + self.session.daily_flow_day.encode_size()
+            + self.session.daily_net_sell.encode_size()
+            + self.session.daily_net_buy.encode_size()
+            + self.balances.freeroll_credits.encode_size()
+            + self.balances.freeroll_credits_locked.encode_size()
+            + self.balances.freeroll_credits_unlock_start_ts.encode_size()
+            + self.balances.freeroll_credits_unlock_end_ts.encode_size()
     }
 }
 

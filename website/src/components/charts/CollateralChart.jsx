@@ -58,7 +58,7 @@ const CollateralChart = ({ data }) => {
             stroke="#f59e0b"
             dot={false}
           />
-          <ReferenceLine yAxisId="right" y={0.5} stroke="#ef4444" strokeDasharray="4 4" label={{ value: '50% LTV', fill: '#ef4444', position: 'insideTopRight' }} />
+          <ReferenceLine yAxisId="right" y={0.6} stroke="#ef4444" strokeDasharray="4 4" label={{ value: '60% Liq. Threshold', fill: '#ef4444', position: 'insideTopRight' }} />
         </ComposedChart>
       </ResponsiveContainer>
     </div>

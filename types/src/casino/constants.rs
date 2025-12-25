@@ -31,14 +31,24 @@ pub const FREEROLL_DAILY_LIMIT_MEMBER: u8 = 10;
 
 /// Tokenomics Constants
 pub const TOTAL_SUPPLY: u64 = 1_000_000_000;
-/// Annual emission rate (basis points) used for freeroll tournament prizes.
-/// 5% per year (down from earlier 10% versions).
-pub const ANNUAL_EMISSION_RATE_BPS: u64 = 500;
-/// Reward pool reserved for tournament emissions.
-/// Target: distribute 25% of total supply over ~5 years (≈5%/year).
-pub const REWARD_POOL_BPS: u64 = 2500;
+/// Annual emission rate (basis points) used for freeroll credit awards.
+/// 3% per year with a 15% total cap.
+pub const ANNUAL_EMISSION_RATE_BPS: u64 = 300;
+/// Reward pool reserved for tournament credit emissions.
+/// Target: distribute 15% of total supply over ~5 years.
+pub const REWARD_POOL_BPS: u64 = 1500;
 /// Tournaments per day (registration 60s + active 300s = 360s): floor(86400/360) = 240
 pub const TOURNAMENTS_PER_DAY: u64 = 240;
+
+/// Freeroll credit vesting and expiry controls.
+pub const FREEROLL_CREDIT_IMMEDIATE_BPS: u16 = 2000; // 20% immediate
+pub const FREEROLL_CREDIT_VEST_SECS: u64 = 180 * 24 * 60 * 60; // 180 days
+pub const FREEROLL_CREDIT_EXPIRY_SECS: u64 = 180 * 24 * 60 * 60; // 180 days
+
+/// Account tier thresholds.
+pub const ACCOUNT_TIER_NEW_SECS: u64 = 7 * 24 * 60 * 60;
+pub const ACCOUNT_TIER_MATURE_SECS: u64 = 30 * 24 * 60 * 60;
+pub const ACCOUNT_TIER2_STAKE_MIN: u64 = 1_000;
 
 // Progressive base jackpots (chip-denominated; meters, if enabled, reset to these values).
 pub const THREE_CARD_PROGRESSIVE_BASE_JACKPOT: u64 = 10_000;

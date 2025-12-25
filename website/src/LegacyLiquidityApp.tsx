@@ -609,7 +609,7 @@ export default function LegacyLiquidityApp() {
             <div className="border border-gray-800 rounded p-3 bg-black/30">
               <div className="text-[10px] text-gray-500 tracking-widest">LTV</div>
               <div className="text-white mt-1">{(derived.ltvBps / 100).toFixed(2)}%</div>
-              <div className="text-[10px] text-gray-600">max 50%</div>
+              <div className="text-[10px] text-gray-600">max 30-45%</div>
             </div>
             <div className="border border-gray-800 rounded p-3 bg-black/30">
               <div className="text-[10px] text-gray-500 tracking-widest">AVAILABLE BORROW</div>

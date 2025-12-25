@@ -77,19 +77,20 @@ Business strategy summary and CEO view: `BUSINESS_PLAN.md`.
 
 ### Codebase Baseline (current reality)
 - RNG exists as `Player.balances.chips` (internal, non-transferable).
+- Freeroll credits exist as separate balances with vesting + expiry controls.
 - vUSDT exists as `Player.balances.vusdt_balance` (internal stable balance).
-- AMM (RNG/vUSDT) exists as `AmmPool` with CPMM math, 0.30% fee, 5.00% sell tax, and bootstrap price.
-- CDP/Vault exists (50% LTV against AMM spot) to mint vUSDT from RNG collateral.
-- House accounting exists (`HouseState` tracks net PnL, fees, burned RNG, issuance).
-- Freeroll emissions are currently capped at 25% of supply (policy target: 15%)
-  and parameterized via `TOTAL_SUPPLY` and `ANNUAL_EMISSION_RATE_BPS`.
+- AMM (RNG/vUSDT) exists as `AmmPool` with CPMM math, 0.30% fee, and policy-driven sell tax bands.
+- CDP/Vault exists (tiered 30-45% LTV against AMM spot) to mint vUSDT from RNG collateral.
+- House accounting exists (`HouseState` tracks net PnL, fees, burned RNG, issuance, and vUSDT debt).
+- Freeroll emissions are capped at 15% of supply and parameterized via
+  `TOTAL_SUPPLY`, `ANNUAL_EMISSION_RATE_BPS`, `REWARD_POOL_BPS`.
 - Staking exists; rewards distribute from positive epoch net PnL into a reward pool.
 - Detailed tokenomics + liquidity roadmap lives in `liquidity.md`.
 
 ### Phase 1 - Island Economy With Capital Controls (internal convertibility only)
 Goal: operate as a closed economy with strong internal DeFi loops before any external convertibility.
 
-- [ ] Define and publish Phase 1 monetary policy (sinks vs sources):
+- [x] Define and publish Phase 1 monetary policy (sinks vs sources):
   - emission caps (`TOTAL_SUPPLY`, `REWARD_POOL_BPS`, `ANNUAL_EMISSION_RATE_BPS`)
   - faucet + initial chips (`FAUCET_AMOUNT`, `INITIAL_CHIPS`)
   - freeroll schedule (tournaments/day, payout curve)
@@ -98,17 +99,17 @@ Goal: operate as a closed economy with strong internal DeFi loops before any ext
 - [ ] Implement a treasury + vesting ledger for the Phase 2 allocation
   (20% auction, 10% liquidity, up to 15% bonus, remainder to players/treasury/team)
   with on-chain accounting and audit trail.
-- [ ] Add stability mechanics for vUSDT (Phase 1 risk controls):
+- [x] Add stability mechanics for vUSDT (Phase 1 risk controls):
   - introduce stability fees / interest on vUSDT debt
   - add liquidation logic for LTV breaches
   - enforce a system debt ceiling + circuit breaker
   - define a bounded oracle policy (AMM spot + bootstrap guardrails)
-- [ ] Add AMM guardrails to enforce capital controls internally:
+- [x] Add AMM guardrails to enforce capital controls internally:
   - per-swap / per-day notional caps
   - dynamic sell-tax/fee bands (policy-driven)
   - optional "bootstrap finalize" snapshot for Phase 1 closing price
 - [ ] Expand domestic DeFi UX and analytics:
-  - swap/borrow/liquidity panels show fees, tax, and health metrics
+  - swap/borrow panels show caps, tax bands, and health metrics
   - track conversion funnel metrics (swap/borrow/LP starts and completions)
 - [ ] Marketing-friendly economic loops:
   - tournaments, freerolls, and staking yield as primary retention hooks
@@ -155,17 +156,17 @@ staker-owned economy.
 
 ## Codebase Deliverables (Expanded Scope)
 Phase 1 (Commonware codebase):
-- [ ] Update emission constants to 15% cap and add freeroll credit ledger with
+- [x] Update emission constants to 15% cap and add freeroll credit ledger with
   expiry + Phase 2 eligibility flags.
-- [ ] Split RNG credits from spendable chips (internal points vs supply ledger)
+- [x] Split RNG credits from spendable chips (internal points vs supply ledger)
   to preserve supply accounting and prevent accidental externalization.
-- [ ] Implement stability fees, liquidation path, and a system debt ceiling.
-- [ ] Add treasury + vesting ledger for Phase 2 allocation buckets.
-- [ ] Add recovery-pool debt retirement hooks (vUSDT debt burn + audit trail).
-- [ ] Add recovery-pool payout ordering (LTV risk + debt age) to reduce
+- [x] Implement stability fees, liquidation path, and a system debt ceiling.
+- [ ] Add treasury + vesting ledger for Phase 2 allocation buckets (ledger + UI in place; vesting enforcement pending).
+- [x] Add recovery-pool debt retirement hooks (vUSDT debt burn + audit trail).
+- [x] Add recovery-pool payout ordering (LTV risk + debt age) to reduce
   insolvency risk.
-- [ ] Add policy state + admin updates for caps/fees/tiers.
-- [ ] UI for credit balances, vesting, debt health, and policy caps.
+- [x] Add policy state + admin updates for caps/fees/tiers.
+- [x] UI for credit balances, vesting, debt health, and policy caps.
 
 Phase 2 (EVM + bridge workstream):
 - [ ] New `evm/` workspace or external repo for ERC-20 RNG + CCA integration.
@@ -176,6 +177,15 @@ Phase 2 (EVM + bridge workstream):
 - [ ] Oracle feed ingestion for on-chain risk controls.
 
 ## Latest Deliverables
+- [x] Economy UI now surfaces daily caps, sell tax bands, tiered LTV limits, and stability fee hints.
+- [x] Wallet pill includes freeroll credit balances (locked + unlocked).
+- [x] Treasury allocations readable in Economy UI (when configured).
+- [x] PolicyState on-chain controls (sell-tax bands, daily caps, LTV tiers, stability fee, debt ceiling).
+- [x] TreasuryState struct and admin setter for allocation tracking (ledger only).
+- [x] Stability fee accrual on vault debt and house-level debt accounting.
+- [x] Liquidation path with penalty split (liquidator + stability pool).
+- [x] Recovery pool funding + debt retirement hooks.
+- [x] Recovery-pool retirement now targets worst LTV vaults (tie-broken by oldest accrual).
 - [x] Stripe test membership created for tier `member` ($5/month).
   - Product: `prod_TfP7ygigcze2Ar`
   - Price: `price_1Si4J93nipX4Oc41ak3eP67k`

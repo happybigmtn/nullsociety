@@ -24,11 +24,11 @@ Related references:
 
 ## Current Primitive Inventory (codebase reality)
 - RNG (internal): `Player.balances.chips`
-- Freeroll credits: not separated from RNG (must be split from chips to avoid
-  accidental supply inflation).
+- Freeroll credits: tracked separately from RNG (non-transferable credits with
+  vesting + expiry).
 - vUSDT (internal stable): `Player.balances.vusdt_balance`
 - AMM (RNG/vUSDT): CPMM with fee + sell tax
-- Vault/CDP: borrow vUSDT against RNG collateral (50% LTV)
+- Vault/CDP: borrow vUSDT against RNG collateral (tiered 30-45% LTV)
 - Staking: stake RNG (chips) for voting power; epoch rewards from positive
   `HouseState.net_pnl`
 - House accounting: `net_pnl`, `accumulated_fees`, `total_burned`, `total_issuance`
@@ -101,7 +101,7 @@ AMM controls (RNG/vUSDT):
 - Per-account net buy cap: min(6% of account RNG balance, 0.30% of pool TVL) per day.
 
 Vault/vUSDT (stability):
-- Max LTV (borrow limit): 45% for mature accounts, 30% for new accounts
+- Max LTV (borrow limit): 45% for mature stakers, 30% for new accounts
   (<7 days or no stake).
 - Liquidation threshold: 60% LTV (liquidate to 45% target).
 - Liquidation penalty: 10% (4% to liquidator, 6% to stability pool).
@@ -112,8 +112,8 @@ Vault/vUSDT (stability):
 Capital control schedule:
 - Account age tiers:
   - Tier 0 (<7 days): reduced caps, no LP removal, borrow <= 30% LTV.
-  - Tier 1 (7-30 days): standard caps, LP allowed, borrow <= 45% LTV.
-  - Tier 2 (30+ days + stake >= 1k RNG): higher caps, priority tiers for events.
+  - Tier 1 (7-30 days): standard caps, LP allowed, borrow <= 30% LTV.
+  - Tier 2 (30+ days + stake >= 1k RNG): higher caps, borrow <= 45% LTV.
 - Convertibility remains disabled in Phase 1 (no bridge).
 
 Down-only mitigation toolkit:
@@ -134,7 +134,7 @@ Down-only mitigation toolkit:
    - Track treasury, auction, liquidity reserve, and player allocations on-chain.
 4) Policy module for risk parameters.
    - Fee bands, sell tax bands, swap caps, and LTV limits.
-5) Freeroll credit ledger for Phase 2 bonus eligibility.
+5) Freeroll credit ledger for Phase 2 bonus eligibility (implemented; add UI).
 6) Debt ceiling + circuit breaker for vUSDT borrow.
 
 ### Sybil Mitigation Strategy (Phase 1)
@@ -454,7 +454,7 @@ Phase 2 (convertibility)
    - Add tests for debt accrual edge cases and rounding.
 3) Add liquidations:
    - Add instruction `LiquidateVault { target }`.
-   - Implement partial liquidation to target LTV (50%).
+   - Implement partial liquidation to target LTV (45%).
    - Add `VaultLiquidated` event (penalty split + pool updates).
    - Add oracle guardrails (EWMA price + bootstrap clamps).
 4) Add savings market (vUSDT):
@@ -495,11 +495,15 @@ Phase 2 (convertibility)
     - BOGO claim contract keyed to CCA receipts and freeroll credits.
     - Recovery pool accounting and debt retirement tooling.
 
-## Open Decisions
-- Canonical RNG domain (Commonware vs EVM).
-- Exact reward vesting schedule for Phase 1 earnings.
-- vUSDT stability fee and liquidation policy parameters.
-- Staking payout location (EVM-only vs bridged to Commonware).
-- Governance model for risk parameters (multisig vs on-chain).
-- BOGO allocation method (pro-rata vs capped tranche).
-- Recovery pool remainder policy (treasury, insurance, extra liquidity, burn).
+## Executive Decisions (Locked)
+- Canonical RNG domain: EVM canonical, Commonware wraps.
+- Reward vesting: 20% immediate, 80% linear over 180 days; Phase 2 bonus vests
+  100% over 180 days.
+- vUSDT stability policy: 8% APR baseline, 6-14% band; 60% liquidation
+  threshold, 45% target, 10% penalty.
+- Staking payout location: EVM-only USDT distribution (bridge required).
+- Governance model: multisig in Phase 1/early Phase 2, transition to staker
+  governance post-audit.
+- BOGO allocation: pro-rata (0.75 bonus per 1 RNG purchased).
+- Recovery pool remainder: 50% treasury, 30% insurance, 20% supplemental
+  liquidity/buyback.

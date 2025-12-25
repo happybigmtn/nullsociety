@@ -12,6 +12,7 @@ type SwapPanelProps = {
   amm: any | null;
   ammDerived: AmmDerived;
   player: any | null;
+  policy: any | null;
   swapDirection: 'BUY_RNG' | 'SELL_RNG';
   slippageBps: number;
   swapAmountIn: string;
@@ -25,6 +26,7 @@ export const SwapPanel: React.FC<SwapPanelProps> = ({
   amm,
   ammDerived,
   player,
+  policy,
   swapDirection,
   slippageBps,
   swapAmountIn,
@@ -47,6 +49,41 @@ export const SwapPanel: React.FC<SwapPanelProps> = ({
     if (swapDirection === 'BUY_RNG') return BigInt(player?.vusdtBalance ?? 0);
     return BigInt(player?.chips ?? 0);
   }, [player?.chips, player?.vusdtBalance, swapDirection]);
+
+  const policyInfo = useMemo(() => {
+    if (!policy || !amm || !player) return null;
+    const reserveRng = BigInt(amm.reserveRng ?? 0);
+    const reserveVusdt = BigInt(amm.reserveVusdt ?? 0);
+    const balanceRng = BigInt(player.chips ?? 0);
+    const balanceVusdt = BigInt(player.vusdtBalance ?? 0);
+    const maxSellByBalance = (balanceRng * BigInt(policy.maxDailySellBpsBalance ?? 0)) / 10_000n;
+    const maxSellByPool = (reserveRng * BigInt(policy.maxDailySellBpsPool ?? 0)) / 10_000n;
+    const maxBuyByBalance = (balanceVusdt * BigInt(policy.maxDailyBuyBpsBalance ?? 0)) / 10_000n;
+    const maxBuyByPool = (reserveVusdt * BigInt(policy.maxDailyBuyBpsPool ?? 0)) / 10_000n;
+    const dailySellCap = maxSellByBalance < maxSellByPool ? maxSellByBalance : maxSellByPool;
+    const dailyBuyCap = maxBuyByBalance < maxBuyByPool ? maxBuyByBalance : maxBuyByPool;
+    const dailyNetSell = BigInt(player.dailyNetSell ?? 0);
+    const dailyNetBuy = BigInt(player.dailyNetBuy ?? 0);
+    const outflowBps = reserveRng > 0n
+      ? Number((dailyNetSell * 10_000n) / reserveRng)
+      : 0;
+    const sellTaxMin = Number(policy.sellTaxMinBps ?? 0);
+    const sellTaxMid = Number(policy.sellTaxMidBps ?? 0);
+    const sellTaxMax = Number(policy.sellTaxMaxBps ?? 0);
+    const outflowLow = Number(policy.sellTaxOutflowLowBps ?? 0);
+    const outflowMid = Number(policy.sellTaxOutflowMidBps ?? 0);
+    const currentSellTaxBps = outflowBps < outflowLow ? sellTaxMin : outflowBps < outflowMid ? sellTaxMid : sellTaxMax;
+    return {
+      dailySellCap,
+      dailyBuyCap,
+      dailyNetSell,
+      dailyNetBuy,
+      sellTaxMin,
+      sellTaxMid,
+      sellTaxMax,
+      currentSellTaxBps,
+    };
+  }, [amm, player, policy]);
 
   const amountInParsed = useMemo(() => parseAmount(swapAmountIn), [swapAmountIn]);
   const debouncedAmountInParsed = useMemo(() => parseAmount(debouncedAmountIn), [debouncedAmountIn]);
@@ -203,6 +240,22 @@ export const SwapPanel: React.FC<SwapPanelProps> = ({
             {quote.fee > 0n ? ` · Fee: ${quote.fee.toString()}` : ''}
           </div>
         )}
+        {policyInfo ? (
+          <div className="text-[10px] text-gray-600 leading-relaxed">
+            {swapDirection === 'SELL_RNG' ? (
+              <>
+                Daily sell: <span className="text-white">{policyInfo.dailyNetSell.toString()}</span> /{' '}
+                <span className="text-white">{policyInfo.dailySellCap.toString()}</span>
+                {' '}· Sell tax {policyInfo.currentSellTaxBps / 100}% (band {policyInfo.sellTaxMin / 100}-{policyInfo.sellTaxMax / 100}%)
+              </>
+            ) : (
+              <>
+                Daily buy: <span className="text-white">{policyInfo.dailyNetBuy.toString()}</span> /{' '}
+                <span className="text-white">{policyInfo.dailyBuyCap.toString()}</span>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
 
       <ConfirmModal

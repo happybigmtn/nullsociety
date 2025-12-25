@@ -25,6 +25,7 @@ const LP_PROVIDER_SEED: u64 = 0xABCDEF123456;
 const INITIAL_RNG_AMOUNT: u64 = 100_000;
 const INITIAL_VUSDT_AMOUNT: u64 = 100_000;
 const FAUCET_AMOUNT: u64 = 500_000; // Enough for collateral + liquidity
+const MAX_LTV_BPS: u64 = 3_000;
 
 #[derive(Parser, Debug)]
 #[command(name = "init-amm")]
@@ -128,8 +129,9 @@ async fn main() -> anyhow::Result<()> {
     submit_transactions(&client, &args.url, vec![tx_create_vault], "Created vault").await?;
     wait_for_block(&client, &args.url).await?;
 
-    // Step 4: Deposit collateral (need 2x the amount we want to borrow due to 50% LTV)
-    let collateral_amount = INITIAL_VUSDT_AMOUNT * 2;
+    // Step 4: Deposit collateral (default 30% LTV for new accounts)
+    let collateral_amount =
+        (INITIAL_VUSDT_AMOUNT * 10_000 + MAX_LTV_BPS - 1) / MAX_LTV_BPS;
     println!("Step 4: Deposit {} RNG as collateral", collateral_amount);
     let tx_deposit_collateral = Transaction::sign(
         &lp_signer,

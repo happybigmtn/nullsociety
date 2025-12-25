@@ -138,6 +138,12 @@ define_instruction_kinds! {
     Swap = 18 => Instruction::Swap { .. } => "Swap" => Instruction::Swap { amount_in: 1, min_amount_out: 0, is_buying_rng: true },
     AddLiquidity = 19 => Instruction::AddLiquidity { .. } => "AddLiquidity" => Instruction::AddLiquidity { rng_amount: 1, usdt_amount: 1 },
     RemoveLiquidity = 20 => Instruction::RemoveLiquidity { .. } => "RemoveLiquidity" => Instruction::RemoveLiquidity { shares: 1 },
+    LiquidateVault = 21 => Instruction::LiquidateVault { .. } => "LiquidateVault" => Instruction::LiquidateVault { target: ed25519::PrivateKey::from_seed(2).public_key() },
+    SetPolicy = 22 => Instruction::SetPolicy { .. } => "SetPolicy" => Instruction::SetPolicy { policy: nullspace_types::casino::PolicyState::default() },
+    SetTreasury = 23 => Instruction::SetTreasury { .. } => "SetTreasury" => Instruction::SetTreasury { treasury: nullspace_types::casino::TreasuryState::default() },
+    FundRecoveryPool = 24 => Instruction::FundRecoveryPool { .. } => "FundRecoveryPool" => Instruction::FundRecoveryPool { amount: 1 },
+    RetireVaultDebt = 25 => Instruction::RetireVaultDebt { .. } => "RetireVaultDebt" => Instruction::RetireVaultDebt { target: ed25519::PrivateKey::from_seed(3).public_key(), amount: 1 },
+    RetireWorstVaultDebt = 26 => Instruction::RetireWorstVaultDebt { .. } => "RetireWorstVaultDebt" => Instruction::RetireWorstVaultDebt { amount: 1 },
 }
 
 /// Helper to convert serde_json::Value to a plain JavaScript object
@@ -637,6 +643,27 @@ pub fn encode_house_key() -> Vec<u8> {
     key.encode().to_vec()
 }
 
+/// Encode the policy key.
+#[wasm_bindgen]
+pub fn encode_policy_key() -> Vec<u8> {
+    let key = Key::Policy;
+    key.encode().to_vec()
+}
+
+/// Encode the treasury key.
+#[wasm_bindgen]
+pub fn encode_treasury_key() -> Vec<u8> {
+    let key = Key::Treasury;
+    key.encode().to_vec()
+}
+
+/// Encode the vault registry key.
+#[wasm_bindgen]
+pub fn encode_vault_registry_key() -> Vec<u8> {
+    let key = Key::VaultRegistry;
+    key.encode().to_vec()
+}
+
 /// Encode a staker key.
 #[wasm_bindgen]
 pub fn encode_staker_key(public_key: &[u8]) -> Result<Vec<u8>, JsValue> {
@@ -713,6 +740,10 @@ fn decode_value(value: Value) -> Result<JsValue, JsValue> {
                 "name": player.profile.name,
                 "chips": player.balances.chips,
                 "vusdt_balance": player.balances.vusdt_balance,
+                "freeroll_credits": player.balances.freeroll_credits,
+                "freeroll_credits_locked": player.balances.freeroll_credits_locked,
+                "freeroll_credits_unlock_start_ts": player.balances.freeroll_credits_unlock_start_ts,
+                "freeroll_credits_unlock_end_ts": player.balances.freeroll_credits_unlock_end_ts,
                 "shields": player.modifiers.shields,
                 "doubles": player.modifiers.doubles,
                 "tournament_chips": player.tournament.chips,
@@ -720,11 +751,14 @@ fn decode_value(value: Value) -> Result<JsValue, JsValue> {
                 "tournament_doubles": player.tournament.doubles,
                 "active_tournament": player.tournament.active_tournament,
                 "rank": player.profile.rank,
+                "created_ts": player.profile.created_ts,
                 "active_shield": player.modifiers.active_shield,
                 "active_double": player.modifiers.active_double,
                 "active_super": player.modifiers.active_super,
                 "active_session": player.session.active_session,
                 "last_deposit_block": player.session.last_deposit_block,
+                "daily_net_sell": player.session.daily_net_sell,
+                "daily_net_buy": player.session.daily_net_buy,
                 "aura_meter": player.modifiers.aura_meter,
                 "tournaments_played_today": player.tournament.tournaments_played_today,
                 "last_tournament_ts": player.tournament.last_tournament_ts,
@@ -831,6 +865,10 @@ fn decode_value(value: Value) -> Result<JsValue, JsValue> {
                 "accumulated_fees": house.accumulated_fees,
                 "total_burned": house.total_burned,
                 "total_issuance": house.total_issuance,
+                "total_vusdt_debt": house.total_vusdt_debt,
+                "stability_fees_accrued": house.stability_fees_accrued,
+                "recovery_pool_vusdt": house.recovery_pool_vusdt,
+                "recovery_pool_retired": house.recovery_pool_retired,
                 "three_card_progressive_jackpot": house.three_card_progressive_jackpot,
                 "uth_progressive_jackpot": house.uth_progressive_jackpot,
                 "staking_reward_per_voting_power_x18": house.staking_reward_per_voting_power_x18.to_string(),
@@ -854,7 +892,8 @@ fn decode_value(value: Value) -> Result<JsValue, JsValue> {
             serde_json::json!({
                 "type": "Vault",
                 "collateral_rng": vault.collateral_rng,
-                "debt_vusdt": vault.debt_vusdt
+                "debt_vusdt": vault.debt_vusdt,
+                "last_accrual_ts": vault.last_accrual_ts
             })
         }
         Value::AmmPool(pool) => {
@@ -867,6 +906,54 @@ fn decode_value(value: Value) -> Result<JsValue, JsValue> {
                 "sell_tax_basis_points": pool.sell_tax_basis_points,
                 "bootstrap_price_vusdt_numerator": pool.bootstrap_price_vusdt_numerator,
                 "bootstrap_price_rng_denominator": pool.bootstrap_price_rng_denominator
+            })
+        }
+        Value::Policy(policy) => {
+            serde_json::json!({
+                "type": "Policy",
+                "sell_tax_min_bps": policy.sell_tax_min_bps,
+                "sell_tax_mid_bps": policy.sell_tax_mid_bps,
+                "sell_tax_max_bps": policy.sell_tax_max_bps,
+                "sell_tax_outflow_low_bps": policy.sell_tax_outflow_low_bps,
+                "sell_tax_outflow_mid_bps": policy.sell_tax_outflow_mid_bps,
+                "max_daily_sell_bps_balance": policy.max_daily_sell_bps_balance,
+                "max_daily_sell_bps_pool": policy.max_daily_sell_bps_pool,
+                "max_daily_buy_bps_balance": policy.max_daily_buy_bps_balance,
+                "max_daily_buy_bps_pool": policy.max_daily_buy_bps_pool,
+                "max_ltv_bps_new": policy.max_ltv_bps_new,
+                "max_ltv_bps_mature": policy.max_ltv_bps_mature,
+                "liquidation_threshold_bps": policy.liquidation_threshold_bps,
+                "liquidation_target_bps": policy.liquidation_target_bps,
+                "liquidation_penalty_bps": policy.liquidation_penalty_bps,
+                "liquidation_reward_bps": policy.liquidation_reward_bps,
+                "liquidation_stability_bps": policy.liquidation_stability_bps,
+                "stability_fee_apr_bps": policy.stability_fee_apr_bps,
+                "debt_ceiling_bps": policy.debt_ceiling_bps,
+                "credit_immediate_bps": policy.credit_immediate_bps,
+                "credit_vest_secs": policy.credit_vest_secs,
+                "credit_expiry_secs": policy.credit_expiry_secs
+            })
+        }
+        Value::Treasury(treasury) => {
+            serde_json::json!({
+                "type": "Treasury",
+                "auction_allocation_rng": treasury.auction_allocation_rng,
+                "liquidity_reserve_rng": treasury.liquidity_reserve_rng,
+                "bonus_pool_rng": treasury.bonus_pool_rng,
+                "player_allocation_rng": treasury.player_allocation_rng,
+                "treasury_allocation_rng": treasury.treasury_allocation_rng,
+                "team_allocation_rng": treasury.team_allocation_rng
+            })
+        }
+        Value::VaultRegistry(registry) => {
+            let vaults: Vec<_> = registry
+                .vaults
+                .iter()
+                .map(|pk| hex(&pk.encode()))
+                .collect();
+            serde_json::json!({
+                "type": "VaultRegistry",
+                "vaults": vaults
             })
         }
         Value::LpBalance(bal) => {
@@ -1142,7 +1229,8 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                 "player": hex(&player.encode()),
                 "vault": {
                     "collateral_rng": vault.collateral_rng,
-                    "debt_vusdt": vault.debt_vusdt
+                    "debt_vusdt": vault.debt_vusdt,
+                    "last_accrual_ts": vault.last_accrual_ts
                 }
             })
         }
@@ -1160,7 +1248,8 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                 "new_collateral": new_collateral,
                 "vault": {
                     "collateral_rng": vault.collateral_rng,
-                    "debt_vusdt": vault.debt_vusdt
+                    "debt_vusdt": vault.debt_vusdt,
+                    "last_accrual_ts": vault.last_accrual_ts
                 },
                 "player_balances": {
                     "chips": player_balances.chips,
@@ -1188,7 +1277,8 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                 "new_debt": new_debt,
                 "vault": {
                     "collateral_rng": vault.collateral_rng,
-                    "debt_vusdt": vault.debt_vusdt
+                    "debt_vusdt": vault.debt_vusdt,
+                    "last_accrual_ts": vault.last_accrual_ts
                 },
                 "player_balances": {
                     "chips": player_balances.chips,
@@ -1216,7 +1306,8 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                 "new_debt": new_debt,
                 "vault": {
                     "collateral_rng": vault.collateral_rng,
-                    "debt_vusdt": vault.debt_vusdt
+                    "debt_vusdt": vault.debt_vusdt,
+                    "last_accrual_ts": vault.last_accrual_ts
                 },
                 "player_balances": {
                     "chips": player_balances.chips,
@@ -1281,6 +1372,10 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                     "accumulated_fees": house.accumulated_fees,
                     "total_burned": house.total_burned,
                     "total_issuance": house.total_issuance,
+                    "total_vusdt_debt": house.total_vusdt_debt,
+                    "stability_fees_accrued": house.stability_fees_accrued,
+                    "recovery_pool_vusdt": house.recovery_pool_vusdt,
+                    "recovery_pool_retired": house.recovery_pool_retired,
                     "three_card_progressive_jackpot": house.three_card_progressive_jackpot,
                     "uth_progressive_jackpot": house.uth_progressive_jackpot,
                     "staking_reward_per_voting_power_x18": house.staking_reward_per_voting_power_x18.to_string(),
@@ -1376,6 +1471,90 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
             })
         }
 
+        // Economy admin events
+        Event::PolicyUpdated { policy } => {
+            serde_json::json!({
+                "type": "PolicyUpdated",
+                "policy": {
+                    "sell_tax_min_bps": policy.sell_tax_min_bps,
+                    "sell_tax_mid_bps": policy.sell_tax_mid_bps,
+                    "sell_tax_max_bps": policy.sell_tax_max_bps,
+                    "sell_tax_outflow_low_bps": policy.sell_tax_outflow_low_bps,
+                    "sell_tax_outflow_mid_bps": policy.sell_tax_outflow_mid_bps,
+                    "max_daily_sell_bps_balance": policy.max_daily_sell_bps_balance,
+                    "max_daily_sell_bps_pool": policy.max_daily_sell_bps_pool,
+                    "max_daily_buy_bps_balance": policy.max_daily_buy_bps_balance,
+                    "max_daily_buy_bps_pool": policy.max_daily_buy_bps_pool,
+                    "max_ltv_bps_new": policy.max_ltv_bps_new,
+                    "max_ltv_bps_mature": policy.max_ltv_bps_mature,
+                    "liquidation_threshold_bps": policy.liquidation_threshold_bps,
+                    "liquidation_target_bps": policy.liquidation_target_bps,
+                    "liquidation_penalty_bps": policy.liquidation_penalty_bps,
+                    "liquidation_reward_bps": policy.liquidation_reward_bps,
+                    "liquidation_stability_bps": policy.liquidation_stability_bps,
+                    "stability_fee_apr_bps": policy.stability_fee_apr_bps,
+                    "debt_ceiling_bps": policy.debt_ceiling_bps,
+                    "credit_immediate_bps": policy.credit_immediate_bps,
+                    "credit_vest_secs": policy.credit_vest_secs,
+                    "credit_expiry_secs": policy.credit_expiry_secs
+                }
+            })
+        }
+        Event::TreasuryUpdated { treasury } => {
+            serde_json::json!({
+                "type": "TreasuryUpdated",
+                "treasury": {
+                    "auction_allocation_rng": treasury.auction_allocation_rng,
+                    "liquidity_reserve_rng": treasury.liquidity_reserve_rng,
+                    "bonus_pool_rng": treasury.bonus_pool_rng,
+                    "player_allocation_rng": treasury.player_allocation_rng,
+                    "treasury_allocation_rng": treasury.treasury_allocation_rng,
+                    "team_allocation_rng": treasury.team_allocation_rng
+                }
+            })
+        }
+        Event::VaultLiquidated {
+            liquidator,
+            target,
+            repay_amount,
+            collateral_seized,
+            remaining_debt,
+            remaining_collateral,
+            penalty_to_house,
+        } => {
+            serde_json::json!({
+                "type": "VaultLiquidated",
+                "liquidator": hex(&liquidator.encode()),
+                "target": hex(&target.encode()),
+                "repay_amount": repay_amount,
+                "collateral_seized": collateral_seized,
+                "remaining_debt": remaining_debt,
+                "remaining_collateral": remaining_collateral,
+                "penalty_to_house": penalty_to_house
+            })
+        }
+        Event::RecoveryPoolFunded { amount, new_balance } => {
+            serde_json::json!({
+                "type": "RecoveryPoolFunded",
+                "amount": amount,
+                "new_balance": new_balance
+            })
+        }
+        Event::RecoveryPoolRetired {
+            target,
+            amount,
+            new_debt,
+            pool_balance,
+        } => {
+            serde_json::json!({
+                "type": "RecoveryPoolRetired",
+                "target": hex(&target.encode()),
+                "amount": amount,
+                "new_debt": new_debt,
+                "pool_balance": pool_balance
+            })
+        }
+
         // Staking events
         Event::Staked {
             player,
@@ -1413,6 +1592,10 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                     "accumulated_fees": house.accumulated_fees,
                     "total_burned": house.total_burned,
                     "total_issuance": house.total_issuance,
+                    "total_vusdt_debt": house.total_vusdt_debt,
+                    "stability_fees_accrued": house.stability_fees_accrued,
+                    "recovery_pool_vusdt": house.recovery_pool_vusdt,
+                    "recovery_pool_retired": house.recovery_pool_retired,
                     "three_card_progressive_jackpot": house.three_card_progressive_jackpot,
                     "uth_progressive_jackpot": house.uth_progressive_jackpot,
                     "staking_reward_per_voting_power_x18": house.staking_reward_per_voting_power_x18.to_string(),
@@ -1459,6 +1642,10 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                     "accumulated_fees": house.accumulated_fees,
                     "total_burned": house.total_burned,
                     "total_issuance": house.total_issuance,
+                    "total_vusdt_debt": house.total_vusdt_debt,
+                    "stability_fees_accrued": house.stability_fees_accrued,
+                    "recovery_pool_vusdt": house.recovery_pool_vusdt,
+                    "recovery_pool_retired": house.recovery_pool_retired,
                     "three_card_progressive_jackpot": house.three_card_progressive_jackpot,
                     "uth_progressive_jackpot": house.uth_progressive_jackpot,
                     "staking_reward_per_voting_power_x18": house.staking_reward_per_voting_power_x18.to_string(),
@@ -1490,6 +1677,10 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                     "accumulated_fees": house.accumulated_fees,
                     "total_burned": house.total_burned,
                     "total_issuance": house.total_issuance,
+                    "total_vusdt_debt": house.total_vusdt_debt,
+                    "stability_fees_accrued": house.stability_fees_accrued,
+                    "recovery_pool_vusdt": house.recovery_pool_vusdt,
+                    "recovery_pool_retired": house.recovery_pool_retired,
                     "three_card_progressive_jackpot": house.three_card_progressive_jackpot,
                     "uth_progressive_jackpot": house.uth_progressive_jackpot,
                     "staking_reward_per_voting_power_x18": house.staking_reward_per_voting_power_x18.to_string(),
@@ -1526,6 +1717,10 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                     "accumulated_fees": house.accumulated_fees,
                     "total_burned": house.total_burned,
                     "total_issuance": house.total_issuance,
+                    "total_vusdt_debt": house.total_vusdt_debt,
+                    "stability_fees_accrued": house.stability_fees_accrued,
+                    "recovery_pool_vusdt": house.recovery_pool_vusdt,
+                    "recovery_pool_retired": house.recovery_pool_retired,
                     "three_card_progressive_jackpot": house.three_card_progressive_jackpot,
                     "uth_progressive_jackpot": house.uth_progressive_jackpot,
                     "staking_reward_per_voting_power_x18": house.staking_reward_per_voting_power_x18.to_string(),

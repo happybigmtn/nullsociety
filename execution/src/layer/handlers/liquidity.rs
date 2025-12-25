@@ -1,8 +1,112 @@
 use super::super::*;
 use super::casino_error_vec;
+use commonware_codec::ReadExt;
+use commonware_utils::from_hex;
+use std::sync::OnceLock;
 
 const BASIS_POINTS_SCALE: u128 = 10_000;
 const MAX_BASIS_POINTS: u16 = 10_000;
+const SECONDS_PER_YEAR: u64 = 365 * 24 * 60 * 60;
+
+fn admin_public_key() -> Option<PublicKey> {
+    static ADMIN_KEY: OnceLock<Option<PublicKey>> = OnceLock::new();
+    ADMIN_KEY
+        .get_or_init(|| {
+            let raw = std::env::var("CASINO_ADMIN_PUBLIC_KEY_HEX").ok()?;
+            let trimmed = raw.trim_start_matches("0x");
+            let bytes = from_hex(trimmed)?;
+            let mut buf = bytes.as_slice();
+            let key = PublicKey::read(&mut buf).ok()?;
+            if !buf.is_empty() {
+                return None;
+            }
+            Some(key)
+        })
+        .clone()
+}
+
+fn current_time_sec(view: u64) -> u64 {
+    view.saturating_mul(3)
+}
+
+fn reset_daily_flow_if_needed(player: &mut nullspace_types::casino::Player, current_day: u64) {
+    if player.session.daily_flow_day != current_day {
+        player.session.daily_flow_day = current_day;
+        player.session.daily_net_sell = 0;
+        player.session.daily_net_buy = 0;
+    }
+}
+
+fn is_tier2(
+    player: &nullspace_types::casino::Player,
+    now: u64,
+    staker: Option<&nullspace_types::casino::Staker>,
+) -> bool {
+    let created_ts = player.profile.created_ts;
+    if created_ts == 0 {
+        return false;
+    }
+    if now.saturating_sub(created_ts) < nullspace_types::casino::ACCOUNT_TIER_MATURE_SECS {
+        return false;
+    }
+    let staked = staker.map(|s| s.balance).unwrap_or(0);
+    staked >= nullspace_types::casino::ACCOUNT_TIER2_STAKE_MIN
+}
+
+fn dynamic_sell_tax_bps(
+    policy: &nullspace_types::casino::PolicyState,
+    amm: &nullspace_types::casino::AmmPool,
+    daily_sell_after: u64,
+) -> u16 {
+    if amm.reserve_rng == 0 {
+        return policy.sell_tax_mid_bps;
+    }
+    let outflow_bps = (daily_sell_after as u128)
+        .saturating_mul(BASIS_POINTS_SCALE)
+        .checked_div(amm.reserve_rng as u128)
+        .unwrap_or(0)
+        .min(u16::MAX as u128) as u16;
+    if outflow_bps < policy.sell_tax_outflow_low_bps {
+        policy.sell_tax_min_bps
+    } else if outflow_bps < policy.sell_tax_outflow_mid_bps {
+        policy.sell_tax_mid_bps
+    } else {
+        policy.sell_tax_max_bps
+    }
+}
+
+fn accrue_vault_debt(
+    vault: &mut nullspace_types::casino::Vault,
+    house: &mut nullspace_types::casino::HouseState,
+    now: u64,
+    policy: &nullspace_types::casino::PolicyState,
+) -> u64 {
+    if vault.debt_vusdt == 0 {
+        vault.last_accrual_ts = now;
+        return 0;
+    }
+    let last_ts = if vault.last_accrual_ts == 0 {
+        now
+    } else {
+        vault.last_accrual_ts
+    };
+    let elapsed = now.saturating_sub(last_ts);
+    if elapsed == 0 {
+        return 0;
+    }
+    let interest = (vault.debt_vusdt as u128)
+        .saturating_mul(policy.stability_fee_apr_bps as u128)
+        .saturating_mul(elapsed as u128)
+        .checked_div(BASIS_POINTS_SCALE.saturating_mul(SECONDS_PER_YEAR as u128))
+        .unwrap_or(0) as u64;
+    if interest > 0 {
+        vault.debt_vusdt = vault.debt_vusdt.saturating_add(interest);
+        house.total_vusdt_debt = house.total_vusdt_debt.saturating_add(interest);
+        house.stability_fees_accrued = house.stability_fees_accrued.saturating_add(interest);
+    }
+    vault.last_accrual_ts = now;
+    interest
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct SwapQuote {
@@ -85,6 +189,72 @@ fn validate_amm_state(amm: &nullspace_types::casino::AmmPool) -> Result<(), &'st
     Ok(())
 }
 
+fn validate_policy(policy: &nullspace_types::casino::PolicyState) -> Result<(), &'static str> {
+    if policy.sell_tax_min_bps > policy.sell_tax_mid_bps
+        || policy.sell_tax_mid_bps > policy.sell_tax_max_bps
+        || policy.sell_tax_max_bps > MAX_BASIS_POINTS
+    {
+        return Err("invalid sell tax configuration");
+    }
+    if policy.sell_tax_outflow_low_bps > policy.sell_tax_outflow_mid_bps {
+        return Err("invalid sell tax outflow thresholds");
+    }
+    if policy.max_daily_sell_bps_balance > MAX_BASIS_POINTS
+        || policy.max_daily_sell_bps_pool > MAX_BASIS_POINTS
+        || policy.max_daily_buy_bps_balance > MAX_BASIS_POINTS
+        || policy.max_daily_buy_bps_pool > MAX_BASIS_POINTS
+    {
+        return Err("invalid daily flow caps");
+    }
+    if policy.max_ltv_bps_new > policy.max_ltv_bps_mature
+        || policy.max_ltv_bps_mature > MAX_BASIS_POINTS
+    {
+        return Err("invalid LTV configuration");
+    }
+    if policy.liquidation_threshold_bps > MAX_BASIS_POINTS
+        || policy.liquidation_target_bps > policy.liquidation_threshold_bps
+    {
+        return Err("invalid liquidation thresholds");
+    }
+    if policy.liquidation_penalty_bps > MAX_BASIS_POINTS {
+        return Err("invalid liquidation penalty");
+    }
+    if policy
+        .liquidation_reward_bps
+        .saturating_add(policy.liquidation_stability_bps)
+        != policy.liquidation_penalty_bps
+    {
+        return Err("liquidation split mismatch");
+    }
+    if policy.stability_fee_apr_bps > MAX_BASIS_POINTS {
+        return Err("invalid stability fee");
+    }
+    if policy.debt_ceiling_bps > MAX_BASIS_POINTS {
+        return Err("invalid debt ceiling");
+    }
+    if policy.credit_immediate_bps > MAX_BASIS_POINTS {
+        return Err("invalid credit vesting");
+    }
+
+    Ok(())
+}
+
+fn validate_treasury(
+    treasury: &nullspace_types::casino::TreasuryState,
+) -> Result<(), &'static str> {
+    let total = treasury
+        .auction_allocation_rng
+        .saturating_add(treasury.liquidity_reserve_rng)
+        .saturating_add(treasury.bonus_pool_rng)
+        .saturating_add(treasury.player_allocation_rng)
+        .saturating_add(treasury.treasury_allocation_rng)
+        .saturating_add(treasury.team_allocation_rng);
+    if total > nullspace_types::casino::TOTAL_SUPPLY {
+        return Err("treasury allocation exceeds total supply");
+    }
+    Ok(())
+}
+
 fn invalid_amm_state(public: &PublicKey) -> Vec<Event> {
     casino_error_vec(
         public,
@@ -112,6 +282,15 @@ impl<'a, S: State> Layer<'a, S> {
 
         let vault = nullspace_types::casino::Vault::default();
         self.insert(Key::Vault(public.clone()), Value::Vault(vault.clone()));
+
+        let mut registry = self.get_or_init_vault_registry().await?;
+        if !registry.vaults.contains(public) {
+            registry.vaults.push(public.clone());
+            registry.vaults.sort_unstable();
+            registry.vaults.dedup();
+            self.insert(Key::VaultRegistry, Value::VaultRegistry(registry));
+        }
+
         Ok(vec![Event::VaultCreated {
             player: public.clone(),
             vault,
@@ -127,6 +306,10 @@ impl<'a, S: State> Layer<'a, S> {
             Some(Value::CasinoPlayer(p)) => p,
             _ => return Ok(vec![]),
         };
+
+        if player.profile.created_ts == 0 {
+            player.profile.created_ts = current_time_sec(self.seed.view);
+        }
 
         if player.balances.chips < amount {
             return Ok(casino_error_vec(
@@ -184,12 +367,24 @@ impl<'a, S: State> Layer<'a, S> {
         public: &PublicKey,
         amount: u64,
     ) -> anyhow::Result<Vec<Event>> {
+        if amount == 0 {
+            return Ok(vec![]);
+        }
+
         let mut vault = match self.get(&Key::Vault(public.clone())).await? {
             Some(Value::Vault(v)) => v,
             _ => return Ok(vec![]),
         };
 
+        let mut house = self.get_or_init_house().await?;
+        let policy = self.get_or_init_policy().await?;
+        let now = current_time_sec(self.seed.view);
+        accrue_vault_debt(&mut vault, &mut house, now, &policy);
+
         let amm = self.get_or_init_amm().await?;
+        if validate_amm_state(&amm).is_err() {
+            return Ok(invalid_amm_state(public));
+        }
         let (price_numerator, price_denominator) = rng_price_ratio(
             amm.reserve_rng,
             amm.reserve_vusdt,
@@ -197,9 +392,27 @@ impl<'a, S: State> Layer<'a, S> {
             amm.bootstrap_price_rng_denominator,
         );
 
-        // LTV Calculation: Max Debt = (Collateral * Price) * 50%
-        // Debt <= (Collateral * P_num / P_den) / 2
-        // 2 * Debt * P_den <= Collateral * P_num
+        let mut updated_player = match self.get(&Key::CasinoPlayer(public.clone())).await? {
+            Some(Value::CasinoPlayer(player)) => Some(player),
+            _ => None,
+        };
+        if let Some(player) = updated_player.as_mut() {
+            if player.profile.created_ts == 0 {
+                player.profile.created_ts = now;
+            }
+        }
+        let staker = match self.get(&Key::Staker(public.clone())).await? {
+            Some(Value::Staker(s)) => Some(s),
+            _ => None,
+        };
+        let max_ltv_bps = match updated_player.as_ref() {
+            Some(player) if is_tier2(player, now, staker.as_ref()) => {
+                policy.max_ltv_bps_mature
+            }
+            _ => policy.max_ltv_bps_new,
+        };
+
+        // LTV Calculation: Max Debt = (Collateral * Price) * max_ltv_bps
         let Some(new_debt) = vault.debt_vusdt.checked_add(amount) else {
             return Ok(casino_error_vec(
                 public,
@@ -210,27 +423,54 @@ impl<'a, S: State> Layer<'a, S> {
         };
 
         let lhs = (new_debt as u128)
-            .saturating_mul(2)
-            .saturating_mul(price_denominator);
-        let rhs = (vault.collateral_rng as u128).saturating_mul(price_numerator);
+            .saturating_mul(price_denominator)
+            .saturating_mul(BASIS_POINTS_SCALE);
+        let rhs = (vault.collateral_rng as u128)
+            .saturating_mul(price_numerator)
+            .saturating_mul(max_ltv_bps as u128);
 
         if lhs > rhs {
+            let message = format!("Insufficient collateral (Max {}% LTV)", max_ltv_bps / 100);
             return Ok(casino_error_vec(
                 public,
                 None,
                 nullspace_types::casino::ERROR_INVALID_MOVE,
-                "Insufficient collateral (Max 50% LTV)",
+                &message,
+            ));
+        }
+
+        if policy.debt_ceiling_bps == 0 {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Debt ceiling reached",
+            ));
+        }
+        let max_total_debt = if amm.total_shares == 0 {
+            u64::MAX
+        } else {
+            (amm.reserve_vusdt as u128)
+                .saturating_mul(policy.debt_ceiling_bps as u128)
+                .checked_div(BASIS_POINTS_SCALE)
+                .unwrap_or(0) as u64
+        };
+        let new_total_debt = house.total_vusdt_debt.saturating_add(amount);
+        if max_total_debt != u64::MAX && new_total_debt > max_total_debt {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Debt ceiling reached",
             ));
         }
 
         // Update Vault
         vault.debt_vusdt = new_debt;
+        house.total_vusdt_debt = new_total_debt;
 
         // Mint vUSDT to Player (if the player exists).
-        let mut updated_player = None;
-        if let Some(Value::CasinoPlayer(mut player)) =
-            self.get(&Key::CasinoPlayer(public.clone())).await?
-        {
+        if let Some(player) = updated_player.as_mut() {
             let Some(new_balance) = player.balances.vusdt_balance.checked_add(amount) else {
                 return Ok(casino_error_vec(
                     public,
@@ -240,7 +480,6 @@ impl<'a, S: State> Layer<'a, S> {
                 ));
             };
             player.balances.vusdt_balance = new_balance;
-            updated_player = Some(player);
         }
 
         let player_balances = updated_player
@@ -249,6 +488,7 @@ impl<'a, S: State> Layer<'a, S> {
             .unwrap_or_default();
         let vault_snapshot = vault.clone();
         self.insert(Key::Vault(public.clone()), Value::Vault(vault));
+        self.insert(Key::House, Value::House(house));
         if let Some(player) = updated_player {
             self.insert(
                 Key::CasinoPlayer(public.clone()),
@@ -269,6 +509,10 @@ impl<'a, S: State> Layer<'a, S> {
         public: &PublicKey,
         amount: u64,
     ) -> anyhow::Result<Vec<Event>> {
+        if amount == 0 {
+            return Ok(vec![]);
+        }
+
         let mut player = match self.get(&Key::CasinoPlayer(public.clone())).await? {
             Some(Value::CasinoPlayer(p)) => p,
             _ => return Ok(vec![]),
@@ -278,6 +522,11 @@ impl<'a, S: State> Layer<'a, S> {
             Some(Value::Vault(v)) => v,
             _ => return Ok(vec![]),
         };
+
+        let mut house = self.get_or_init_house().await?;
+        let policy = self.get_or_init_policy().await?;
+        let now = current_time_sec(self.seed.view);
+        accrue_vault_debt(&mut vault, &mut house, now, &policy);
 
         if player.balances.vusdt_balance < amount {
             return Ok(casino_error_vec(
@@ -293,6 +542,7 @@ impl<'a, S: State> Layer<'a, S> {
         player.balances.vusdt_balance -= actual_repay;
         vault.debt_vusdt -= actual_repay;
         let new_debt = vault.debt_vusdt;
+        house.total_vusdt_debt = house.total_vusdt_debt.saturating_sub(actual_repay);
 
         let player_balances =
             nullspace_types::casino::PlayerBalanceSnapshot::from_player(&player);
@@ -302,6 +552,7 @@ impl<'a, S: State> Layer<'a, S> {
             Value::CasinoPlayer(player),
         );
         self.insert(Key::Vault(public.clone()), Value::Vault(vault));
+        self.insert(Key::House, Value::House(house));
 
         Ok(vec![Event::VusdtRepaid {
             player: public.clone(),
@@ -330,6 +581,11 @@ impl<'a, S: State> Layer<'a, S> {
             return Ok(vec![]);
         }
 
+        let policy = self.get_or_init_policy().await?;
+        let now = current_time_sec(self.seed.view);
+        let current_day = now / 86_400;
+        reset_daily_flow_if_needed(&mut player, current_day);
+
         if validate_amm_state(&amm).is_err() {
             return Ok(invalid_amm_state(public));
         }
@@ -343,12 +599,75 @@ impl<'a, S: State> Layer<'a, S> {
             ));
         }
 
+        let mut daily_sell_after = player.session.daily_net_sell;
+        let mut daily_buy_after = player.session.daily_net_buy;
+        let mut sell_tax_bps = amm.sell_tax_basis_points;
+
+        if is_buying_rng {
+            let max_by_balance = (player.balances.vusdt_balance as u128)
+                .saturating_mul(policy.max_daily_buy_bps_balance as u128)
+                .checked_div(BASIS_POINTS_SCALE)
+                .unwrap_or(0) as u64;
+            let max_by_pool = (amm.reserve_vusdt as u128)
+                .saturating_mul(policy.max_daily_buy_bps_pool as u128)
+                .checked_div(BASIS_POINTS_SCALE)
+                .unwrap_or(0) as u64;
+            let mut allowed = max_by_balance.min(max_by_pool);
+            if allowed == 0
+                && policy.max_daily_buy_bps_balance > 0
+                && policy.max_daily_buy_bps_pool > 0
+                && player.balances.vusdt_balance > 0
+                && amm.reserve_vusdt > 0
+            {
+                allowed = 1;
+            }
+            daily_buy_after = player.session.daily_net_buy.saturating_add(amount_in);
+            if allowed > 0 && daily_buy_after > allowed {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_INVALID_MOVE,
+                    "Daily buy limit exceeded",
+                ));
+            }
+        } else {
+            let max_by_balance = (player.balances.chips as u128)
+                .saturating_mul(policy.max_daily_sell_bps_balance as u128)
+                .checked_div(BASIS_POINTS_SCALE)
+                .unwrap_or(0) as u64;
+            let max_by_pool = (amm.reserve_rng as u128)
+                .saturating_mul(policy.max_daily_sell_bps_pool as u128)
+                .checked_div(BASIS_POINTS_SCALE)
+                .unwrap_or(0) as u64;
+            let mut allowed = max_by_balance.min(max_by_pool);
+            if allowed == 0
+                && policy.max_daily_sell_bps_balance > 0
+                && policy.max_daily_sell_bps_pool > 0
+                && player.balances.chips > 0
+                && amm.reserve_rng > 0
+            {
+                allowed = 1;
+            }
+            daily_sell_after = player
+                .session
+                .daily_net_sell
+                .saturating_add(original_amount_in);
+            if allowed > 0 && daily_sell_after > allowed {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_INVALID_MOVE,
+                    "Daily sell limit exceeded",
+                ));
+            }
+            sell_tax_bps = dynamic_sell_tax_bps(&policy, &amm, daily_sell_after);
+        }
+
         // Apply Sell Tax (if Selling RNG)
         let mut burned_amount = 0;
         if !is_buying_rng {
-            // Sell Tax: 5% (default)
             burned_amount =
-                (amount_in as u128 * amm.sell_tax_basis_points as u128 / BASIS_POINTS_SCALE) as u64;
+                (amount_in as u128 * sell_tax_bps as u128 / BASIS_POINTS_SCALE) as u64;
             if burned_amount > 0 {
                 // Deduct tax from input amount
                 let Some(net_amount_in) = amount_in.checked_sub(burned_amount) else {
@@ -401,6 +720,7 @@ impl<'a, S: State> Layer<'a, S> {
                 return Ok(invalid_amm_state(public));
             };
             player.balances.chips = chips;
+            player.session.daily_net_buy = daily_buy_after;
 
             let Some(reserve_vusdt) = amm.reserve_vusdt.checked_add(amount_in) else {
                 return Ok(invalid_amm_state(public));
@@ -431,6 +751,7 @@ impl<'a, S: State> Layer<'a, S> {
                 return Ok(invalid_amm_state(public));
             };
             player.balances.vusdt_balance = vusdt_balance;
+            player.session.daily_net_sell = daily_sell_after;
 
             let Some(reserve_rng) = amm.reserve_rng.checked_add(amount_in) else {
                 return Ok(invalid_amm_state(public));
@@ -714,6 +1035,457 @@ impl<'a, S: State> Layer<'a, S> {
 
         Ok(vec![event])
     }
+
+    pub(in crate::layer) async fn handle_liquidate_vault(
+        &mut self,
+        public: &PublicKey,
+        target: &PublicKey,
+    ) -> anyhow::Result<Vec<Event>> {
+        let mut liquidator = match self.get(&Key::CasinoPlayer(public.clone())).await? {
+            Some(Value::CasinoPlayer(player)) => player,
+            _ => return Ok(vec![]),
+        };
+
+        let mut vault = match self.get(&Key::Vault(target.clone())).await? {
+            Some(Value::Vault(v)) => v,
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_INVALID_MOVE,
+                    "Vault not found",
+                ))
+            }
+        };
+
+        let mut house = self.get_or_init_house().await?;
+        let policy = self.get_or_init_policy().await?;
+        let now = current_time_sec(self.seed.view);
+        accrue_vault_debt(&mut vault, &mut house, now, &policy);
+
+        if vault.debt_vusdt == 0 || vault.collateral_rng == 0 {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Nothing to liquidate",
+            ));
+        }
+
+        let amm = self.get_or_init_amm().await?;
+        if validate_amm_state(&amm).is_err() {
+            return Ok(invalid_amm_state(public));
+        }
+        let (price_numerator, price_denominator) = rng_price_ratio(
+            amm.reserve_rng,
+            amm.reserve_vusdt,
+            amm.bootstrap_price_vusdt_numerator,
+            amm.bootstrap_price_rng_denominator,
+        );
+        if price_numerator == 0 {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Invalid price for liquidation",
+            ));
+        }
+
+        let collateral_value = (vault.collateral_rng as u128)
+            .saturating_mul(price_numerator)
+            .checked_div(price_denominator)
+            .unwrap_or(0);
+        if collateral_value == 0 {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Collateral has zero value",
+            ));
+        }
+
+        let ltv_bps = (vault.debt_vusdt as u128)
+            .saturating_mul(BASIS_POINTS_SCALE)
+            .checked_div(collateral_value)
+            .unwrap_or(u128::MAX);
+        if ltv_bps <= policy.liquidation_threshold_bps as u128 {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Vault not eligible for liquidation",
+            ));
+        }
+
+        let target_debt = collateral_value
+            .saturating_mul(policy.liquidation_target_bps as u128)
+            .checked_div(BASIS_POINTS_SCALE)
+            .unwrap_or(0);
+        let mut repay_amount = (vault.debt_vusdt as u128)
+            .saturating_sub(target_debt)
+            .min(vault.debt_vusdt as u128) as u64;
+        if repay_amount == 0 {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Nothing to liquidate",
+            ));
+        }
+
+        let penalty_bps = policy.liquidation_penalty_bps as u128;
+        let max_repay = collateral_value
+            .saturating_mul(BASIS_POINTS_SCALE)
+            .checked_div(BASIS_POINTS_SCALE.saturating_add(penalty_bps))
+            .unwrap_or(0);
+        if (repay_amount as u128) > max_repay {
+            repay_amount = max_repay as u64;
+        }
+        if repay_amount == 0 {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Nothing to liquidate",
+            ));
+        }
+
+        if liquidator.balances.vusdt_balance < repay_amount {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
+                "Insufficient vUSDT",
+            ));
+        }
+
+        let seize_value = (repay_amount as u128)
+            .saturating_mul(BASIS_POINTS_SCALE.saturating_add(penalty_bps))
+            .checked_div(BASIS_POINTS_SCALE)
+            .unwrap_or(0);
+        let mut collateral_seized = seize_value
+            .saturating_mul(price_denominator)
+            .checked_div(price_numerator)
+            .unwrap_or(0) as u64;
+        if collateral_seized > vault.collateral_rng {
+            collateral_seized = vault.collateral_rng;
+        }
+
+        let reward_value = (repay_amount as u128)
+            .saturating_mul(
+                BASIS_POINTS_SCALE.saturating_add(policy.liquidation_reward_bps as u128),
+            )
+            .checked_div(BASIS_POINTS_SCALE)
+            .unwrap_or(0);
+        let mut collateral_to_liquidator = reward_value
+            .saturating_mul(price_denominator)
+            .checked_div(price_numerator)
+            .unwrap_or(0) as u64;
+        if collateral_to_liquidator > collateral_seized {
+            collateral_to_liquidator = collateral_seized;
+        }
+
+        let penalty_to_house = (repay_amount as u128)
+            .saturating_mul(policy.liquidation_stability_bps as u128)
+            .checked_div(BASIS_POINTS_SCALE)
+            .unwrap_or(0) as u64;
+
+        liquidator.balances.vusdt_balance = liquidator
+            .balances
+            .vusdt_balance
+            .saturating_sub(repay_amount);
+        liquidator.balances.chips = liquidator
+            .balances
+            .chips
+            .saturating_add(collateral_to_liquidator);
+
+        vault.debt_vusdt = vault.debt_vusdt.saturating_sub(repay_amount);
+        vault.collateral_rng = vault.collateral_rng.saturating_sub(collateral_seized);
+
+        house.total_vusdt_debt = house.total_vusdt_debt.saturating_sub(repay_amount);
+        if penalty_to_house > 0 {
+            house.recovery_pool_vusdt = house
+                .recovery_pool_vusdt
+                .saturating_add(penalty_to_house);
+        }
+
+        let remaining_debt = vault.debt_vusdt;
+        let remaining_collateral = vault.collateral_rng;
+
+        self.insert(Key::House, Value::House(house));
+        self.insert(Key::Vault(target.clone()), Value::Vault(vault));
+        self.insert(
+            Key::CasinoPlayer(public.clone()),
+            Value::CasinoPlayer(liquidator),
+        );
+
+        Ok(vec![Event::VaultLiquidated {
+            liquidator: public.clone(),
+            target: target.clone(),
+            repay_amount,
+            collateral_seized,
+            remaining_debt,
+            remaining_collateral,
+            penalty_to_house,
+        }])
+    }
+
+    pub(in crate::layer) async fn handle_set_policy(
+        &mut self,
+        public: &PublicKey,
+        policy: &nullspace_types::casino::PolicyState,
+    ) -> anyhow::Result<Vec<Event>> {
+        match admin_public_key() {
+            Some(admin_key) if *public == admin_key => {}
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_UNAUTHORIZED,
+                    "Unauthorized admin instruction",
+                ))
+            }
+        }
+
+        if let Err(message) = validate_policy(policy) {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                message,
+            ));
+        }
+
+        self.insert(Key::Policy, Value::Policy(policy.clone()));
+        Ok(vec![Event::PolicyUpdated {
+            policy: policy.clone(),
+        }])
+    }
+
+    pub(in crate::layer) async fn handle_set_treasury(
+        &mut self,
+        public: &PublicKey,
+        treasury: &nullspace_types::casino::TreasuryState,
+    ) -> anyhow::Result<Vec<Event>> {
+        match admin_public_key() {
+            Some(admin_key) if *public == admin_key => {}
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_UNAUTHORIZED,
+                    "Unauthorized admin instruction",
+                ))
+            }
+        }
+
+        if let Err(message) = validate_treasury(treasury) {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                message,
+            ));
+        }
+
+        self.insert(Key::Treasury, Value::Treasury(treasury.clone()));
+        Ok(vec![Event::TreasuryUpdated {
+            treasury: treasury.clone(),
+        }])
+    }
+
+    pub(in crate::layer) async fn handle_fund_recovery_pool(
+        &mut self,
+        public: &PublicKey,
+        amount: u64,
+    ) -> anyhow::Result<Vec<Event>> {
+        match admin_public_key() {
+            Some(admin_key) if *public == admin_key => {}
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_UNAUTHORIZED,
+                    "Unauthorized admin instruction",
+                ))
+            }
+        }
+
+        if amount == 0 {
+            return Ok(vec![]);
+        }
+
+        let mut house = self.get_or_init_house().await?;
+        house.recovery_pool_vusdt = house.recovery_pool_vusdt.saturating_add(amount);
+        let new_balance = house.recovery_pool_vusdt;
+        self.insert(Key::House, Value::House(house));
+
+        Ok(vec![Event::RecoveryPoolFunded {
+            amount,
+            new_balance,
+        }])
+    }
+
+    pub(in crate::layer) async fn handle_retire_vault_debt(
+        &mut self,
+        public: &PublicKey,
+        target: &PublicKey,
+        amount: u64,
+    ) -> anyhow::Result<Vec<Event>> {
+        match admin_public_key() {
+            Some(admin_key) if *public == admin_key => {}
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_UNAUTHORIZED,
+                    "Unauthorized admin instruction",
+                ))
+            }
+        }
+
+        if amount == 0 {
+            return Ok(vec![]);
+        }
+
+        let mut vault = match self.get(&Key::Vault(target.clone())).await? {
+            Some(Value::Vault(v)) => v,
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_INVALID_MOVE,
+                    "Vault not found",
+                ))
+            }
+        };
+
+        let mut house = self.get_or_init_house().await?;
+        let policy = self.get_or_init_policy().await?;
+        let now = current_time_sec(self.seed.view);
+        accrue_vault_debt(&mut vault, &mut house, now, &policy);
+
+        let available = house.recovery_pool_vusdt.min(vault.debt_vusdt);
+        let retire_amount = amount.min(available);
+        if retire_amount == 0 {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "No debt to retire",
+            ));
+        }
+
+        vault.debt_vusdt = vault.debt_vusdt.saturating_sub(retire_amount);
+        house.total_vusdt_debt = house.total_vusdt_debt.saturating_sub(retire_amount);
+        house.recovery_pool_vusdt = house.recovery_pool_vusdt.saturating_sub(retire_amount);
+        house.recovery_pool_retired = house.recovery_pool_retired.saturating_add(retire_amount);
+
+        let new_debt = vault.debt_vusdt;
+        let pool_balance = house.recovery_pool_vusdt;
+
+        self.insert(Key::Vault(target.clone()), Value::Vault(vault));
+        self.insert(Key::House, Value::House(house));
+
+        Ok(vec![Event::RecoveryPoolRetired {
+            target: target.clone(),
+            amount: retire_amount,
+            new_debt,
+            pool_balance,
+        }])
+    }
+
+    pub(in crate::layer) async fn handle_retire_worst_vault_debt(
+        &mut self,
+        public: &PublicKey,
+        amount: u64,
+    ) -> anyhow::Result<Vec<Event>> {
+        match admin_public_key() {
+            Some(admin_key) if *public == admin_key => {}
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_UNAUTHORIZED,
+                    "Unauthorized admin instruction",
+                ))
+            }
+        }
+
+        if amount == 0 {
+            return Ok(vec![]);
+        }
+
+        let registry = self.get_or_init_vault_registry().await?;
+        if registry.vaults.is_empty() {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "No vaults registered",
+            ));
+        }
+
+        let amm = self.get_or_init_amm().await?;
+        if validate_amm_state(&amm).is_err() {
+            return Ok(invalid_amm_state(public));
+        }
+        let (price_numerator, price_denominator) = rng_price_ratio(
+            amm.reserve_rng,
+            amm.reserve_vusdt,
+            amm.bootstrap_price_vusdt_numerator,
+            amm.bootstrap_price_rng_denominator,
+        );
+
+        let mut selected: Option<(PublicKey, u128, u64)> = None;
+        for pk in &registry.vaults {
+            let vault = match self.get(&Key::Vault(pk.clone())).await? {
+                Some(Value::Vault(v)) => v,
+                _ => continue,
+            };
+            if vault.debt_vusdt == 0 {
+                continue;
+            }
+
+            let collateral_value = if price_denominator == 0 {
+                0
+            } else {
+                (vault.collateral_rng as u128)
+                    .saturating_mul(price_numerator)
+                    .checked_div(price_denominator)
+                    .unwrap_or(0)
+            };
+            let ltv_bps = if collateral_value == 0 {
+                u128::MAX
+            } else {
+                (vault.debt_vusdt as u128)
+                    .saturating_mul(BASIS_POINTS_SCALE)
+                    .checked_div(collateral_value)
+                    .unwrap_or(u128::MAX)
+            };
+            let last_ts = vault.last_accrual_ts;
+
+            match selected.as_ref() {
+                None => selected = Some((pk.clone(), ltv_bps, last_ts)),
+                Some((_, best_ltv, best_ts)) => {
+                    if ltv_bps > *best_ltv || (ltv_bps == *best_ltv && last_ts < *best_ts) {
+                        selected = Some((pk.clone(), ltv_bps, last_ts));
+                    }
+                }
+            }
+        }
+
+        let Some((target, _, _)) = selected else {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "No vault debt to retire",
+            ));
+        };
+
+        self.handle_retire_vault_debt(public, &target, amount).await
+    }
 }
 
 #[cfg(test)]
@@ -756,6 +1528,7 @@ mod tests {
                 Value::Vault(nullspace_types::casino::Vault {
                     collateral_rng: 10,
                     debt_vusdt: 0,
+                    last_accrual_ts: 0,
                 }),
             );
 
@@ -768,16 +1541,16 @@ mod tests {
 
             let mut layer = Layer::new(&state, master_public, TEST_NAMESPACE, seed);
 
-            // With a bootstrap price of 2 vUSDT per 1 RNG and 50% LTV, max debt is 10 vUSDT.
-            let tx = Transaction::sign(&private, 0, Instruction::BorrowUSDT { amount: 10 });
+            // With a bootstrap price of 2 vUSDT per 1 RNG and 30% LTV, max debt is 6 vUSDT.
+            let tx = Transaction::sign(&private, 0, Instruction::BorrowUSDT { amount: 6 });
             layer.prepare(&tx).await.expect("prepare");
             let events = layer.apply(&tx).await.expect("apply");
             assert!(matches!(
                 events.as_slice(),
                 [Event::VusdtBorrowed {
                     player,
-                    amount: 10,
-                    new_debt: 10,
+                    amount: 6,
+                    new_debt: 6,
                     ..
                 }] if player == &public
             ));
@@ -788,7 +1561,7 @@ mod tests {
             let events = layer.apply(&tx).await.expect("apply");
             assert!(matches!(
                 events.as_slice(),
-                [Event::CasinoError { message, .. }] if message == "Insufficient collateral (Max 50% LTV)"
+                [Event::CasinoError { message, .. }] if message == "Insufficient collateral (Max 30% LTV)"
             ));
         });
     }

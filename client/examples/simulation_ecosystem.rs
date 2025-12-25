@@ -40,7 +40,9 @@ use tracing::{error, info, warn};
 
 const INITIAL_POOL_RNG: u64 = 500_000;
 const INITIAL_POOL_VUSD: u64 = 500_000;
-const BOOTSTRAP_COLLATERAL: u64 = INITIAL_POOL_VUSD * 2; // 50% LTV requires 2x collateral
+const BOOTSTRAP_LTV_BPS: u64 = 3_000;
+const BOOTSTRAP_COLLATERAL: u64 =
+    (INITIAL_POOL_VUSD * 10_000 + BOOTSTRAP_LTV_BPS - 1) / BOOTSTRAP_LTV_BPS;
 const CLIENT_MAX_RPS: u64 = 50_000;
 static SUBMIT_FAILURES: AtomicU64 = AtomicU64::new(0);
 
@@ -509,13 +511,15 @@ async fn run_retail(client: Arc<Client>, bot: Arc<Bot>, duration: Duration) {
             txs.push(Transaction::sign(
                 &bot.keypair,
                 bot.next_nonce(),
-                Instruction::BorrowUSDT { amount: amount / 2 },
-            )); // 50% LTV safe-ish
+                Instruction::BorrowUSDT {
+                    amount: amount * 3 / 10,
+                },
+            )); // 30% LTV safe-ish
             txs.push(Transaction::sign(
                 &bot.keypair,
                 bot.next_nonce(),
                 Instruction::Swap {
-                    amount_in: amount / 2,
+                    amount_in: amount * 3 / 10,
                     min_amount_out: 0,
                     is_buying_rng: true,
                 },

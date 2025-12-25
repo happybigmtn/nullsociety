@@ -439,7 +439,13 @@ export default function StakingApp() {
         right={
           <>
             <AuthStatusPill publicKeyHex={connection.keypair?.publicKeyHex ?? null} />
-            <WalletPill rng={player?.chips} vusdt={player?.vusdtBalance} pubkeyHex={connection.keypair?.publicKeyHex} />
+            <WalletPill
+              rng={player?.chips}
+              vusdt={player?.vusdtBalance}
+              credits={player?.freerollCredits}
+              creditsLocked={player?.freerollCreditsLocked}
+              pubkeyHex={connection.keypair?.publicKeyHex}
+            />
             <button
               type="button"
               onClick={() => setShowAdvanced((v) => !v)}

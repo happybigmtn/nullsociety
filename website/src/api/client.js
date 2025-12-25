@@ -968,6 +968,60 @@ export class CasinoClient {
   }
 
   /**
+   * Get policy state.
+   * @returns {Promise<Object|null>} Policy data or null if not found
+   */
+  async getPolicy() {
+    const keyBytes = this.wasm.encodePolicyKey();
+    const result = await this.queryState(keyBytes);
+
+    if (result.found && result.value) {
+      if (result.value.type === 'Policy') {
+        return snakeToCamel(result.value);
+      }
+      return null;
+    }
+
+    return null;
+  }
+
+  /**
+   * Get treasury state.
+   * @returns {Promise<Object|null>} Treasury data or null if not found
+   */
+  async getTreasury() {
+    const keyBytes = this.wasm.encodeTreasuryKey();
+    const result = await this.queryState(keyBytes);
+
+    if (result.found && result.value) {
+      if (result.value.type === 'Treasury') {
+        return snakeToCamel(result.value);
+      }
+      return null;
+    }
+
+    return null;
+  }
+
+  /**
+   * Get vault registry state.
+   * @returns {Promise<Object|null>} VaultRegistry data or null if not found
+   */
+  async getVaultRegistry() {
+    const keyBytes = this.wasm.encodeVaultRegistryKey();
+    const result = await this.queryState(keyBytes);
+
+    if (result.found && result.value) {
+      if (result.value.type === 'VaultRegistry') {
+        return snakeToCamel(result.value);
+      }
+      return null;
+    }
+
+    return null;
+  }
+
+  /**
    * Get staker state for an account.
    * @param {Uint8Array} publicKeyBytes - Account public key
    * @returns {Promise<Object|null>} Staker data or null if not found

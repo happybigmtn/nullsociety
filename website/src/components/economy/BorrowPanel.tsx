@@ -3,6 +3,10 @@ import React, { useMemo } from 'react';
 type VaultDerived = {
   ltvBps: number;
   availableDebt: bigint;
+  maxLtvBps: number;
+  liquidationThresholdBps: number;
+  stabilityFeeAprBps: number;
+  tierLabel: string;
 };
 
 type BorrowPanelProps = {
@@ -38,10 +42,13 @@ export const BorrowPanel: React.FC<BorrowPanelProps> = ({
 }) => {
   const health = useMemo(() => {
     const ltvBps = vaultDerived.ltvBps;
-    if (ltvBps < 2500) return { label: 'SAFE', className: 'text-terminal-green' };
-    if (ltvBps < 4000) return { label: 'CAUTION', className: 'text-terminal-gold' };
+    const maxLtv = vaultDerived.maxLtvBps;
+    const liquidation = vaultDerived.liquidationThresholdBps;
+    const safeCutoff = Math.max(1, Math.floor(maxLtv * 0.8));
+    if (ltvBps < safeCutoff) return { label: 'SAFE', className: 'text-terminal-green' };
+    if (ltvBps < liquidation) return { label: 'CAUTION', className: 'text-terminal-gold' };
     return { label: 'RISK', className: 'text-terminal-accent' };
-  }, [vaultDerived.ltvBps]);
+  }, [vaultDerived.liquidationThresholdBps, vaultDerived.ltvBps, vaultDerived.maxLtvBps]);
 
   return (
     <section className="border border-gray-800 rounded p-4 bg-gray-900/30 lg:col-span-2">
@@ -62,7 +69,12 @@ export const BorrowPanel: React.FC<BorrowPanelProps> = ({
             <div className="text-white">{(vaultDerived.ltvBps / 100).toFixed(2)}%</div>
             <div className={['text-[10px] tracking-widest', health.className].join(' ')}>{health.label}</div>
           </div>
-          <div className="text-[10px] text-gray-600">max 50% · AMM spot price (no oracle)</div>
+          <div className="text-[10px] text-gray-600">
+            max {(vaultDerived.maxLtvBps / 100).toFixed(2)}% · {vaultDerived.tierLabel}
+          </div>
+          <div className="text-[10px] text-gray-600">
+            liq {(vaultDerived.liquidationThresholdBps / 100).toFixed(2)}% · fee {(vaultDerived.stabilityFeeAprBps / 100).toFixed(2)}% APR
+          </div>
         </div>
         <div className="border border-gray-800 rounded p-3 bg-black/30">
           <div className="text-[10px] text-gray-500 tracking-widest">AVAILABLE BORROW</div>

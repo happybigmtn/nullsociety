@@ -47,7 +47,7 @@ export default function CasinoApp() {
   // Mode selection (Cash vs Freeroll)
   const [playMode, setPlayMode] = useState<PlayMode | null>(null);
 
-  const { stats, gameState, setGameState, deck, aiAdvice, tournamentTime, phase, leaderboard, isRegistered, walletRng, walletVusdt, walletPublicKeyHex, lastTxSig, botConfig, setBotConfig, isRegisteringOrJoining, isFaucetClaiming, freerollActiveTournamentId, freerollActiveTimeLeft, freerollActivePrizePool, freerollActivePlayerCount, playerActiveTournamentId, freerollNextStartIn, freerollNextTournamentId, freerollIsJoinedNext, tournamentsPlayedToday, tournamentDailyLimit, actions } = useTerminalGame(playMode);
+  const { stats, gameState, setGameState, deck, aiAdvice, tournamentTime, phase, leaderboard, isRegistered, walletRng, walletVusdt, walletCredits, walletCreditsLocked, walletPublicKeyHex, lastTxSig, botConfig, setBotConfig, isRegisteringOrJoining, isFaucetClaiming, freerollActiveTournamentId, freerollActiveTimeLeft, freerollActivePrizePool, freerollActivePlayerCount, playerActiveTournamentId, freerollNextStartIn, freerollNextTournamentId, freerollIsJoinedNext, tournamentsPlayedToday, tournamentDailyLimit, actions } = useTerminalGame(playMode);
 
   // UI State
   const [commandOpen, setCommandOpen] = useState(false);
@@ -479,7 +479,13 @@ export default function CasinoApp() {
            </div>
            <div className="hidden lg:flex items-center gap-2">
                <AuthStatusPill publicKeyHex={walletPublicKeyHex} />
-               <WalletPill rng={walletRng} vusdt={walletVusdt} pubkeyHex={walletPublicKeyHex} />
+               <WalletPill
+                 rng={walletRng}
+                 vusdt={walletVusdt}
+                 credits={walletCredits}
+                 creditsLocked={walletCreditsLocked}
+                 pubkeyHex={walletPublicKeyHex}
+               />
            </div>
        </div>
 
@@ -488,7 +494,14 @@ export default function CasinoApp() {
 	             {gameState.type === GameType.NONE ? (
 	               <div className="mb-2 lg:hidden space-y-2">
 	                 <AuthStatusPill publicKeyHex={walletPublicKeyHex} className="w-full" />
-	                 <WalletPill rng={walletRng} vusdt={walletVusdt} pubkeyHex={walletPublicKeyHex} className="w-full" />
+	                 <WalletPill
+                     rng={walletRng}
+                     vusdt={walletVusdt}
+                     credits={walletCredits}
+                     creditsLocked={walletCreditsLocked}
+                     pubkeyHex={walletPublicKeyHex}
+                     className="w-full"
+                   />
 	               </div>
 	             ) : null}
 	             {playMode === 'CASH' && (

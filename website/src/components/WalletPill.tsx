@@ -6,6 +6,8 @@ import { subscribeVault } from '../security/vaultRuntime';
 type WalletPillProps = {
   rng?: number | bigint | string | null;
   vusdt?: number | bigint | string | null;
+  credits?: number | bigint | string | null;
+  creditsLocked?: number | bigint | string | null;
   pubkeyHex?: string | null;
   className?: string;
 };
@@ -28,7 +30,7 @@ function shortHex(hex: string, start = 10, end = 6): string {
   return `${s.slice(0, start)}…${s.slice(-end)}`;
 }
 
-export const WalletPill: React.FC<WalletPillProps> = ({ rng, vusdt, pubkeyHex, className }) => {
+export const WalletPill: React.FC<WalletPillProps> = ({ rng, vusdt, credits, creditsLocked, pubkeyHex, className }) => {
   const [vaultStatus, setVaultStatus] = useState(() => getVaultStatusSync());
 
   useEffect(() => subscribeVault(() => setVaultStatus(getVaultStatusSync())), []);
@@ -81,6 +83,14 @@ export const WalletPill: React.FC<WalletPillProps> = ({ rng, vusdt, pubkeyHex, c
         <span>
           vUSDT <span className="text-white font-bold">{formatInteger(vusdt)}</span>
         </span>
+        {credits !== undefined || creditsLocked !== undefined ? (
+          <span>
+            Credits <span className="text-white font-bold">{formatInteger(credits)}</span>
+            {creditsLocked !== undefined && creditsLocked !== null
+              ? ` (${formatInteger(creditsLocked)} locked)`
+              : ''}
+          </span>
+        ) : null}
       </div>
 
       {effectivePubkey ? (

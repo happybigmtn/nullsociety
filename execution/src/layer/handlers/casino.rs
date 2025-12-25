@@ -1,5 +1,98 @@
 use super::super::*;
 use super::casino_error_vec;
+
+fn settle_freeroll_credits(
+    player: &mut nullspace_types::casino::Player,
+    now: u64,
+) {
+    let locked = player.balances.freeroll_credits_locked;
+    let start = player.balances.freeroll_credits_unlock_start_ts;
+    let end = player.balances.freeroll_credits_unlock_end_ts;
+    if locked == 0 || start == 0 || end <= start || now <= start {
+        return;
+    }
+    let duration = end.saturating_sub(start);
+    if duration == 0 {
+        return;
+    }
+    let elapsed = now.saturating_sub(start).min(duration);
+    let unlocked = (locked as u128)
+        .saturating_mul(elapsed as u128)
+        .checked_div(duration as u128)
+        .unwrap_or(0) as u64;
+    if unlocked > 0 {
+        player.balances.freeroll_credits_locked =
+            player.balances.freeroll_credits_locked.saturating_sub(unlocked);
+        player.balances.freeroll_credits =
+            player.balances.freeroll_credits.saturating_add(unlocked);
+    }
+    if now >= end {
+        player.balances.freeroll_credits_locked = 0;
+        player.balances.freeroll_credits_unlock_start_ts = 0;
+        player.balances.freeroll_credits_unlock_end_ts = 0;
+    } else {
+        player.balances.freeroll_credits_unlock_start_ts = now;
+    }
+}
+
+fn expire_freeroll_credits(
+    player: &mut nullspace_types::casino::Player,
+    now: u64,
+    policy: &nullspace_types::casino::PolicyState,
+) {
+    let last_ts = player.tournament.last_tournament_ts;
+    if last_ts == 0 {
+        return;
+    }
+    if now.saturating_sub(last_ts) < policy.credit_expiry_secs {
+        return;
+    }
+    player.balances.freeroll_credits = 0;
+    player.balances.freeroll_credits_locked = 0;
+    player.balances.freeroll_credits_unlock_start_ts = 0;
+    player.balances.freeroll_credits_unlock_end_ts = 0;
+}
+
+fn award_freeroll_credits(
+    player: &mut nullspace_types::casino::Player,
+    amount: u64,
+    now: u64,
+    policy: &nullspace_types::casino::PolicyState,
+) {
+    if amount == 0 {
+        return;
+    }
+    expire_freeroll_credits(player, now, policy);
+    settle_freeroll_credits(player, now);
+
+    let immediate = (amount as u128)
+        .saturating_mul(policy.credit_immediate_bps as u128)
+        .checked_div(10_000)
+        .unwrap_or(0) as u64;
+    let locked = amount.saturating_sub(immediate);
+
+    if immediate > 0 {
+        player.balances.freeroll_credits =
+            player.balances.freeroll_credits.saturating_add(immediate);
+    }
+    if locked > 0 {
+        if player.balances.freeroll_credits_locked == 0 {
+            player.balances.freeroll_credits_unlock_start_ts = now;
+            player.balances.freeroll_credits_unlock_end_ts =
+                now.saturating_add(policy.credit_vest_secs);
+        } else {
+            let desired_end = now.saturating_add(policy.credit_vest_secs);
+            if player.balances.freeroll_credits_unlock_end_ts < desired_end {
+                player.balances.freeroll_credits_unlock_end_ts = desired_end;
+            }
+            if player.balances.freeroll_credits_unlock_start_ts == 0 {
+                player.balances.freeroll_credits_unlock_start_ts = now;
+            }
+        }
+        player.balances.freeroll_credits_locked =
+            player.balances.freeroll_credits_locked.saturating_add(locked);
+    }
+}
 use commonware_codec::ReadExt;
 use commonware_utils::from_hex;
 use std::sync::OnceLock;
@@ -97,8 +190,10 @@ impl<'a, S: State> Layer<'a, S> {
             ));
         }
 
-        // Create new player with initial chips and current block for rate limiting
-        let player = nullspace_types::casino::Player::new(name.to_string());
+        // Create new player with initial chips and created timestamp.
+        let mut player = nullspace_types::casino::Player::new(name.to_string());
+        let current_time_sec = self.seed.view.saturating_mul(3);
+        player.profile.created_ts = current_time_sec;
 
         self.insert(
             Key::CasinoPlayer(public.clone()),
@@ -1448,6 +1543,9 @@ impl<'a, S: State> Layer<'a, S> {
             return Ok(vec![]);
         }
 
+        let now = self.seed.view.saturating_mul(3);
+        let policy = self.get_or_init_policy().await?;
+
         // Gather player tournament chips
         let mut rankings: Vec<(PublicKey, u64)> = Vec::new();
         for player_pk in &tournament.players {
@@ -1487,8 +1585,8 @@ impl<'a, S: State> Layer<'a, S> {
                     if let Some(Value::CasinoPlayer(mut p)) =
                         self.get(&Key::CasinoPlayer(pk.clone())).await?
                     {
-                        // Tournament prizes are credited to the real bankroll
-                        p.balances.chips = p.balances.chips.saturating_add(payout);
+                        // Tournament prizes are credited as non-transferable freeroll credits.
+                        award_freeroll_credits(&mut p, payout, now, &policy);
                         self.insert(Key::CasinoPlayer(pk.clone()), Value::CasinoPlayer(p));
                     }
                 }

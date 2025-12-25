@@ -501,6 +501,8 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
   const isRegisteredRef = useRef(false);
   const [walletRng, setWalletRng] = useState<number | null>(null);
   const [walletVusdt, setWalletVusdt] = useState<number | null>(null);
+  const [walletCredits, setWalletCredits] = useState<number | null>(null);
+  const [walletCreditsLocked, setWalletCreditsLocked] = useState<number | null>(null);
   const [walletPublicKeyHex, setWalletPublicKeyHex] = useState<string | null>(null);
   const [botConfig, setBotConfig] = useState<BotConfig>(DEFAULT_BOT_CONFIG);
   const botServiceRef = useRef<BotService | null>(null);
@@ -853,6 +855,8 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
             }));
             setWalletRng((prev) => (shouldUpdateBalance ? Number(playerState.chips) : prev));
             setWalletVusdt(Number(playerState.vusdtBalance ?? 0));
+            setWalletCredits(Number(playerState.freerollCredits ?? 0));
+            setWalletCreditsLocked(Number(playerState.freerollCreditsLocked ?? 0));
 
             if (!shouldUpdateBalance) {
               console.log('[useTerminalGame] Skipped balance update from polling (within cooldown)');
@@ -1118,6 +1122,8 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
             }));
             setWalletRng((prev) => (shouldUpdateBalance ? Number(playerState.chips) : prev));
             setWalletVusdt(Number(playerState.vusdtBalance ?? 0));
+            setWalletCredits(Number(playerState.freerollCredits ?? 0));
+            setWalletCreditsLocked(Number(playerState.freerollCreditsLocked ?? 0));
           }
 
           const shouldPollLeaderboard =
@@ -1209,6 +1215,8 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
           }));
           setWalletRng((prev) => (shouldUpdateBalance ? Number(playerState.chips) : prev));
           setWalletVusdt(Number(playerState.vusdtBalance ?? 0));
+          setWalletCredits(Number(playerState.freerollCredits ?? 0));
+          setWalletCreditsLocked(Number(playerState.freerollCreditsLocked ?? 0));
         }
 
         if (isInActiveTournament) {
@@ -1928,6 +1936,8 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
               }));
               setWalletRng(Number(playerState.chips));
               setWalletVusdt(Number(playerState.vusdtBalance ?? 0));
+              setWalletCredits(Number(playerState.freerollCredits ?? 0));
+              setWalletCreditsLocked(Number(playerState.freerollCreditsLocked ?? 0));
               lastBalanceUpdateRef.current = Date.now();
               currentChipsRef.current = nextChips;
             } catch (e) {
@@ -5468,6 +5478,8 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
     isRegistered,
     walletRng,
     walletVusdt,
+    walletCredits,
+    walletCreditsLocked,
     walletPublicKeyHex,
     lastTxSig,
     botConfig,

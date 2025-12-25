@@ -60,7 +60,7 @@ The current “economy” lives inside the casino state machine. RNG is represen
   - Defaults: 0.3% LP fee (`fee_basis_points=30`) + 5% sell-tax on RNG→vUSDT (`sell_tax_basis_points=500`) + bootstrap price (default: `1 RNG = 1 vUSDT`)
   - Accounting: sell-tax increments `HouseState.total_burned`; LP fee increments `HouseState.accumulated_fees`
 - **CDP/Vault to mint vUSDT:** `execution/src/layer/handlers/liquidity.rs` `handle_create_vault`, `handle_deposit_collateral`, `handle_borrow_usdt`, `handle_repay_usdt`
-  - LTV: 50% based on AMM spot price (no external oracle)
+  - LTV: tiered 30-45% based on AMM spot price (no external oracle)
 - **Freeroll tournaments + payouts (top 15%):**
   - Join limit: 5/day enforced in `execution/src/layer/handlers/casino.rs` `handle_casino_join_tournament`
   - Start: `execution/src/layer/handlers/casino.rs` `handle_casino_start_tournament` (mints prize pool; resets tournament stacks)
