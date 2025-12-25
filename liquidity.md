@@ -8,7 +8,7 @@ This document is the canonical roadmap for RNG token distribution + liquidity ac
 
 | Bucket | % of supply | Amount (RNG) | Mechanism | Status in code |
 |---|---:|---:|---|---|
-| Freeroll bonus pool | up to 15% | 150,000,000 | Phase 2 BOGO bonus for successful CCA bidders (not airdropped) | **Needs update** |
+| Freeroll bonus pool | up to 15% | 150,000,000 | Phase 2 BOGO bonus for successful CCA bidders (not airdropped) | **Not implemented** |
 | Phase 2 auction sale | 20% | 200,000,000 | Ethereum CCA raising USDT; proceeds seed a v4 pool | **Not implemented** |
 | Liquidity reserve | 10% | 100,000,000 | Paired with auction proceeds at clearing price | **Not implemented** |
 | Player snapshot + rewards | 35% | 350,000,000 | Phase 1 earnings + allocations | **Partially implemented** |
