@@ -1,0 +1,250 @@
+/**
+ * Lobby Screen - Jony Ive Redesigned
+ * Game selection with balance display and minimal navigation
+ */
+import { View, Text, StyleSheet, FlatList, Pressable, ListRenderItem } from 'react-native';
+import { useCallback } from 'react';
+import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, GAME_COLORS } from '../constants/theme';
+import { haptics } from '../services/haptics';
+import { useGameStore } from '../stores/gameStore';
+import type { LobbyScreenProps } from '../navigation/types';
+import type { GameId } from '../types';
+
+interface GameInfo {
+  id: GameId;
+  name: string;
+  description: string;
+  emoji: string;
+  color: string;
+}
+
+const GAMES: GameInfo[] = [
+  {
+    id: 'hi_lo',
+    name: 'Hi-Lo',
+    description: 'Higher or Lower',
+    emoji: '🎲',
+    color: GAME_COLORS.hi_lo,
+  },
+  {
+    id: 'blackjack',
+    name: 'Blackjack',
+    description: 'Beat the dealer',
+    emoji: '🃏',
+    color: GAME_COLORS.blackjack,
+  },
+  {
+    id: 'roulette',
+    name: 'Roulette',
+    description: 'Spin the wheel',
+    emoji: '🎡',
+    color: GAME_COLORS.roulette,
+  },
+  {
+    id: 'craps',
+    name: 'Craps',
+    description: 'Roll the dice',
+    emoji: '🎯',
+    color: GAME_COLORS.craps,
+  },
+  {
+    id: 'baccarat',
+    name: 'Baccarat',
+    description: 'Player or Banker',
+    emoji: '👑',
+    color: GAME_COLORS.baccarat,
+  },
+  {
+    id: 'casino_war',
+    name: 'Casino War',
+    description: 'High card wins',
+    emoji: '⚔️',
+    color: GAME_COLORS.casino_war,
+  },
+  {
+    id: 'video_poker',
+    name: 'Video Poker',
+    description: 'Jacks or Better',
+    emoji: '🎰',
+    color: GAME_COLORS.video_poker,
+  },
+  {
+    id: 'sic_bo',
+    name: 'Sic Bo',
+    description: 'Dice totals',
+    emoji: '🀄',
+    color: GAME_COLORS.sic_bo,
+  },
+  {
+    id: 'three_card_poker',
+    name: '3 Card Poker',
+    description: 'Ante & Pair Plus',
+    emoji: '🎴',
+    color: GAME_COLORS.three_card_poker,
+  },
+  {
+    id: 'ultimate_texas_holdem',
+    name: 'Ultimate Holdem',
+    description: 'Bet the streets',
+    emoji: '🤠',
+    color: GAME_COLORS.ultimate_texas_holdem,
+  },
+];
+
+export function LobbyScreen({ navigation }: LobbyScreenProps) {
+  const { balance } = useGameStore();
+
+  const handleGameSelect = useCallback((gameId: GameId) => {
+    haptics.selectionChange();
+    navigation.navigate('Game', { gameId });
+  }, [navigation]);
+
+  const renderGameCard: ListRenderItem<GameInfo> = useCallback(({ item: game, index }) => (
+    <Animated.View
+      entering={FadeInUp.delay(index * 50)}
+      style={styles.gameCardWrapper}
+    >
+      <Pressable
+        onPress={() => handleGameSelect(game.id)}
+        style={({ pressed }) => [
+          styles.gameCard,
+          pressed && styles.gameCardPressed,
+        ]}
+      >
+        <View style={[styles.gameIconContainer, { backgroundColor: game.color + '20' }]}>
+          <Text style={styles.gameEmoji}>{game.emoji}</Text>
+        </View>
+        <Text style={styles.gameName}>{game.name}</Text>
+        <Text style={styles.gameDescription}>{game.description}</Text>
+      </Pressable>
+    </Animated.View>
+  ), [handleGameSelect]);
+
+  const ListHeader = useCallback(() => (
+    <Text style={styles.sectionTitle}>Games</Text>
+  ), []);
+
+  const ListFooter = useCallback(() => (
+    <View style={styles.footer}>
+      <Text style={styles.footerText}>Provably Fair • On-Chain</Text>
+    </View>
+  ), []);
+
+  return (
+    <View style={styles.container}>
+      {/* Header */}
+      <Animated.View entering={FadeIn} style={styles.header}>
+        <View>
+          <Text style={styles.greeting}>Good evening</Text>
+          <Text style={styles.balance}>${balance.toLocaleString()}</Text>
+        </View>
+        <Pressable style={styles.profileButton}>
+          <Text style={styles.profileIcon}>👤</Text>
+        </Pressable>
+      </Animated.View>
+
+      {/* Games Grid */}
+      <FlatList
+        data={GAMES}
+        numColumns={2}
+        keyExtractor={(item) => item.id}
+        renderItem={renderGameCard}
+        columnWrapperStyle={styles.row}
+        contentContainerStyle={styles.gamesContainer}
+        showsVerticalScrollIndicator={false}
+        ListHeaderComponent={ListHeader}
+        ListFooterComponent={ListFooter}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    paddingTop: 60,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.lg,
+    marginBottom: SPACING.lg,
+  },
+  greeting: {
+    color: COLORS.textSecondary,
+    ...TYPOGRAPHY.body,
+  },
+  balance: {
+    color: COLORS.primary,
+    ...TYPOGRAPHY.displayLarge,
+  },
+  profileButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileIcon: {
+    fontSize: 20,
+  },
+  gamesContainer: {
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.xl,
+  },
+  sectionTitle: {
+    color: COLORS.textPrimary,
+    ...TYPOGRAPHY.h2,
+    marginBottom: SPACING.md,
+    marginLeft: SPACING.xs,
+  },
+  row: {
+    justifyContent: 'space-between',
+    marginBottom: SPACING.sm,
+  },
+  gameCardWrapper: {
+    width: '48%',
+  },
+  gameCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.xs,
+  },
+  gameCardPressed: {
+    opacity: 0.7,
+    transform: [{ scale: 0.98 }],
+  },
+  gameIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: RADIUS.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  gameEmoji: {
+    fontSize: 24,
+  },
+  gameName: {
+    color: COLORS.textPrimary,
+    ...TYPOGRAPHY.h3,
+    marginBottom: 2,
+  },
+  gameDescription: {
+    color: COLORS.textMuted,
+    ...TYPOGRAPHY.caption,
+  },
+  footer: {
+    marginTop: SPACING.xl,
+    alignItems: 'center',
+  },
+  footerText: {
+    color: COLORS.textMuted,
+    ...TYPOGRAPHY.caption,
+  },
+});

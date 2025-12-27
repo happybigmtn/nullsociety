@@ -1,0 +1,437 @@
+/**
+ * Blackjack Game Screen - Jony Ive Redesigned
+ * Hit/Stand always visible, Split/Double contextual
+ */
+import { View, Text, StyleSheet } from 'react-native';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import Animated, { SlideInRight } from 'react-native-reanimated';
+import { Card, HiddenCard } from '../../components/casino';
+import { ChipSelector } from '../../components/casino';
+import { GameLayout } from '../../components/game';
+import { TutorialOverlay, PrimaryButton } from '../../components/ui';
+import { useWebSocket, getWebSocketUrl } from '../../services/websocket';
+import { haptics } from '../../services/haptics';
+import { useGameKeyboard, KEY_ACTIONS } from '../../hooks/useKeyboardControls';
+import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
+import { useGameStore } from '../../stores/gameStore';
+import type { ChipValue, TutorialStep, Card as CardType } from '../../types';
+import type { BlackjackMessage } from '../../types/protocol';
+
+interface BlackjackState {
+  bet: number;
+  playerCards: CardType[];
+  dealerCards: CardType[];
+  dealerHidden: boolean;
+  playerTotal: number;
+  dealerTotal: number;
+  phase: 'betting' | 'player_turn' | 'dealer_turn' | 'result';
+  message: string;
+  canDouble: boolean;
+  canSplit: boolean;
+  lastResult: 'win' | 'loss' | 'push' | 'blackjack' | null;
+}
+
+const TUTORIAL_STEPS: TutorialStep[] = [
+  {
+    title: 'Beat the Dealer',
+    description: 'Get closer to 21 than the dealer without going over. Face cards are 10, Aces are 1 or 11.',
+  },
+  {
+    title: 'Your Turn',
+    description: 'Hit to take another card. Stand to keep your hand. Double to double your bet and take one card.',
+  },
+  {
+    title: 'Special Moves',
+    description: 'Split appears when you have a pair. Blackjack (Ace + 10) pays 3:2!',
+  },
+];
+
+export function BlackjackScreen() {
+  const { balance } = useGameStore();
+  const [state, setState] = useState<BlackjackState>({
+    bet: 0,
+    playerCards: [],
+    dealerCards: [],
+    dealerHidden: true,
+    playerTotal: 0,
+    dealerTotal: 0,
+    phase: 'betting',
+    message: 'Place your bet',
+    canDouble: false,
+    canSplit: false,
+    lastResult: null,
+  });
+  const [selectedChip, setSelectedChip] = useState<ChipValue>(25);
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  const {
+    connectionState,
+    reconnectAttempt,
+    maxReconnectAttempts,
+    send,
+    lastMessage,
+    reconnect,
+  } = useWebSocket<BlackjackMessage>(getWebSocketUrl());
+
+  useEffect(() => {
+    if (!lastMessage) return;
+
+    if (lastMessage.type === 'state_update') {
+      setState((prev) => ({
+        ...prev,
+        playerCards: lastMessage.playerCards ?? prev.playerCards,
+        dealerCards: lastMessage.dealerCards ?? prev.dealerCards,
+        playerTotal: lastMessage.playerTotal ?? prev.playerTotal,
+        dealerTotal: lastMessage.dealerTotal ?? prev.dealerTotal,
+        canDouble: lastMessage.canDouble ?? prev.canDouble,
+        canSplit: lastMessage.canSplit ?? prev.canSplit,
+      }));
+    }
+
+    if (lastMessage.type === 'card_dealt') {
+      haptics.cardDeal();
+    }
+
+    if (lastMessage.type === 'game_result') {
+      const won = lastMessage.won ?? false;
+      const push = lastMessage.push ?? false;
+      const blackjack = lastMessage.blackjack ?? false;
+
+      if (blackjack) {
+        haptics.jackpot();
+      } else if (won) {
+        haptics.win();
+      } else if (push) {
+        haptics.push();
+      } else {
+        haptics.loss();
+      }
+
+      setState((prev) => ({
+        ...prev,
+        phase: 'result',
+        dealerHidden: false,
+        dealerTotal: lastMessage.dealerTotal ?? prev.dealerTotal,
+        lastResult: blackjack ? 'blackjack' : won ? 'win' : push ? 'push' : 'loss',
+        message: lastMessage.message ?? (blackjack ? 'Blackjack!' : won ? 'You win!' : push ? 'Push' : 'Dealer wins'),
+      }));
+    }
+  }, [lastMessage]);
+
+  const handleChipPlace = useCallback((value: ChipValue) => {
+    if (state.phase !== 'betting') return;
+    if (state.bet + value > balance) {
+      haptics.error();
+      return;
+    }
+    haptics.chipPlace();
+    setState((prev) => ({
+      ...prev,
+      bet: prev.bet + value,
+    }));
+  }, [state.phase, balance, state.bet]);
+
+  const handleDeal = useCallback(async () => {
+    if (state.bet === 0) return;
+    await haptics.betConfirm();
+
+    send({
+      type: 'blackjack_deal',
+      amount: state.bet,
+    });
+
+    setState((prev) => ({
+      ...prev,
+      phase: 'player_turn',
+      message: 'Your turn',
+    }));
+  }, [state.bet, send]);
+
+  const handleHit = useCallback(async () => {
+    await haptics.buttonPress();
+    send({ type: 'blackjack_hit' });
+  }, [send]);
+
+  const handleStand = useCallback(async () => {
+    await haptics.buttonPress();
+    send({ type: 'blackjack_stand' });
+    setState((prev) => ({
+      ...prev,
+      phase: 'dealer_turn',
+      message: 'Dealer\'s turn',
+    }));
+  }, [send]);
+
+  const handleDouble = useCallback(async () => {
+    await haptics.betConfirm();
+    send({ type: 'blackjack_double' });
+    setState((prev) => ({
+      ...prev,
+      bet: prev.bet * 2,
+    }));
+  }, [send]);
+
+  const handleSplit = useCallback(async () => {
+    await haptics.betConfirm();
+    send({ type: 'blackjack_split' });
+  }, [send]);
+
+  const handleNewGame = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      bet: 0,
+      playerCards: [],
+      dealerCards: [],
+      dealerHidden: true,
+      playerTotal: 0,
+      dealerTotal: 0,
+      phase: 'betting',
+      message: 'Place your bet',
+      canDouble: false,
+      canSplit: false,
+      lastResult: null,
+    }));
+  }, []);
+
+  const handleClearBet = useCallback(() => {
+    if (state.phase !== 'betting') return;
+    setState((prev) => ({ ...prev, bet: 0 }));
+  }, [state.phase]);
+
+  const isDisconnected = connectionState !== 'connected';
+
+  // Keyboard controls
+  const keyboardHandlers = useMemo(() => ({
+    [KEY_ACTIONS.H]: () => state.phase === 'player_turn' && !isDisconnected && handleHit(),
+    [KEY_ACTIONS.S]: () => state.phase === 'player_turn' && !isDisconnected && handleStand(),
+    [KEY_ACTIONS.D]: () => state.phase === 'player_turn' && state.canDouble && !isDisconnected && handleDouble(),
+    [KEY_ACTIONS.P]: () => state.phase === 'player_turn' && state.canSplit && !isDisconnected && handleSplit(),
+    [KEY_ACTIONS.SPACE]: () => {
+      if (state.phase === 'betting' && state.bet > 0 && !isDisconnected) handleDeal();
+      else if (state.phase === 'result') handleNewGame();
+    },
+    [KEY_ACTIONS.ESCAPE]: () => handleClearBet(),
+    [KEY_ACTIONS.ONE]: () => state.phase === 'betting' && handleChipPlace(1 as ChipValue),
+    [KEY_ACTIONS.TWO]: () => state.phase === 'betting' && handleChipPlace(5 as ChipValue),
+    [KEY_ACTIONS.THREE]: () => state.phase === 'betting' && handleChipPlace(25 as ChipValue),
+    [KEY_ACTIONS.FOUR]: () => state.phase === 'betting' && handleChipPlace(100 as ChipValue),
+    [KEY_ACTIONS.FIVE]: () => state.phase === 'betting' && handleChipPlace(500 as ChipValue),
+  }), [state.phase, state.bet, state.canDouble, state.canSplit, isDisconnected, handleHit, handleStand, handleDouble, handleSplit, handleDeal, handleNewGame, handleClearBet, handleChipPlace]);
+
+  useGameKeyboard(keyboardHandlers);
+
+  return (
+    <>
+      <GameLayout
+        title="Blackjack"
+        balance={balance}
+        onHelpPress={() => setShowTutorial(true)}
+        connectionStatus={{
+          connectionState,
+          reconnectAttempt,
+          maxReconnectAttempts,
+          onRetry: reconnect,
+        }}
+      >
+        {/* Game Area */}
+        <View style={styles.gameArea}>
+          {/* Dealer's Hand */}
+          <View style={styles.handContainer}>
+            <Text style={styles.handLabel}>
+              Dealer {state.phase === 'result' && `(${state.dealerTotal})`}
+            </Text>
+            <View style={styles.cards}>
+              {state.dealerCards.map((card, i) => (
+                <Animated.View
+                  key={i}
+                  entering={SlideInRight.delay(i * 100)}
+                  style={[styles.cardWrapper, { marginLeft: i > 0 ? -40 : 0 }]}
+                >
+                  {i === 1 && state.dealerHidden ? (
+                    <HiddenCard />
+                  ) : (
+                    <Card suit={card.suit} rank={card.rank} faceUp={true} />
+                  )}
+                </Animated.View>
+              ))}
+            </View>
+          </View>
+
+          {/* Message */}
+          <Text
+            style={[
+              styles.message,
+              state.lastResult === 'win' && styles.messageWin,
+              state.lastResult === 'blackjack' && styles.messageBlackjack,
+              state.lastResult === 'loss' && styles.messageLoss,
+              state.lastResult === 'push' && styles.messagePush,
+            ]}
+          >
+            {state.message}
+          </Text>
+
+          {/* Player's Hand */}
+          <View style={styles.handContainer}>
+            <Text style={styles.handLabel}>
+              You ({state.playerTotal})
+            </Text>
+            <View style={styles.cards}>
+              {state.playerCards.map((card, i) => (
+                <Animated.View
+                  key={i}
+                  entering={SlideInRight.delay(i * 100)}
+                  style={[styles.cardWrapper, { marginLeft: i > 0 ? -40 : 0 }]}
+                >
+                  <Card suit={card.suit} rank={card.rank} faceUp={true} />
+                </Animated.View>
+              ))}
+            </View>
+          </View>
+
+          {/* Bet Display */}
+          {state.bet > 0 && (
+            <View style={styles.betContainer}>
+              <Text style={styles.betLabel}>Bet</Text>
+              <Text style={styles.betAmount}>${state.bet}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Actions */}
+        <View style={styles.actions}>
+          {state.phase === 'betting' && (
+            <PrimaryButton
+              label="DEAL"
+              onPress={handleDeal}
+              disabled={state.bet === 0 || isDisconnected}
+              variant="primary"
+              size="large"
+            />
+          )}
+
+          {state.phase === 'player_turn' && (
+            <>
+              <PrimaryButton
+                label="HIT"
+                onPress={handleHit}
+                disabled={isDisconnected}
+                variant="primary"
+              />
+              <PrimaryButton
+                label="STAND"
+                onPress={handleStand}
+                disabled={isDisconnected}
+                variant="secondary"
+              />
+              {state.canDouble && (
+                <PrimaryButton
+                  label="DOUBLE"
+                  onPress={handleDouble}
+                  disabled={isDisconnected}
+                  variant="secondary"
+                />
+              )}
+              {state.canSplit && (
+                <PrimaryButton
+                  label="SPLIT"
+                  onPress={handleSplit}
+                  disabled={isDisconnected}
+                  variant="secondary"
+                />
+              )}
+            </>
+          )}
+
+          {state.phase === 'result' && (
+            <PrimaryButton
+              label="NEW GAME"
+              onPress={handleNewGame}
+              variant="primary"
+              size="large"
+            />
+          )}
+        </View>
+
+        {/* Chip Selector */}
+        {state.phase === 'betting' && (
+          <ChipSelector
+            selectedValue={selectedChip}
+            onSelect={setSelectedChip}
+            onChipPlace={handleChipPlace}
+          />
+        )}
+      </GameLayout>
+
+      {/* Tutorial */}
+      <TutorialOverlay
+        gameId="blackjack"
+        steps={TUTORIAL_STEPS}
+        onComplete={() => setShowTutorial(false)}
+        forceShow={showTutorial}
+      />
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  gameArea: {
+    flex: 1,
+    justifyContent: 'space-around',
+    paddingHorizontal: SPACING.md,
+  },
+  handContainer: {
+    alignItems: 'center',
+  },
+  handLabel: {
+    color: COLORS.textSecondary,
+    ...TYPOGRAPHY.label,
+    marginBottom: SPACING.sm,
+  },
+  cards: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardWrapper: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  message: {
+    color: COLORS.textSecondary,
+    ...TYPOGRAPHY.h3,
+    textAlign: 'center',
+  },
+  messageWin: {
+    color: COLORS.success,
+  },
+  messageBlackjack: {
+    color: COLORS.gold,
+  },
+  messageLoss: {
+    color: COLORS.error,
+  },
+  messagePush: {
+    color: COLORS.warning,
+  },
+  betContainer: {
+    alignItems: 'center',
+  },
+  betLabel: {
+    color: COLORS.textMuted,
+    ...TYPOGRAPHY.caption,
+  },
+  betAmount: {
+    color: COLORS.gold,
+    ...TYPOGRAPHY.h2,
+  },
+  actions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+});
