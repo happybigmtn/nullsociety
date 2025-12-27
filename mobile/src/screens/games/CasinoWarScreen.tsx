@@ -9,16 +9,13 @@ import { Card } from '../../components/casino';
 import { ChipSelector } from '../../components/casino';
 import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
-import { useWebSocket, getWebSocketUrl } from '../../services/websocket';
 import { haptics } from '../../services/haptics';
-import { useGameKeyboard, KEY_ACTIONS } from '../../hooks/useKeyboardControls';
+import { useGameKeyboard, KEY_ACTIONS, useGameConnection, useChipBetting } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
-import { useGameStore } from '../../stores/gameStore';
 import type { ChipValue, TutorialStep, Card as CardType } from '../../types';
 import type { CasinoWarMessage } from '../../types/protocol';
 
 interface CasinoWarState {
-  bet: number;
   playerCard: CardType | null;
   dealerCard: CardType | null;
   phase: 'betting' | 'dealt' | 'war_choice' | 'war' | 'result';
@@ -43,9 +40,11 @@ const TUTORIAL_STEPS: TutorialStep[] = [
 ];
 
 export function CasinoWarScreen() {
-  const { balance, updateBalance } = useGameStore();
+  // Shared hooks for connection and betting
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<CasinoWarMessage>();
+  const { bet, selectedChip, setSelectedChip, placeChip, clearBet, balance } = useChipBetting();
+
   const [state, setState] = useState<CasinoWarState>({
-    bet: 0,
     playerCard: null,
     dealerCard: null,
     phase: 'betting',
@@ -53,20 +52,13 @@ export function CasinoWarScreen() {
     lastResult: null,
     warBet: 0,
   });
-  const [selectedChip, setSelectedChip] = useState<ChipValue>(25);
   const [showTutorial, setShowTutorial] = useState(false);
 
-  const {
-    isConnected,
-    connectionState,
-    reconnectAttempt,
-    maxReconnectAttempts,
-    send,
-    lastMessage,
-    reconnect,
-  } = useWebSocket<CasinoWarMessage>(getWebSocketUrl());
-
-  const isDisconnected = connectionState !== 'connected';
+  // Wrap chip placement to check game phase
+  const handleChipPlace = useCallback((value: ChipValue) => {
+    if (state.phase !== 'betting') return;
+    placeChip(value);
+  }, [state.phase, placeChip]);
 
   useEffect(() => {
     if (!lastMessage) return;
@@ -110,33 +102,20 @@ export function CasinoWarScreen() {
     }
   }, [lastMessage]);
 
-  const handleChipPlace = useCallback((value: ChipValue) => {
-    if (state.phase !== 'betting') return;
-    if (state.bet + value > balance) {
-      haptics.error();
-      return;
-    }
-    haptics.chipPlace();
-    setState((prev) => ({
-      ...prev,
-      bet: prev.bet + value,
-    }));
-  }, [state.phase, balance, state.bet]);
-
   const handleDeal = useCallback(async () => {
-    if (state.bet === 0) return;
+    if (bet === 0) return;
     await haptics.betConfirm();
 
     send({
       type: 'casino_war_deal',
-      amount: state.bet,
+      amount: bet,
     });
 
     setState((prev) => ({
       ...prev,
       message: 'Dealing...',
     }));
-  }, [state.bet, send]);
+  }, [bet, send]);
 
   const handleWar = useCallback(async () => {
     await haptics.betConfirm();
@@ -148,10 +127,10 @@ export function CasinoWarScreen() {
     setState((prev) => ({
       ...prev,
       phase: 'war',
-      warBet: prev.bet,
+      warBet: bet,
       message: 'Going to War!',
     }));
-  }, [send]);
+  }, [send, bet]);
 
   const handleSurrender = useCallback(async () => {
     await haptics.buttonPress();
@@ -169,8 +148,8 @@ export function CasinoWarScreen() {
   }, [send]);
 
   const handleNewGame = useCallback(() => {
+    clearBet();
     setState({
-      bet: 0,
       playerCard: null,
       dealerCard: null,
       phase: 'betting',
@@ -178,24 +157,17 @@ export function CasinoWarScreen() {
       lastResult: null,
       warBet: 0,
     });
-  }, []);
-
-  const handleClearBet = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      bet: 0,
-    }));
-  }, []);
+  }, [clearBet]);
 
   // Keyboard controls
   const keyboardHandlers = useMemo(() => ({
     [KEY_ACTIONS.SPACE]: () => {
-      if (state.phase === 'betting' && state.bet > 0 && !isDisconnected) handleDeal();
+      if (state.phase === 'betting' && bet > 0 && !isDisconnected) handleDeal();
       else if (state.phase === 'result') handleNewGame();
       else if (state.phase === 'war_choice' && !isDisconnected) handleWar();
     },
     [KEY_ACTIONS.ESCAPE]: () => {
-      if (state.phase === 'betting') handleClearBet();
+      if (state.phase === 'betting') clearBet();
       else if (state.phase === 'war_choice' && !isDisconnected) handleSurrender();
     },
     [KEY_ACTIONS.ONE]: () => state.phase === 'betting' && handleChipPlace(1 as ChipValue),
@@ -203,7 +175,7 @@ export function CasinoWarScreen() {
     [KEY_ACTIONS.THREE]: () => state.phase === 'betting' && handleChipPlace(25 as ChipValue),
     [KEY_ACTIONS.FOUR]: () => state.phase === 'betting' && handleChipPlace(100 as ChipValue),
     [KEY_ACTIONS.FIVE]: () => state.phase === 'betting' && handleChipPlace(500 as ChipValue),
-  }), [state.phase, state.bet, isDisconnected, handleDeal, handleNewGame, handleWar, handleSurrender, handleClearBet, handleChipPlace]);
+  }), [state.phase, bet, isDisconnected, handleDeal, handleNewGame, handleWar, handleSurrender, clearBet, handleChipPlace]);
 
   useGameKeyboard(keyboardHandlers);
 
@@ -213,12 +185,7 @@ export function CasinoWarScreen() {
         title="Casino War"
         balance={balance}
         onHelpPress={() => setShowTutorial(true)}
-        connectionStatus={{
-          connectionState,
-          reconnectAttempt,
-          maxReconnectAttempts,
-          onRetry: reconnect,
-        }}
+        connectionStatus={connectionStatusProps}
       >
         {/* Game Area */}
         <View style={styles.gameArea}>
@@ -277,13 +244,13 @@ export function CasinoWarScreen() {
         </Text>
 
         {/* Bet Display */}
-        {state.bet > 0 && (
+        {bet > 0 && (
           <View style={styles.betContainer}>
             <Text style={styles.betLabel}>
               {state.warBet > 0 ? 'Total Bet (War)' : 'Bet'}
             </Text>
             <Text style={styles.betAmount}>
-              ${state.bet + state.warBet}
+              ${bet + state.warBet}
             </Text>
           </View>
         )}
@@ -295,7 +262,7 @@ export function CasinoWarScreen() {
           <PrimaryButton
             label="DEAL"
             onPress={handleDeal}
-            disabled={state.bet === 0 || isDisconnected}
+            disabled={bet === 0 || isDisconnected}
             variant="primary"
             size="large"
           />
@@ -332,10 +299,10 @@ export function CasinoWarScreen() {
       {/* Chip Selector */}
       {state.phase === 'betting' && (
         <View style={styles.chipArea}>
-          {state.bet > 0 && (
+          {bet > 0 && (
             <PrimaryButton
               label="CLEAR"
-              onPress={handleClearBet}
+              onPress={clearBet}
               variant="secondary"
             />
           )}

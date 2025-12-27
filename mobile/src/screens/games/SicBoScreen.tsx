@@ -15,9 +15,8 @@ import Animated, {
 import { ChipSelector } from '../../components/casino';
 import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
-import { useWebSocket, getWebSocketUrl } from '../../services/websocket';
 import { haptics } from '../../services/haptics';
-import { useGameKeyboard, KEY_ACTIONS } from '../../hooks/useKeyboardControls';
+import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS } from '../../constants/theme';
 import { useGameStore } from '../../stores/gameStore';
 import { getDieFace } from '../../utils/dice';
@@ -55,7 +54,10 @@ const TUTORIAL_STEPS: TutorialStep[] = [
 ];
 
 export function SicBoScreen() {
-  const { balance, updateBalance } = useGameStore();
+  // Shared hook for connection (SicBo has multi-bet so keeps custom bet state)
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<SicBoMessage>();
+  const { balance } = useGameStore();
+
   const [state, setState] = useState<SicBoState>({
     bets: [],
     dice: null,
@@ -71,18 +73,6 @@ export function SicBoScreen() {
   const dice1Bounce = useSharedValue(0);
   const dice2Bounce = useSharedValue(0);
   const dice3Bounce = useSharedValue(0);
-
-  const {
-    isConnected,
-    connectionState,
-    reconnectAttempt,
-    maxReconnectAttempts,
-    send,
-    lastMessage,
-    reconnect,
-  } = useWebSocket<SicBoMessage>(getWebSocketUrl());
-
-  const isDisconnected = connectionState !== 'connected';
 
   useEffect(() => {
     if (!lastMessage) return;
@@ -243,12 +233,7 @@ export function SicBoScreen() {
         title="Sic Bo"
         balance={balance}
         onHelpPress={() => setShowTutorial(true)}
-        connectionStatus={{
-          connectionState,
-          reconnectAttempt,
-          maxReconnectAttempts,
-          onRetry: reconnect,
-        }}
+        connectionStatus={connectionStatusProps}
         headerRightContent={
           <Pressable
             onPress={() => setShowAdvanced(true)}

@@ -15,9 +15,8 @@ import Animated, {
 import { ChipSelector } from '../../components/casino';
 import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
-import { useWebSocket, getWebSocketUrl } from '../../services/websocket';
 import { haptics } from '../../services/haptics';
-import { useGameKeyboard, KEY_ACTIONS } from '../../hooks/useKeyboardControls';
+import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, GAME_COLORS, GAME_DETAIL_COLORS } from '../../constants/theme';
 import { useGameStore } from '../../stores/gameStore';
 import { getDieFace } from '../../utils/dice';
@@ -57,7 +56,10 @@ const TUTORIAL_STEPS: TutorialStep[] = [
 const ESSENTIAL_BETS: CrapsBetType[] = ['PASS', 'DONT_PASS'];
 
 export function CrapsScreen() {
-  const { balance, updateBalance } = useGameStore();
+  // Shared hook for connection (Craps has multi-bet array so keeps custom bet state)
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<CrapsMessage>();
+  const { balance } = useGameStore();
+
   const [state, setState] = useState<CrapsState>({
     bets: [],
     dice: null,
@@ -73,15 +75,6 @@ export function CrapsScreen() {
 
   const die1Rotation = useSharedValue(0);
   const die2Rotation = useSharedValue(0);
-  const {
-    isConnected,
-    connectionState,
-    reconnectAttempt,
-    maxReconnectAttempts,
-    send,
-    lastMessage,
-    reconnect,
-  } = useWebSocket<CrapsMessage>(getWebSocketUrl());
 
   useEffect(() => {
     if (!lastMessage) return;
@@ -201,7 +194,6 @@ export function CrapsScreen() {
   }, [addBet]);
 
   const totalBet = state.bets.reduce((sum, b) => sum + b.amount, 0);
-  const isDisconnected = connectionState !== 'connected';
 
   const handleClearBets = useCallback(() => {
     if (state.phase === 'rolling') return;
@@ -230,12 +222,7 @@ export function CrapsScreen() {
         title="Craps"
         balance={balance}
         onHelpPress={() => setShowTutorial(true)}
-        connectionStatus={{
-          connectionState,
-          reconnectAttempt,
-          maxReconnectAttempts,
-          onRetry: reconnect,
-        }}
+        connectionStatus={connectionStatusProps}
         headerRightContent={
           <Pressable
             onPress={() => setShowAdvanced(true)}

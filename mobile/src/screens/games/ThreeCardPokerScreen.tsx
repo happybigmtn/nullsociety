@@ -9,9 +9,8 @@ import { Card } from '../../components/casino';
 import { ChipSelector } from '../../components/casino';
 import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
-import { useWebSocket, getWebSocketUrl } from '../../services/websocket';
 import { haptics } from '../../services/haptics';
-import { useGameKeyboard, KEY_ACTIONS } from '../../hooks/useKeyboardControls';
+import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS } from '../../constants/theme';
 import { useGameStore } from '../../stores/gameStore';
 import type { ChipValue, TutorialStep, ThreeCardPokerHand, Card as CardType } from '../../types';
@@ -67,7 +66,10 @@ const PAIR_PLUS_PAYOUTS: Record<ThreeCardPokerHand, number> = {
 };
 
 export function ThreeCardPokerScreen() {
-  const { balance, updateBalance } = useGameStore();
+  // Shared hook for connection (ThreeCardPoker has multi-bet so keeps custom bet state)
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<ThreeCardPokerMessage>();
+  const { balance } = useGameStore();
+
   const [state, setState] = useState<ThreeCardPokerState>({
     anteBet: 0,
     pairPlusBet: 0,
@@ -86,18 +88,6 @@ export function ThreeCardPokerScreen() {
   const [selectedChip, setSelectedChip] = useState<ChipValue>(25);
   const [showTutorial, setShowTutorial] = useState(false);
   const [activeBetType, setActiveBetType] = useState<'ante' | 'pairplus'>('ante');
-
-  const {
-    isConnected,
-    connectionState,
-    reconnectAttempt,
-    maxReconnectAttempts,
-    send,
-    lastMessage,
-    reconnect,
-  } = useWebSocket<ThreeCardPokerMessage>(getWebSocketUrl());
-
-  const isDisconnected = connectionState !== 'connected';
 
   useEffect(() => {
     if (!lastMessage) return;
@@ -257,12 +247,7 @@ export function ThreeCardPokerScreen() {
         title="Three Card Poker"
         balance={balance}
         onHelpPress={() => setShowTutorial(true)}
-        connectionStatus={{
-          connectionState,
-          reconnectAttempt,
-          maxReconnectAttempts,
-          onRetry: reconnect,
-        }}
+        connectionStatus={connectionStatusProps}
       >
         {/* Game Area */}
       <View style={styles.gameArea}>

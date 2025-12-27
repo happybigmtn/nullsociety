@@ -9,16 +9,13 @@ import { Card, HiddenCard } from '../../components/casino';
 import { ChipSelector } from '../../components/casino';
 import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
-import { useWebSocket, getWebSocketUrl } from '../../services/websocket';
 import { haptics } from '../../services/haptics';
-import { useGameKeyboard, KEY_ACTIONS } from '../../hooks/useKeyboardControls';
+import { useGameKeyboard, KEY_ACTIONS, useGameConnection, useChipBetting } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
-import { useGameStore } from '../../stores/gameStore';
 import type { ChipValue, TutorialStep, Card as CardType } from '../../types';
 import type { BlackjackMessage } from '../../types/protocol';
 
 interface BlackjackState {
-  bet: number;
   playerCards: CardType[];
   dealerCards: CardType[];
   dealerHidden: boolean;
@@ -47,9 +44,11 @@ const TUTORIAL_STEPS: TutorialStep[] = [
 ];
 
 export function BlackjackScreen() {
-  const { balance } = useGameStore();
+  // Shared hooks for connection and betting
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<BlackjackMessage>();
+  const { bet, selectedChip, setSelectedChip, placeChip, clearBet, setBet, balance } = useChipBetting();
+
   const [state, setState] = useState<BlackjackState>({
-    bet: 0,
     playerCards: [],
     dealerCards: [],
     dealerHidden: true,
@@ -61,17 +60,13 @@ export function BlackjackScreen() {
     canSplit: false,
     lastResult: null,
   });
-  const [selectedChip, setSelectedChip] = useState<ChipValue>(25);
   const [showTutorial, setShowTutorial] = useState(false);
 
-  const {
-    connectionState,
-    reconnectAttempt,
-    maxReconnectAttempts,
-    send,
-    lastMessage,
-    reconnect,
-  } = useWebSocket<BlackjackMessage>(getWebSocketUrl());
+  // Wrap chip placement to check game phase
+  const handleChipPlace = useCallback((value: ChipValue) => {
+    if (state.phase !== 'betting') return;
+    placeChip(value);
+  }, [state.phase, placeChip]);
 
   useEffect(() => {
     if (!lastMessage) return;
@@ -118,26 +113,13 @@ export function BlackjackScreen() {
     }
   }, [lastMessage]);
 
-  const handleChipPlace = useCallback((value: ChipValue) => {
-    if (state.phase !== 'betting') return;
-    if (state.bet + value > balance) {
-      haptics.error();
-      return;
-    }
-    haptics.chipPlace();
-    setState((prev) => ({
-      ...prev,
-      bet: prev.bet + value,
-    }));
-  }, [state.phase, balance, state.bet]);
-
   const handleDeal = useCallback(async () => {
-    if (state.bet === 0) return;
+    if (bet === 0) return;
     await haptics.betConfirm();
 
     send({
       type: 'blackjack_deal',
-      amount: state.bet,
+      amount: bet,
     });
 
     setState((prev) => ({
@@ -145,7 +127,7 @@ export function BlackjackScreen() {
       phase: 'player_turn',
       message: 'Your turn',
     }));
-  }, [state.bet, send]);
+  }, [bet, send]);
 
   const handleHit = useCallback(async () => {
     await haptics.buttonPress();
@@ -165,11 +147,8 @@ export function BlackjackScreen() {
   const handleDouble = useCallback(async () => {
     await haptics.betConfirm();
     send({ type: 'blackjack_double' });
-    setState((prev) => ({
-      ...prev,
-      bet: prev.bet * 2,
-    }));
-  }, [send]);
+    setBet(bet * 2);
+  }, [send, bet, setBet]);
 
   const handleSplit = useCallback(async () => {
     await haptics.betConfirm();
@@ -177,9 +156,8 @@ export function BlackjackScreen() {
   }, [send]);
 
   const handleNewGame = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      bet: 0,
+    clearBet();
+    setState({
       playerCards: [],
       dealerCards: [],
       dealerHidden: true,
@@ -190,15 +168,8 @@ export function BlackjackScreen() {
       canDouble: false,
       canSplit: false,
       lastResult: null,
-    }));
-  }, []);
-
-  const handleClearBet = useCallback(() => {
-    if (state.phase !== 'betting') return;
-    setState((prev) => ({ ...prev, bet: 0 }));
-  }, [state.phase]);
-
-  const isDisconnected = connectionState !== 'connected';
+    });
+  }, [clearBet]);
 
   // Keyboard controls
   const keyboardHandlers = useMemo(() => ({
@@ -207,16 +178,16 @@ export function BlackjackScreen() {
     [KEY_ACTIONS.D]: () => state.phase === 'player_turn' && state.canDouble && !isDisconnected && handleDouble(),
     [KEY_ACTIONS.P]: () => state.phase === 'player_turn' && state.canSplit && !isDisconnected && handleSplit(),
     [KEY_ACTIONS.SPACE]: () => {
-      if (state.phase === 'betting' && state.bet > 0 && !isDisconnected) handleDeal();
+      if (state.phase === 'betting' && bet > 0 && !isDisconnected) handleDeal();
       else if (state.phase === 'result') handleNewGame();
     },
-    [KEY_ACTIONS.ESCAPE]: () => handleClearBet(),
+    [KEY_ACTIONS.ESCAPE]: () => clearBet(),
     [KEY_ACTIONS.ONE]: () => state.phase === 'betting' && handleChipPlace(1 as ChipValue),
     [KEY_ACTIONS.TWO]: () => state.phase === 'betting' && handleChipPlace(5 as ChipValue),
     [KEY_ACTIONS.THREE]: () => state.phase === 'betting' && handleChipPlace(25 as ChipValue),
     [KEY_ACTIONS.FOUR]: () => state.phase === 'betting' && handleChipPlace(100 as ChipValue),
     [KEY_ACTIONS.FIVE]: () => state.phase === 'betting' && handleChipPlace(500 as ChipValue),
-  }), [state.phase, state.bet, state.canDouble, state.canSplit, isDisconnected, handleHit, handleStand, handleDouble, handleSplit, handleDeal, handleNewGame, handleClearBet, handleChipPlace]);
+  }), [state.phase, bet, state.canDouble, state.canSplit, isDisconnected, handleHit, handleStand, handleDouble, handleSplit, handleDeal, handleNewGame, clearBet, handleChipPlace]);
 
   useGameKeyboard(keyboardHandlers);
 
@@ -226,12 +197,7 @@ export function BlackjackScreen() {
         title="Blackjack"
         balance={balance}
         onHelpPress={() => setShowTutorial(true)}
-        connectionStatus={{
-          connectionState,
-          reconnectAttempt,
-          maxReconnectAttempts,
-          onRetry: reconnect,
-        }}
+        connectionStatus={connectionStatusProps}
       >
         {/* Game Area */}
         <View style={styles.gameArea}>
@@ -289,10 +255,10 @@ export function BlackjackScreen() {
           </View>
 
           {/* Bet Display */}
-          {state.bet > 0 && (
+          {bet > 0 && (
             <View style={styles.betContainer}>
               <Text style={styles.betLabel}>Bet</Text>
-              <Text style={styles.betAmount}>${state.bet}</Text>
+              <Text style={styles.betAmount}>${bet}</Text>
             </View>
           )}
         </View>
@@ -303,7 +269,7 @@ export function BlackjackScreen() {
             <PrimaryButton
               label="DEAL"
               onPress={handleDeal}
-              disabled={state.bet === 0 || isDisconnected}
+              disabled={bet === 0 || isDisconnected}
               variant="primary"
               size="large"
             />

@@ -9,9 +9,8 @@ import { Card } from '../../components/casino';
 import { ChipSelector } from '../../components/casino';
 import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
-import { useWebSocket, getWebSocketUrl } from '../../services/websocket';
 import { haptics } from '../../services/haptics';
-import { useGameKeyboard, KEY_ACTIONS } from '../../hooks/useKeyboardControls';
+import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS } from '../../constants/theme';
 import { useGameStore } from '../../stores/gameStore';
 import type { ChipValue, TutorialStep, PokerHand, Card as CardType } from '../../types';
@@ -70,7 +69,10 @@ const HAND_NAMES: Record<PokerHand, string> = {
 };
 
 export function UltimateTXHoldemScreen() {
-  const { balance, updateBalance } = useGameStore();
+  // Shared hook for connection (UTH has multi-bet so keeps custom bet state)
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<UltimateTXMessage>();
+  const { balance } = useGameStore();
+
   const [state, setState] = useState<UltimateTXState>({
     anteBet: 0,
     blindBet: 0,
@@ -94,18 +96,6 @@ export function UltimateTXHoldemScreen() {
   });
   const [selectedChip, setSelectedChip] = useState<ChipValue>(25);
   const [showTutorial, setShowTutorial] = useState(false);
-
-  const {
-    isConnected,
-    connectionState,
-    reconnectAttempt,
-    maxReconnectAttempts,
-    send,
-    lastMessage,
-    reconnect,
-  } = useWebSocket<UltimateTXMessage>(getWebSocketUrl());
-
-  const isDisconnected = connectionState !== 'connected';
 
   useEffect(() => {
     if (!lastMessage) return;
@@ -337,12 +327,7 @@ export function UltimateTXHoldemScreen() {
         title="Ultimate Texas Hold'em"
         balance={balance}
         onHelpPress={() => setShowTutorial(true)}
-        connectionStatus={{
-          connectionState,
-          reconnectAttempt,
-          maxReconnectAttempts,
-          onRetry: reconnect,
-        }}
+        connectionStatus={connectionStatusProps}
       >
         {/* Game Area */}
       <ScrollView style={styles.gameArea} contentContainerStyle={styles.gameContent}>

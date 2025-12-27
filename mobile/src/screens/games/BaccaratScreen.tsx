@@ -9,9 +9,8 @@ import { Card } from '../../components/casino';
 import { ChipSelector } from '../../components/casino';
 import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
-import { useWebSocket, getWebSocketUrl } from '../../services/websocket';
 import { haptics } from '../../services/haptics';
-import { useGameKeyboard, KEY_ACTIONS } from '../../hooks/useKeyboardControls';
+import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS } from '../../constants/theme';
 import { useGameStore } from '../../stores/gameStore';
 import type { ChipValue, TutorialStep, BaccaratBetType, Card as CardType } from '../../types';
@@ -44,7 +43,10 @@ const TUTORIAL_STEPS: TutorialStep[] = [
 ];
 
 export function BaccaratScreen() {
+  // Shared hook for connection (Baccarat has multi-bet so keeps custom bet state)
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<BaccaratMessage>();
   const { balance } = useGameStore();
+
   const [state, setState] = useState<BaccaratState>({
     bets: { PLAYER: 0, BANKER: 0, TIE: 0 },
     playerCards: [],
@@ -57,17 +59,6 @@ export function BaccaratScreen() {
   });
   const [selectedChip, setSelectedChip] = useState<ChipValue>(25);
   const [showTutorial, setShowTutorial] = useState(false);
-
-  const {
-    connectionState,
-    reconnectAttempt,
-    maxReconnectAttempts,
-    send,
-    lastMessage,
-    reconnect,
-  } = useWebSocket<BaccaratMessage>(getWebSocketUrl());
-
-  const isDisconnected = connectionState !== 'connected';
 
   useEffect(() => {
     if (!lastMessage) return;
@@ -192,12 +183,7 @@ export function BaccaratScreen() {
         title="Baccarat"
         balance={balance}
         onHelpPress={() => setShowTutorial(true)}
-        connectionStatus={{
-          connectionState,
-          reconnectAttempt,
-          maxReconnectAttempts,
-          onRetry: reconnect,
-        }}
+        connectionStatus={connectionStatusProps}
       >
         {/* Game Area */}
         <View style={styles.gameArea}>
