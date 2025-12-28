@@ -1,27 +1,17 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import App from './App'
-import './index.css'
-import { getVaultRecord, getVaultStatusSync } from './security/keyVault'
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
+import App from './App';
+import './index.css';
 
-// Best-effort: if a vault exists, set the localStorage marker so the app
-// can require passkey unlock before generating legacy keys.
-try {
-  const { supported } = getVaultStatusSync()
-  if (supported) {
-    getVaultRecord()
-      .then((record) => {
-        if (record) {
-          localStorage.setItem('nullspace_vault_enabled', 'true')
-          localStorage.setItem('casino_public_key_hex', record.nullspacePublicKeyHex)
-        }
-      })
-      .catch(() => {
-        // ignore
-      })
-  }
-} catch {
-  // ignore
+// Font loading detection
+if ('fonts' in document) {
+  document.fonts.ready.then(() => {
+    document.body.classList.add('fonts-loaded');
+  });
+} else {
+  // Fallback for older browsers
+  document.body.classList.add('fonts-loaded');
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(

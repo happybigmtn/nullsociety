@@ -7,5 +7,7 @@ Use isolated keys and endpoints for production.
 - Auth service env: `services/auth/.env.production.example`.
 - Website build env: `website/.env.production.example`.
 
-Create the node YAML by copying a local config (for example,
-`configs/local/node0.yaml`) and replacing keys, ports, and URLs for production.
+Generate local configs with:
+`cargo run --bin generate-keys -- --nodes 4 --output configs/local`
+Then create the production node YAML by copying one of the generated configs
+and replacing keys, ports, and URLs for production.

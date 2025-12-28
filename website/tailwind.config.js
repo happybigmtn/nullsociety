@@ -9,7 +9,7 @@ module.exports = {
       fontFamily: {
         mono: ['"Space Mono"', 'monospace'],
         sans: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
-        display: ['"Space Grotesk"', 'sans-serif'],
+        display: ['"Outfit"', 'sans-serif'],
       },
       colors: {
         titanium: {

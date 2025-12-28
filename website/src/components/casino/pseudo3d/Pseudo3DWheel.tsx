@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useSpring, animated, config } from '@react-spring/web';
+import { useSpring, animated, config, to } from '@react-spring/web';
 
 interface Pseudo3DWheelProps {
     lastNumber: number | null;
@@ -14,9 +14,9 @@ const ROULETTE_NUMBERS = [
 ];
 
 const getNumberColor = (num: number) => {
-    if (num === 0) return '#34C759'; // Action Success (Green)
+    if (num === 0) return '#34C759';
     const redNums = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
-    return redNums.includes(num) ? '#FF3B30' : '#1C1C1E'; // Action Destructive / Titanium 900
+    return redNums.includes(num) ? '#FF3B30' : '#1C1C1E';
 };
 
 export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
@@ -49,25 +49,21 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
         }
     });
     
-    // Improved Ball Animation (Spiral + Bounce)
-    const { ballRotate, ballRadius, ballBounce } = useSpring({
+    // Fixed Ball Animation (using ballRadius in transform)
+    const { ballRotate, ballRadius } = useSpring({
         ballRotate: isSpinning ? 1440 + Math.random() * 720 : 0,
-        ballRadius: isSpinning ? 130 : 115, // Spiral inward
-        ballBounce: isSpinning ? 0 : 2, // Slight bounce on settle
+        ballRadius: isSpinning ? 135 : 118,
         config: isSpinning 
             ? { duration: 3500, easing: t => t * t * (3 - 2 * t) } 
-            : { mass: 3, tension: 120, friction: 14 } // Overshoot config for settling
+            : { mass: 3, tension: 120, friction: 14 }
     });
 
     return (
         <div className={`relative ${className}`} style={{ width: 320, height: 320, ...style }}>
-            {/* Shadow beneath wheel */}
             <div className="absolute inset-4 rounded-full bg-black/20 blur-2xl" />
 
-            {/* Outer Static Ring (Titanium) */}
             <div className="absolute inset-0 rounded-full border-[12px] border-titanium-200 shadow-float flex items-center justify-center bg-titanium-100 overflow-hidden">
                 
-                {/* Spinning Wheel */}
                 <animated.div 
                     className="w-full h-full rounded-full relative shadow-inner"
                     style={{ transform: rotate.to(r => `rotate(${r}deg)`) }}
@@ -103,11 +99,11 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
                                         x={tx} 
                                         y={ty} 
                                         fill="white" 
-                                        fontSize="10" 
+                                        fontSize="9" 
                                         fontWeight="800"
                                         textAnchor="middle" 
                                         dominantBaseline="middle"
-                                        style={{ fontFamily: 'Space Grotesk' }}
+                                        style={{ fontFamily: 'Outfit' }}
                                         transform={`rotate(${rotation + 90}, ${tx}, ${ty})`}
                                     >
                                         {num}
@@ -115,7 +111,6 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
                                 </g>
                             );
                         })}
-                        {/* Center Hub (Titanium Gradient) */}
                         <defs>
                             <radialGradient id="hubGradient" cx="50%" cy="50%" r="50%">
                                 <stop offset="0%" stopColor="#f9f9f9" />
@@ -127,21 +122,23 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
                     </svg>
                 </animated.div>
 
-                {/* Ball */}
+                {/* Ball - Corrected transform interpolation */}
                 <animated.div 
                     className="absolute w-3.5 h-3.5 bg-white rounded-full shadow-lg z-10"
                     style={{
-                        transform: ballRotate.to(r => 
-                            `rotate(${-r}deg) translateY(-${115}px) scale(${isSpinning ? 1 : 1.1})`
+                        transform: to([ballRotate, ballRadius], (r, rad) => 
+                            `rotate(${-r}deg) translateY(-${rad}px) scale(${isSpinning ? 1 : 1.15})`
                         ),
                         opacity: isSpinning || lastNumber !== null ? 1 : 0
                     }}
                 />
                 
-                {/* Pointer / Flapper */}
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1 h-6 bg-action-primary z-20 rounded-full" />
+                {/* Substantial Pointer (Triangular style) */}
+                <div 
+                    className="absolute top-0 left-1/2 -translate-x-1/2 w-4 h-8 bg-action-primary z-20 shadow-lg" 
+                    style={{ clipPath: 'polygon(0% 0%, 100% 0%, 50% 100%)' }} 
+                />
                 
-                {/* Gloss Overlay */}
                 <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-white/20 via-transparent to-black/5 pointer-events-none" />
             </div>
         </div>

@@ -42,7 +42,8 @@ export const Pseudo3DCard: React.FC<Pseudo3DCardProps> = ({
     opacity: 1,
     transform: `perspective(1200px) rotateY(${isFlipped ? 180 : 0}deg) translateY(0px)`,
     from: { opacity: 0, transform: `perspective(1200px) rotateY(180deg) translateY(-100px)` },
-    config: { mass: 1, tension: 210, friction: 20 },
+    // Overshoot config for "snap" feel
+    config: { mass: 1.2, tension: 280, friction: 22 },
     delay: index * 80,
   });
 
@@ -61,7 +62,7 @@ export const Pseudo3DCard: React.FC<Pseudo3DCardProps> = ({
           style={{ transform: 'rotateY(0deg)' }}
         >
           <div className="flex flex-col items-center leading-none">
-            <span className="font-extrabold text-xl tracking-tighter" style={{ color, fontFamily: 'Space Grotesk' }}>{rank}</span>
+            <span className="font-extrabold text-xl tracking-tighter" style={{ color, fontFamily: 'Outfit' }}>{rank}</span>
             <span className="text-sm mt-0.5" style={{ color }}>{icon}</span>
           </div>
 
@@ -70,12 +71,12 @@ export const Pseudo3DCard: React.FC<Pseudo3DCardProps> = ({
           </div>
 
           <div className="flex flex-col items-center leading-none rotate-180">
-            <span className="font-extrabold text-xl tracking-tighter" style={{ color, fontFamily: 'Space Grotesk' }}>{rank}</span>
+            <span className="font-extrabold text-xl tracking-tighter" style={{ color, fontFamily: 'Outfit' }}>{rank}</span>
             <span className="text-sm mt-0.5" style={{ color }}>{icon}</span>
           </div>
         </div>
 
-        {/* Back Face - Sophisticated Geometric Pattern */}
+        {/* Back Face */}
         <div
           className="absolute inset-0 w-full h-full bg-titanium-900 rounded-xl backface-hidden border-2 border-white/10 overflow-hidden shadow-inner"
           style={{ transform: 'rotateY(180deg)' }}

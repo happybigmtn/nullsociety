@@ -7,5 +7,7 @@ Use isolated keys and endpoints for staging.
 - Auth service env: `services/auth/.env.staging.example`.
 - Website build env: `website/.env.staging.example`.
 
-Create the node YAML by copying a local config (for example,
-`configs/local/node0.yaml`) and replacing keys, ports, and URLs for staging.
+Generate local configs with:
+`cargo run --bin generate-keys -- --nodes 4 --output configs/local`
+Then create the staging node YAML by copying one of the generated configs
+and replacing keys, ports, and URLs for staging.
