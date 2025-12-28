@@ -9,6 +9,8 @@ import { ConnectionStatusBanner } from '../ui/ConnectionStatusBanner';
 import { COLORS } from '../../constants/theme';
 import type { ConnectionState } from '../../services/websocket';
 
+const SCANLINE_ROWS = Array.from({ length: 80 }, (_, index) => index);
+
 interface ConnectionStatus {
   connectionState: ConnectionState;
   reconnectAttempt: number;
@@ -35,6 +37,11 @@ export function GameLayout({
 }: GameLayoutProps) {
   return (
     <SafeAreaView style={styles.container}>
+      <View pointerEvents="none" style={styles.scanlineOverlay}>
+        {SCANLINE_ROWS.map((row) => (
+          <View key={row} style={styles.scanline} />
+        ))}
+      </View>
       {connectionStatus && (
         <ConnectionStatusBanner
           connectionState={connectionStatus.connectionState}
@@ -58,6 +65,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  scanlineOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'space-between',
+    opacity: 0.12,
+  },
+  scanline: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
   },
   content: {
     flex: 1,

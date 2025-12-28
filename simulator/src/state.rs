@@ -1204,8 +1204,13 @@ impl Simulator {
         &self,
         filter: UpdatesFilter,
     ) -> (broadcast::Receiver<crate::InternalUpdate>, SubscriptionGuard) {
+        // IMPORTANT: Create receiver FIRST, then register.
+        // This ensures we're subscribed before the tracker knows about us,
+        // preventing race conditions where messages are sent after registration
+        // but before the receiver is created.
+        let receiver = self.update_tx.subscribe();
         let guard = self.register_subscription(&filter);
-        (self.update_tx.subscribe(), guard)
+        (receiver, guard)
     }
 
     pub fn mempool_subscriber(&self) -> broadcast::Receiver<Pending> {

@@ -118,13 +118,15 @@ const styles = StyleSheet.create({
   },
   title: {
     color: COLORS.textPrimary,
-    ...TYPOGRAPHY.h2,
+    ...TYPOGRAPHY.label,
     marginBottom: SPACING.sm,
     textAlign: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 2,
   },
   description: {
     color: COLORS.textSecondary,
-    ...TYPOGRAPHY.body,
+    ...TYPOGRAPHY.bodySmall,
     textAlign: 'center',
     marginBottom: SPACING.lg,
   },
@@ -158,12 +160,15 @@ const styles = StyleSheet.create({
   skipText: {
     color: COLORS.textMuted,
     ...TYPOGRAPHY.bodySmall,
+    textTransform: 'uppercase',
   },
   nextButton: {
     backgroundColor: COLORS.primary,
     paddingVertical: SPACING.sm + 2,
     paddingHorizontal: SPACING.xl,
     borderRadius: RADIUS.md,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
   },
   nextText: {
     color: COLORS.background,

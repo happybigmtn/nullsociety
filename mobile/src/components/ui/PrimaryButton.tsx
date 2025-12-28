@@ -50,10 +50,10 @@ export function PrimaryButton({
   }));
 
   const variantStyles = {
-    primary: { bg: COLORS.primary, text: COLORS.background },
-    secondary: { bg: COLORS.surfaceElevated, text: COLORS.textPrimary },
-    danger: { bg: COLORS.accent, text: COLORS.textPrimary },
-    ghost: { bg: 'transparent', text: COLORS.textMuted },
+    primary: { bg: COLORS.primary, text: COLORS.background, border: COLORS.primary },
+    secondary: { bg: COLORS.surfaceElevated, text: COLORS.textPrimary, border: COLORS.border },
+    danger: { bg: 'transparent', text: COLORS.accent, border: COLORS.accent },
+    ghost: { bg: 'transparent', text: COLORS.textMuted, border: 'transparent' },
   };
 
   const colors = variantStyles[variant];
@@ -67,7 +67,10 @@ export function PrimaryButton({
       style={[
         styles.button,
         size === 'large' && styles.buttonLarge,
-        { backgroundColor: disabled ? COLORS.textDisabled : colors.bg },
+        {
+          backgroundColor: disabled ? COLORS.textDisabled : colors.bg,
+          borderColor: disabled ? COLORS.border : colors.border,
+        },
         animatedStyle,
         style,
       ]}
@@ -95,6 +98,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minWidth: 120,
+    borderWidth: 2,
   },
   buttonLarge: {
     paddingVertical: SPACING.md,

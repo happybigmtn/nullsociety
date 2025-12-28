@@ -18,7 +18,6 @@ const CRAPS_BONUS_BET_TYPES = new Set<CrapsBet['type']>([
   'RIDE_LINE',
   'REPLAY',
   'HOT_ROLLER',
-  'REPEATER',
 ]);
 
 /**
@@ -51,7 +50,6 @@ const CRAPS_BET_TYPE_MAP: Record<CrapsBet['type'], number> = {
   'RIDE_LINE': 20,
   'REPLAY': 21,
   'HOT_ROLLER': 22,
-  'REPEATER': 23, // target: 2-6 or 8-12
 };
 
 /**
@@ -86,8 +84,7 @@ const getTargetForBackend = (bet: CrapsBet): number => {
       || bet.type === 'DIFF_DOUBLES'
       || bet.type === 'RIDE_LINE'
       || bet.type === 'REPLAY'
-      || bet.type === 'HOT_ROLLER'
-      || bet.type === 'REPEATER') {
+      || bet.type === 'HOT_ROLLER') {
     return 0;
   }
   return bet.target ?? 0;

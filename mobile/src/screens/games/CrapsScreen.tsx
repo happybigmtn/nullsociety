@@ -26,6 +26,7 @@ import type { CrapsMessage } from '../../types/protocol';
 interface CrapsBet {
   type: CrapsBetType;
   amount: number;
+  target?: number;
 }
 
 interface CrapsState {
@@ -54,6 +55,9 @@ const TUTORIAL_STEPS: TutorialStep[] = [
 ];
 
 const ESSENTIAL_BETS: CrapsBetType[] = ['PASS', 'DONT_PASS'];
+const YES_NO_TARGETS = [4, 5, 6, 8, 9, 10];
+const NEXT_TARGETS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+const HARDWAY_TARGETS = [4, 6, 8, 10];
 
 export function CrapsScreen() {
   // Shared hook for connection (Craps has multi-bet array so keeps custom bet state)
@@ -126,7 +130,7 @@ export function CrapsScreen() {
     transform: [{ rotate: `${die2Rotation.value}deg` }],
   }));
 
-  const addBet = useCallback((type: CrapsBetType) => {
+  const addBet = useCallback((type: CrapsBetType, target?: number) => {
     if (state.phase === 'rolling') return;
 
     // Calculate current total bet
@@ -139,7 +143,7 @@ export function CrapsScreen() {
     haptics.chipPlace();
 
     setState((prev) => {
-      const existingIndex = prev.bets.findIndex((b) => b.type === type);
+      const existingIndex = prev.bets.findIndex((b) => b.type === type && b.target === target);
 
       if (existingIndex >= 0) {
         const newBets = [...prev.bets];
@@ -148,6 +152,7 @@ export function CrapsScreen() {
           newBets[existingIndex] = {
             type: existingBet.type,
             amount: existingBet.amount + selectedChip,
+            target: existingBet.target,
           };
         }
         return { ...prev, bets: newBets };
@@ -155,7 +160,7 @@ export function CrapsScreen() {
 
       return {
         ...prev,
-        bets: [...prev.bets, { type, amount: selectedChip }],
+        bets: [...prev.bets, { type, amount: selectedChip, target }],
       };
     });
   }, [state.phase, selectedChip, state.bets, balance]);
@@ -302,9 +307,9 @@ export function CrapsScreen() {
             <Text style={styles.essentialBetText}>
               {bet === 'PASS' ? 'PASS LINE' : "DON'T PASS"}
             </Text>
-            {state.bets.find((b) => b.type === bet) && (
+            {state.bets.find((b) => b.type === bet && b.target === undefined) && (
               <Text style={styles.betAmountLabel}>
-                ${state.bets.find((b) => b.type === bet)?.amount}
+                ${state.bets.find((b) => b.type === bet && b.target === undefined)?.amount}
               </Text>
             )}
           </Pressable>
@@ -378,57 +383,115 @@ export function CrapsScreen() {
                 </Pressable>
               </View>
 
-              {/* Place Bets */}
-              <Text style={styles.sectionTitle}>Place Bets</Text>
+              {/* Field */}
+              <Text style={styles.sectionTitle}>Field</Text>
               <View style={styles.betRow}>
-                {(['PLACE_4', 'PLACE_5', 'PLACE_6'] as CrapsBetType[]).map((bet) => (
-                  <Pressable key={bet} style={styles.advancedBet} onPress={() => addBet(bet)}>
-                    <Text style={styles.advancedBetText}>{bet.replace('PLACE_', '')}</Text>
+                <Pressable style={styles.advancedBet} onPress={() => addBet('FIELD')}>
+                  <Text style={styles.advancedBetText}>FIELD</Text>
+                </Pressable>
+              </View>
+
+              {/* YES (Place) */}
+              <Text style={styles.sectionTitle}>YES (Place)</Text>
+              <View style={styles.betRow}>
+                {YES_NO_TARGETS.slice(0, 3).map((num) => (
+                  <Pressable key={`yes-${num}`} style={styles.advancedBet} onPress={() => addBet('YES', num)}>
+                    <Text style={styles.advancedBetText}>{num}</Text>
                   </Pressable>
                 ))}
               </View>
               <View style={styles.betRow}>
-                {(['PLACE_8', 'PLACE_9', 'PLACE_10'] as CrapsBetType[]).map((bet) => (
-                  <Pressable key={bet} style={styles.advancedBet} onPress={() => addBet(bet)}>
-                    <Text style={styles.advancedBetText}>{bet.replace('PLACE_', '')}</Text>
+                {YES_NO_TARGETS.slice(3).map((num) => (
+                  <Pressable key={`yes-${num}`} style={styles.advancedBet} onPress={() => addBet('YES', num)}>
+                    <Text style={styles.advancedBetText}>{num}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* NO (Lay) */}
+              <Text style={styles.sectionTitle}>NO (Lay)</Text>
+              <View style={styles.betRow}>
+                {YES_NO_TARGETS.slice(0, 3).map((num) => (
+                  <Pressable key={`no-${num}`} style={styles.advancedBet} onPress={() => addBet('NO', num)}>
+                    <Text style={styles.advancedBetText}>{num}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={styles.betRow}>
+                {YES_NO_TARGETS.slice(3).map((num) => (
+                  <Pressable key={`no-${num}`} style={styles.advancedBet} onPress={() => addBet('NO', num)}>
+                    <Text style={styles.advancedBetText}>{num}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* NEXT (Hop) */}
+              <Text style={styles.sectionTitle}>NEXT (Hop)</Text>
+              <View style={styles.betRow}>
+                {NEXT_TARGETS.slice(0, 6).map((num) => (
+                  <Pressable key={`next-${num}`} style={styles.advancedBet} onPress={() => addBet('NEXT', num)}>
+                    <Text style={styles.advancedBetText}>{num}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={styles.betRow}>
+                {NEXT_TARGETS.slice(6).map((num) => (
+                  <Pressable key={`next-${num}`} style={styles.advancedBet} onPress={() => addBet('NEXT', num)}>
+                    <Text style={styles.advancedBetText}>{num}</Text>
                   </Pressable>
                 ))}
               </View>
 
               {/* Hardways */}
-              <Text style={styles.sectionTitle}>Hardways (7:1 to 9:1)</Text>
+              <Text style={styles.sectionTitle}>Hardways</Text>
               <View style={styles.betRow}>
-                {(['HARD_4', 'HARD_6', 'HARD_8', 'HARD_10'] as CrapsBetType[]).map((bet) => (
-                  <Pressable key={bet} style={styles.advancedBet} onPress={() => addBet(bet)}>
-                    <Text style={styles.advancedBetText}>{bet.replace('HARD_', 'H')}</Text>
+                {HARDWAY_TARGETS.map((num) => (
+                  <Pressable key={`hard-${num}`} style={styles.advancedBet} onPress={() => addBet('HARDWAY', num)}>
+                    <Text style={styles.advancedBetText}>H{num}</Text>
                   </Pressable>
                 ))}
               </View>
 
-              {/* Props */}
-              <Text style={styles.sectionTitle}>Propositions</Text>
+              {/* Fire + ATS */}
+              <Text style={styles.sectionTitle}>Fire + ATS</Text>
               <View style={styles.betRow}>
-                <Pressable style={styles.advancedBet} onPress={() => addBet('ANY_7')}>
-                  <Text style={styles.advancedBetText}>Any 7 (4:1)</Text>
+                <Pressable style={styles.advancedBet} onPress={() => addBet('FIRE')}>
+                  <Text style={styles.advancedBetText}>FIRE</Text>
                 </Pressable>
-                <Pressable style={styles.advancedBet} onPress={() => addBet('ANY_CRAPS')}>
-                  <Text style={styles.advancedBetText}>Any Craps (7:1)</Text>
+                <Pressable style={styles.advancedBet} onPress={() => addBet('ATS_SMALL')}>
+                  <Text style={styles.advancedBetText}>ATS SMALL</Text>
                 </Pressable>
               </View>
               <View style={styles.betRow}>
-                <Pressable style={styles.advancedBet} onPress={() => addBet('YO_11')}>
-                  <Text style={styles.advancedBetText}>Yo 11 (15:1)</Text>
+                <Pressable style={styles.advancedBet} onPress={() => addBet('ATS_TALL')}>
+                  <Text style={styles.advancedBetText}>ATS TALL</Text>
                 </Pressable>
-                <Pressable style={styles.advancedBet} onPress={() => addBet('SNAKE_EYES')}>
-                  <Text style={styles.advancedBetText}>Snake Eyes (30:1)</Text>
+                <Pressable style={styles.advancedBet} onPress={() => addBet('ATS_ALL')}>
+                  <Text style={styles.advancedBetText}>ATS ALL</Text>
+                </Pressable>
+              </View>
+
+              {/* Side Bets */}
+              <Text style={styles.sectionTitle}>Side Bets</Text>
+              <View style={styles.betRow}>
+                <Pressable style={styles.advancedBet} onPress={() => addBet('MUGGSY')}>
+                  <Text style={styles.advancedBetText}>MUGGSY</Text>
+                </Pressable>
+                <Pressable style={styles.advancedBet} onPress={() => addBet('DIFF_DOUBLES')}>
+                  <Text style={styles.advancedBetText}>DIFF DOUBLES</Text>
                 </Pressable>
               </View>
               <View style={styles.betRow}>
-                <Pressable style={styles.advancedBet} onPress={() => addBet('BOXCARS')}>
-                  <Text style={styles.advancedBetText}>Boxcars (30:1)</Text>
+                <Pressable style={styles.advancedBet} onPress={() => addBet('RIDE_LINE')}>
+                  <Text style={styles.advancedBetText}>RIDE LINE</Text>
                 </Pressable>
-                <Pressable style={styles.advancedBet} onPress={() => addBet('FIELD')}>
-                  <Text style={styles.advancedBetText}>Field</Text>
+                <Pressable style={styles.advancedBet} onPress={() => addBet('REPLAY')}>
+                  <Text style={styles.advancedBetText}>REPLAY</Text>
+                </Pressable>
+              </View>
+              <View style={styles.betRow}>
+                <Pressable style={styles.advancedBet} onPress={() => addBet('HOT_ROLLER')}>
+                  <Text style={styles.advancedBetText}>HOT ROLLER</Text>
                 </Pressable>
               </View>
             </ScrollView>

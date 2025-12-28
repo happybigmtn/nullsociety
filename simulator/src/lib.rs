@@ -206,6 +206,12 @@ pub struct Simulator {
     subscriptions: Arc<Mutex<SubscriptionTracker>>,
     update_tx: broadcast::Sender<InternalUpdate>,
     mempool_tx: broadcast::Sender<Pending>,
+    // Keep initial receivers alive to prevent channel closure when no subscribers exist.
+    // These are never read from, but their existence keeps the channels open.
+    #[allow(dead_code)]
+    _update_rx: broadcast::Receiver<InternalUpdate>,
+    #[allow(dead_code)]
+    _mempool_rx: broadcast::Receiver<Pending>,
     fanout: Option<Arc<Fanout>>,
     cache: Option<Arc<RedisCache>>,
     ws_metrics: WsMetrics,
@@ -238,8 +244,8 @@ impl Simulator {
     }
 
     pub fn new_with_config(identity: Identity, config: SimulatorConfig) -> Self {
-        let (update_tx, _) = broadcast::channel(config.updates_broadcast_capacity());
-        let (mempool_tx, _) = broadcast::channel(config.mempool_broadcast_capacity());
+        let (update_tx, update_rx) = broadcast::channel(config.updates_broadcast_capacity());
+        let (mempool_tx, mempool_rx) = broadcast::channel(config.mempool_broadcast_capacity());
         let state = Arc::new(RwLock::new(State::default()));
         let mut explorer = ExplorerState::default();
         explorer.set_retention(
@@ -347,6 +353,8 @@ impl Simulator {
             subscriptions: Arc::new(Mutex::new(SubscriptionTracker::default())),
             update_tx,
             mempool_tx,
+            _update_rx: update_rx,
+            _mempool_rx: mempool_rx,
             fanout,
             cache,
             ws_metrics: WsMetrics::default(),

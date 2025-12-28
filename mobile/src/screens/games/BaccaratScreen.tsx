@@ -16,29 +16,62 @@ import { useGameStore } from '../../stores/gameStore';
 import type { ChipValue, TutorialStep, BaccaratBetType, Card as CardType } from '../../types';
 import type { BaccaratMessage } from '../../types/protocol';
 
+interface BaccaratBet {
+  type: BaccaratBetType;
+  amount: number;
+}
+
+type BaccaratSideBetType = Exclude<BaccaratBetType, 'PLAYER' | 'BANKER'>;
+
 interface BaccaratState {
-  bets: Record<BaccaratBetType, number>;
+  selection: 'PLAYER' | 'BANKER';
+  mainBet: number;
+  sideBets: BaccaratBet[];
   playerCards: CardType[];
   bankerCards: CardType[];
   playerTotal: number;
   bankerTotal: number;
   phase: 'betting' | 'dealing' | 'result';
   message: string;
-  winner: BaccaratBetType | null;
+  winner: 'PLAYER' | 'BANKER' | 'TIE' | null;
 }
+
+const SIDE_BET_TYPES: BaccaratSideBetType[] = [
+  'TIE',
+  'P_PAIR',
+  'B_PAIR',
+  'LUCKY6',
+  'P_DRAGON',
+  'B_DRAGON',
+  'PANDA8',
+  'P_PERFECT_PAIR',
+  'B_PERFECT_PAIR',
+];
+
+const SIDE_BET_LABELS: Record<BaccaratSideBetType, string> = {
+  TIE: 'Tie',
+  P_PAIR: 'Player Pair',
+  B_PAIR: 'Banker Pair',
+  LUCKY6: 'Lucky 6',
+  P_DRAGON: 'Player Dragon',
+  B_DRAGON: 'Banker Dragon',
+  PANDA8: 'Panda 8',
+  P_PERFECT_PAIR: 'Player Perfect Pair',
+  B_PERFECT_PAIR: 'Banker Perfect Pair',
+};
 
 const TUTORIAL_STEPS: TutorialStep[] = [
   {
-    title: 'Three Choices',
-    description: 'Bet on Player, Banker, or Tie. That\'s it! Cards are dealt automatically.',
+    title: 'Main Bet',
+    description: 'Choose Player or Banker for the main bet. Tie and pairs live in Side Bets.',
   },
   {
     title: 'Closest to 9',
     description: 'The hand closest to 9 wins. Face cards = 0, Aces = 1. If over 9, drop the tens digit.',
   },
   {
-    title: 'Payouts',
-    description: 'Player pays 1:1, Banker pays 0.95:1 (5% commission), Tie pays 8:1.',
+    title: 'Side Bets',
+    description: 'Add Tie, Pair, Lucky 6, Dragon, or Perfect Pair side bets for bigger payouts.',
   },
 ];
 
@@ -48,7 +81,9 @@ export function BaccaratScreen() {
   const { balance } = useGameStore();
 
   const [state, setState] = useState<BaccaratState>({
-    bets: { PLAYER: 0, BANKER: 0, TIE: 0 },
+    selection: 'PLAYER',
+    mainBet: 0,
+    sideBets: [],
     playerCards: [],
     bankerCards: [],
     playerTotal: 0,
@@ -76,7 +111,9 @@ export function BaccaratScreen() {
 
     if (lastMessage.type === 'game_result') {
       const winner = lastMessage.winner;
-      const betOnWinner = winner && state.bets[winner] > 0;
+      const betOnWinner = winner
+        && ((winner === 'TIE' && state.sideBets.some((b) => b.type === 'TIE' && b.amount > 0))
+          || (winner !== 'TIE' && state.selection === winner && state.mainBet > 0));
 
       if (betOnWinner) {
         haptics.win();
@@ -95,37 +132,65 @@ export function BaccaratScreen() {
         message: lastMessage.message ?? `${winner} wins!`,
       }));
     }
-  }, [lastMessage, state.bets]);
+  }, [lastMessage, state.mainBet, state.selection, state.sideBets]);
 
-  const handleBet = useCallback((type: BaccaratBetType) => {
+  const handleMainSelect = useCallback((selection: 'PLAYER' | 'BANKER') => {
     if (state.phase !== 'betting') return;
+    haptics.buttonPress();
+    setState((prev) => ({ ...prev, selection }));
+  }, [state.phase]);
 
-    // Calculate current total bet
-    const currentTotalBet = Object.values(state.bets).reduce((a, b) => a + b, 0);
-    if (currentTotalBet + selectedChip > balance) {
+  const addMainBet = useCallback(() => {
+    if (state.phase !== 'betting') return;
+    const sideTotal = state.sideBets.reduce((sum, bet) => sum + bet.amount, 0);
+    if (state.mainBet + sideTotal + selectedChip > balance) {
       haptics.error();
       return;
     }
 
     haptics.chipPlace();
-
     setState((prev) => ({
       ...prev,
-      bets: {
-        ...prev.bets,
-        [type]: prev.bets[type] + selectedChip,
-      },
+      mainBet: prev.mainBet + selectedChip,
     }));
-  }, [state.phase, selectedChip, state.bets, balance]);
+  }, [state.phase, state.mainBet, state.sideBets, selectedChip, balance]);
+
+  const addSideBet = useCallback((type: BaccaratSideBetType) => {
+    if (state.phase !== 'betting') return;
+    const currentTotal = state.mainBet + state.sideBets.reduce((sum, bet) => sum + bet.amount, 0);
+    if (currentTotal + selectedChip > balance) {
+      haptics.error();
+      return;
+    }
+
+    haptics.chipPlace();
+    setState((prev) => {
+      const existingIndex = prev.sideBets.findIndex((bet) => bet.type === type);
+      if (existingIndex >= 0) {
+        const next = [...prev.sideBets];
+        next[existingIndex] = {
+          type,
+          amount: next[existingIndex].amount + selectedChip,
+        };
+        return { ...prev, sideBets: next };
+      }
+      return { ...prev, sideBets: [...prev.sideBets, { type, amount: selectedChip }] };
+    });
+  }, [state.phase, state.mainBet, state.sideBets, selectedChip, balance]);
 
   const handleDeal = useCallback(async () => {
-    const totalBet = Object.values(state.bets).reduce((a, b) => a + b, 0);
-    if (totalBet === 0) return;
+    const betList: BaccaratBet[] = [];
+    if (state.mainBet > 0) {
+      betList.push({ type: state.selection, amount: state.mainBet });
+    }
+    betList.push(...state.sideBets.filter((bet) => bet.amount > 0));
+
+    if (betList.length === 0) return;
     await haptics.betConfirm();
 
     send({
       type: 'baccarat_deal',
-      bets: state.bets,
+      bets: betList,
     });
 
     setState((prev) => ({
@@ -133,11 +198,13 @@ export function BaccaratScreen() {
       phase: 'dealing',
       message: 'Dealing...',
     }));
-  }, [state.bets, send]);
+  }, [state.selection, state.mainBet, state.sideBets, send]);
 
   const handleNewGame = useCallback(() => {
     setState({
-      bets: { PLAYER: 0, BANKER: 0, TIE: 0 },
+      selection: 'PLAYER',
+      mainBet: 0,
+      sideBets: [],
       playerCards: [],
       bankerCards: [],
       playerTotal: 0,
@@ -149,20 +216,20 @@ export function BaccaratScreen() {
   }, []);
 
   const handleChipPlace = useCallback((_value: ChipValue) => {
-    handleBet('PLAYER');
-  }, [handleBet]);
+    addMainBet();
+  }, [addMainBet]);
 
-  const totalBet = Object.values(state.bets).reduce((a, b) => a + b, 0);
+  const totalBet = state.mainBet + state.sideBets.reduce((sum, bet) => sum + bet.amount, 0);
 
   const handleClearBets = useCallback(() => {
     if (state.phase !== 'betting') return;
-    setState((prev) => ({ ...prev, bets: { PLAYER: 0, BANKER: 0, TIE: 0 } }));
+    setState((prev) => ({ ...prev, mainBet: 0, sideBets: [] }));
   }, [state.phase]);
 
   // Keyboard controls
   const keyboardHandlers = useMemo(() => ({
-    [KEY_ACTIONS.LEFT]: () => state.phase === 'betting' && !isDisconnected && handleBet('PLAYER'),
-    [KEY_ACTIONS.RIGHT]: () => state.phase === 'betting' && !isDisconnected && handleBet('BANKER'),
+    [KEY_ACTIONS.LEFT]: () => state.phase === 'betting' && !isDisconnected && handleMainSelect('PLAYER'),
+    [KEY_ACTIONS.RIGHT]: () => state.phase === 'betting' && !isDisconnected && handleMainSelect('BANKER'),
     [KEY_ACTIONS.SPACE]: () => {
       if (state.phase === 'betting' && totalBet > 0 && !isDisconnected) handleDeal();
       else if (state.phase === 'result') handleNewGame();
@@ -173,7 +240,7 @@ export function BaccaratScreen() {
     [KEY_ACTIONS.THREE]: () => state.phase === 'betting' && setSelectedChip(25 as ChipValue),
     [KEY_ACTIONS.FOUR]: () => state.phase === 'betting' && setSelectedChip(100 as ChipValue),
     [KEY_ACTIONS.FIVE]: () => state.phase === 'betting' && setSelectedChip(500 as ChipValue),
-  }), [state.phase, totalBet, isDisconnected, handleBet, handleDeal, handleNewGame, handleClearBets]);
+  }), [state.phase, totalBet, isDisconnected, handleMainSelect, handleDeal, handleNewGame, handleClearBets]);
 
   useGameKeyboard(keyboardHandlers);
 
@@ -252,28 +319,56 @@ export function BaccaratScreen() {
 
         {/* Betting Options */}
         <View style={styles.betOptions}>
-          {(['PLAYER', 'TIE', 'BANKER'] as BaccaratBetType[]).map((type) => (
-            <Pressable
-              key={type}
-              onPress={() => handleBet(type)}
-              disabled={state.phase !== 'betting' || isDisconnected}
-              style={({ pressed }) => [
-                styles.betOption,
-                type === 'TIE' && styles.betOptionTie,
-                state.winner === type && styles.betOptionWinner,
-                pressed && styles.betOptionPressed,
-                isDisconnected && styles.betOptionDisabled,
-              ]}
-            >
-              <Text style={styles.betOptionLabel}>{type}</Text>
-              <Text style={styles.betOptionOdds}>
-                {type === 'PLAYER' ? '1:1' : type === 'BANKER' ? '0.95:1' : '8:1'}
-              </Text>
-              {state.bets[type] > 0 && (
-                <Text style={styles.betOptionAmount}>${state.bets[type]}</Text>
-              )}
-            </Pressable>
-          ))}
+          <Text style={styles.sectionTitle}>Main Bet</Text>
+          <View style={styles.mainBetRow}>
+            {(['PLAYER', 'BANKER'] as const).map((type) => (
+              <Pressable
+                key={type}
+                onPress={() => handleMainSelect(type)}
+                disabled={state.phase !== 'betting' || isDisconnected}
+                style={({ pressed }) => [
+                  styles.mainBetButton,
+                  type === 'PLAYER' && styles.playerBet,
+                  type === 'BANKER' && styles.bankerBet,
+                  state.selection === type && styles.mainBetSelected,
+                  pressed && styles.betOptionPressed,
+                  isDisconnected && styles.betOptionDisabled,
+                ]}
+              >
+                <Text style={styles.betOptionLabel}>{type}</Text>
+                <Text style={styles.betOptionOdds}>
+                  {type === 'PLAYER' ? '1:1' : '0.95:1'}
+                </Text>
+                {state.selection === type && state.mainBet > 0 && (
+                  <Text style={styles.betOptionAmount}>${state.mainBet}</Text>
+                )}
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={styles.sectionTitle}>Side Bets</Text>
+          <View style={styles.sideBetGrid}>
+            {SIDE_BET_TYPES.map((type) => {
+              const amount = state.sideBets.find((bet) => bet.type === type)?.amount ?? 0;
+              return (
+                <Pressable
+                  key={type}
+                  onPress={() => addSideBet(type)}
+                  disabled={state.phase !== 'betting' || isDisconnected}
+                  style={({ pressed }) => [
+                    styles.sideBetButton,
+                    pressed && styles.betOptionPressed,
+                    isDisconnected && styles.betOptionDisabled,
+                  ]}
+                >
+                  <Text style={styles.sideBetText}>{SIDE_BET_LABELS[type]}</Text>
+                  {amount > 0 && (
+                    <Text style={styles.betOptionAmount}>${amount}</Text>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
 
         {/* Actions */}
@@ -373,28 +468,50 @@ const styles = StyleSheet.create({
     color: COLORS.gold,
   },
   betOptions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: SPACING.sm,
     paddingHorizontal: SPACING.md,
     marginBottom: SPACING.md,
   },
-  betOption: {
+  sectionTitle: {
+    color: COLORS.textSecondary,
+    ...TYPOGRAPHY.label,
+    marginBottom: SPACING.sm,
+  },
+  mainBetRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  mainBetButton: {
     flex: 1,
-    maxWidth: 110,
     paddingVertical: SPACING.md,
     backgroundColor: COLORS.surfaceElevated,
     borderRadius: RADIUS.md,
     alignItems: 'center',
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: COLORS.border,
   },
-  betOptionTie: {
-    backgroundColor: COLORS.surface,
-  },
-  betOptionWinner: {
+  mainBetSelected: {
     borderColor: COLORS.gold,
     backgroundColor: COLORS.surface,
+  },
+  sideBetGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
+  },
+  sideBetButton: {
+    flexBasis: '48%',
+    paddingVertical: SPACING.sm,
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  sideBetText: {
+    color: COLORS.textPrimary,
+    ...TYPOGRAPHY.caption,
+    textAlign: 'center',
   },
   betOptionPressed: {
     opacity: 0.7,
@@ -415,6 +532,12 @@ const styles = StyleSheet.create({
     color: COLORS.gold,
     ...TYPOGRAPHY.bodySmall,
     marginTop: SPACING.xs,
+  },
+  playerBet: {
+    borderColor: COLORS.primary,
+  },
+  bankerBet: {
+    borderColor: COLORS.gold,
   },
   actions: {
     alignItems: 'center',

@@ -1,10 +1,26 @@
 /**
  * Sic Bo game handler
+ *
+ * Uses atomic batch (action 3) for placing bets and rolling in one transaction.
+ *
+ * Payload format from execution/src/casino/sic_bo.rs:
+ * [3, bet_count, bets...] - Atomic batch: place all bets + roll in one transaction
+ * Each bet is 10 bytes: [bet_type:u8, number:u8, amount:u64 BE]
  */
 import { GameHandler, type HandlerContext, type HandleResult } from './base.js';
-import { GameType, buildSicBoPayload, type SicBoBet } from '../codec/index.js';
+import { GameType } from '../codec/index.js';
+import { SICBO_BET_TYPES, encodeSicBoBet, type SicBoBetName } from '../codec/bet-types.js';
 import { generateSessionId } from '../codec/transactions.js';
 import { ErrorCodes, createError } from '../types/errors.js';
+
+/** Sic Bo action codes matching execution/src/casino/sic_bo.rs */
+const SicBoAction = {
+  PlaceBet: 0,
+  Roll: 1,
+  ClearBets: 2,
+  AtomicBatch: 3,
+  SetRules: 4,
+} as const;
 
 export class SicBoHandler extends GameHandler {
   constructor() {
@@ -19,6 +35,7 @@ export class SicBoHandler extends GameHandler {
 
     switch (msgType) {
       case 'sicbo_roll':
+      case 'sic_bo_roll':
         return this.handleRoll(ctx, msg);
       default:
         return {
@@ -32,7 +49,7 @@ export class SicBoHandler extends GameHandler {
     ctx: HandlerContext,
     msg: Record<string, unknown>
   ): Promise<HandleResult> {
-    const bets = msg.bets as Array<{ type: number; amount: number }> | undefined;
+    const bets = msg.bets as Array<{ type?: unknown; number?: unknown; target?: unknown; value?: unknown; amount?: unknown }> | undefined;
 
     if (!bets || !Array.isArray(bets) || bets.length === 0) {
       return {
@@ -41,12 +58,9 @@ export class SicBoHandler extends GameHandler {
       };
     }
 
-    // Validate and convert bets
-    const sicBoBets: SicBoBet[] = [];
-    let totalBet = 0n;
-
+    // Validate bets
     for (const bet of bets) {
-      if (typeof bet.type !== 'number' || typeof bet.amount !== 'number') {
+      if (typeof bet.amount !== 'number' || (typeof bet.type !== 'number' && typeof bet.type !== 'string')) {
         return {
           success: false,
           error: createError(ErrorCodes.INVALID_BET, 'Invalid bet format'),
@@ -58,12 +72,6 @@ export class SicBoHandler extends GameHandler {
           error: createError(ErrorCodes.INVALID_BET, 'Bet amount must be positive'),
         };
       }
-
-      sicBoBets.push({
-        type: bet.type,
-        amount: BigInt(bet.amount),
-      });
-      totalBet += BigInt(bet.amount);
     }
 
     const gameSessionId = generateSessionId(
@@ -71,14 +79,47 @@ export class SicBoHandler extends GameHandler {
       ctx.session.gameSessionCounter++
     );
 
-    // Start game with total bet
-    const startResult = await this.startGame(ctx, totalBet, gameSessionId);
+    // Start game with bet=0; sic bo bets are deducted via moves.
+    const startResult = await this.startGame(ctx, 0n, gameSessionId);
     if (!startResult.success) {
       return startResult;
     }
 
-    // Send bets as game move
-    const payload = buildSicBoPayload(sicBoBets);
+    // Build atomic batch payload: [3, bet_count, bets...]
+    // Each bet is 10 bytes: [bet_type:u8, number:u8, amount:u64 BE]
+    const payload = new Uint8Array(2 + bets.length * 10);
+    const view = new DataView(payload.buffer);
+    payload[0] = SicBoAction.AtomicBatch;
+    payload[1] = bets.length;
+
+    let offset = 2;
+    for (const bet of bets) {
+      const betType = bet.type as number | string;
+      const amount = bet.amount as number;
+      const rawNumber = bet.number ?? bet.target ?? bet.value ?? 0;
+      const encoded = typeof betType === 'string'
+        ? (() => {
+            const betKey = betType.toUpperCase() as SicBoBetName;
+            if (!(betKey in SICBO_BET_TYPES)) {
+              return null;
+            }
+            return encodeSicBoBet(betKey, typeof rawNumber === 'number' ? rawNumber : undefined);
+          })()
+        : { betType, number: typeof rawNumber === 'number' ? rawNumber : 0 };
+
+      if (!encoded) {
+        return {
+          success: false,
+          error: createError(ErrorCodes.INVALID_BET, `Invalid bet type: ${betType}`),
+        };
+      }
+
+      payload[offset] = encoded.betType;
+      payload[offset + 1] = encoded.number; // number is 0 for simple bets like Small/Big
+      view.setBigUint64(offset + 2, BigInt(amount), false); // BE
+      offset += 10;
+    }
+
     return this.makeMove(ctx, payload);
   }
 }

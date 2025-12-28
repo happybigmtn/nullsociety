@@ -54,6 +54,7 @@ export function ConnectionStatusBanner({
 
   const isFailed = connectionState === 'failed';
   const isConnecting = connectionState === 'connecting';
+  const statusColor = isFailed ? COLORS.accent : isConnecting ? COLORS.gold : COLORS.textSecondary;
 
   const getMessage = (): string => {
     if (isFailed) {
@@ -80,9 +81,9 @@ export function ConnectionStatusBanner({
     >
       <View style={styles.content}>
         {isConnecting && (
-          <Animated.View style={[styles.indicator, pulseStyle]} />
+          <Animated.View style={[styles.indicator, pulseStyle, { backgroundColor: statusColor }]} />
         )}
-        {!isConnecting && <View style={[styles.indicator, styles.indicatorStatic]} />}
+        {!isConnecting && <View style={[styles.indicator, styles.indicatorStatic, { backgroundColor: statusColor }]} />}
         <Text style={styles.message}>{getMessage()}</Text>
       </View>
       {isFailed && onRetry && (
@@ -96,15 +97,17 @@ export function ConnectionStatusBanner({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: COLORS.warning,
+    backgroundColor: COLORS.surface,
     paddingVertical: SPACING.xs,
     paddingHorizontal: SPACING.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderColor: COLORS.border,
   },
   containerFailed: {
-    backgroundColor: COLORS.error,
+    borderColor: COLORS.accent,
   },
   content: {
     flexDirection: 'row',
@@ -115,7 +118,6 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: RADIUS.full,
-    backgroundColor: COLORS.textPrimary,
   },
   indicatorStatic: {
     opacity: 0.6,
@@ -123,17 +125,21 @@ const styles = StyleSheet.create({
   message: {
     color: COLORS.textPrimary,
     ...TYPOGRAPHY.bodySmall,
-    fontWeight: '500',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   retryButton: {
     paddingVertical: SPACING.xs,
     paddingHorizontal: SPACING.sm,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+    backgroundColor: 'rgba(255, 0, 60, 0.12)',
     borderRadius: RADIUS.sm,
   },
   retryText: {
-    color: COLORS.textPrimary,
+    color: COLORS.accent,
     ...TYPOGRAPHY.bodySmall,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });

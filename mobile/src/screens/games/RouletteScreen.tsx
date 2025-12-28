@@ -23,12 +23,17 @@ import { useGameStore } from '../../stores/gameStore';
 import type { ChipValue, TutorialStep, RouletteBetType } from '../../types';
 import type { RouletteMessage } from '../../types/protocol';
 
-const QUICK_BETS: RouletteBetType[] = ['RED', 'BLACK', 'ODD', 'EVEN', '1-18', '19-36'];
+const QUICK_BETS: RouletteBetType[] = ['RED', 'BLACK', 'ODD', 'EVEN', 'LOW', 'HIGH'];
+const SPLIT_H_TARGETS = Array.from({ length: 35 }, (_, i) => i + 1).filter((num) => num % 3 !== 0);
+const SPLIT_V_TARGETS = Array.from({ length: 33 }, (_, i) => i + 1);
+const STREET_TARGETS = Array.from({ length: 12 }, (_, i) => 1 + i * 3);
+const CORNER_TARGETS = Array.from({ length: 32 }, (_, i) => i + 1).filter((num) => num % 3 !== 0);
+const SIX_LINE_TARGETS = Array.from({ length: 11 }, (_, i) => 1 + i * 3);
 
 interface RouletteBet {
   type: RouletteBetType;
   amount: number;
-  number?: number;
+  target?: number;
 }
 
 interface RouletteState {
@@ -38,6 +43,8 @@ interface RouletteState {
   message: string;
   winAmount: number;
 }
+
+type InsideBetType = 'SPLIT_H' | 'SPLIT_V' | 'STREET' | 'CORNER' | 'SIX_LINE';
 
 const TUTORIAL_STEPS: TutorialStep[] = [
   {
@@ -69,6 +76,22 @@ export function RouletteScreen() {
   const [selectedChip, setSelectedChip] = useState<ChipValue>(25);
   const [showTutorial, setShowTutorial] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [insideMode, setInsideMode] = useState<InsideBetType>('SPLIT_H');
+
+  const insideTargets = useMemo(() => {
+    switch (insideMode) {
+      case 'SPLIT_H':
+        return SPLIT_H_TARGETS;
+      case 'SPLIT_V':
+        return SPLIT_V_TARGETS;
+      case 'STREET':
+        return STREET_TARGETS;
+      case 'CORNER':
+        return CORNER_TARGETS;
+      case 'SIX_LINE':
+        return SIX_LINE_TARGETS;
+    }
+  }, [insideMode]);
 
   const wheelRotation = useSharedValue(0);
 
@@ -107,7 +130,7 @@ export function RouletteScreen() {
     transform: [{ rotate: `${wheelRotation.value}deg` }],
   }));
 
-  const addBet = useCallback((type: RouletteBetType, number?: number) => {
+  const addBet = useCallback((type: RouletteBetType, target?: number) => {
     if (state.phase !== 'betting') return;
 
     // Calculate current total bet
@@ -121,7 +144,7 @@ export function RouletteScreen() {
 
     setState((prev) => {
       const existingIndex = prev.bets.findIndex(
-        (b) => b.type === type && b.number === number
+        (b) => b.type === type && b.target === target
       );
 
       if (existingIndex >= 0) {
@@ -131,7 +154,7 @@ export function RouletteScreen() {
           newBets[existingIndex] = {
             type: existingBet.type,
             amount: existingBet.amount + selectedChip,
-            number: existingBet.number,
+            target: existingBet.target,
           };
         }
         return { ...prev, bets: newBets };
@@ -139,7 +162,7 @@ export function RouletteScreen() {
 
       return {
         ...prev,
-        bets: [...prev.bets, { type, amount: selectedChip, number }],
+        bets: [...prev.bets, { type, amount: selectedChip, target }],
       };
     });
   }, [state.phase, selectedChip, state.bets, balance]);
@@ -184,7 +207,7 @@ export function RouletteScreen() {
 
   const getResultColor = (num: number | null): string => {
     if (num === null) return COLORS.textSecondary;
-    if (num === 0) return GAME_DETAIL_COLORS.roulette.green;
+    if (num === 0 || num === 37) return GAME_DETAIL_COLORS.roulette.green;
     const reds = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
     return reds.includes(num) ? GAME_DETAIL_COLORS.roulette.red : GAME_DETAIL_COLORS.roulette.black;
   };
@@ -327,19 +350,19 @@ export function RouletteScreen() {
             <View style={styles.betRow}>
               <Pressable
                 style={styles.advancedBet}
-                onPress={() => addBet('FIRST_12')}
+                onPress={() => addBet('DOZEN_1')}
               >
                 <Text style={styles.advancedBetText}>1-12</Text>
               </Pressable>
               <Pressable
                 style={styles.advancedBet}
-                onPress={() => addBet('SECOND_12')}
+                onPress={() => addBet('DOZEN_2')}
               >
                 <Text style={styles.advancedBetText}>13-24</Text>
               </Pressable>
               <Pressable
                 style={styles.advancedBet}
-                onPress={() => addBet('THIRD_12')}
+                onPress={() => addBet('DOZEN_3')}
               >
                 <Text style={styles.advancedBetText}>25-36</Text>
               </Pressable>
@@ -350,22 +373,47 @@ export function RouletteScreen() {
             <View style={styles.betRow}>
               <Pressable
                 style={styles.advancedBet}
-                onPress={() => addBet('COLUMN_1')}
+                onPress={() => addBet('COL_1')}
               >
                 <Text style={styles.advancedBetText}>Col 1</Text>
               </Pressable>
               <Pressable
                 style={styles.advancedBet}
-                onPress={() => addBet('COLUMN_2')}
+                onPress={() => addBet('COL_2')}
               >
                 <Text style={styles.advancedBetText}>Col 2</Text>
               </Pressable>
               <Pressable
                 style={styles.advancedBet}
-                onPress={() => addBet('COLUMN_3')}
+                onPress={() => addBet('COL_3')}
               >
                 <Text style={styles.advancedBetText}>Col 3</Text>
               </Pressable>
+            </View>
+
+            {/* Inside Bets */}
+            <Text style={styles.sectionTitle}>Inside Bets</Text>
+            <View style={styles.insideTabs}>
+              {(['SPLIT_H', 'SPLIT_V', 'STREET', 'CORNER', 'SIX_LINE'] as InsideBetType[]).map((type) => (
+                <Pressable
+                  key={type}
+                  onPress={() => setInsideMode(type)}
+                  style={[styles.insideTab, insideMode === type && styles.insideTabActive]}
+                >
+                  <Text style={styles.insideTabText}>{type.replace('_', ' ')}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.numberGrid}>
+              {insideTargets.map((num) => (
+                <Pressable
+                  key={`${insideMode}-${num}`}
+                  style={styles.numberBet}
+                  onPress={() => addBet(insideMode, num)}
+                >
+                  <Text style={styles.numberText}>{num}</Text>
+                </Pressable>
+              ))}
             </View>
 
             {/* Straight Numbers */}
@@ -537,6 +585,28 @@ const styles = StyleSheet.create({
   betRow: {
     flexDirection: 'row',
     gap: SPACING.sm,
+  },
+  insideTabs: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  insideTab: {
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surfaceElevated,
+  },
+  insideTabActive: {
+    borderColor: COLORS.gold,
+  },
+  insideTabText: {
+    color: COLORS.textPrimary,
+    ...TYPOGRAPHY.caption,
+    textTransform: 'uppercase',
   },
   advancedBet: {
     flex: 1,

@@ -79,6 +79,7 @@ export function HiLoScreen() {
       setState((prev) => ({
         ...prev,
         phase: 'result',
+        currentCard: lastMessage.card ?? prev.currentCard,
         nextCard: lastMessage.nextCard ?? null,
         lastResult: won ? 'win' : 'loss',
         message: lastMessage.message ?? (won ? 'You win!' : 'You lose'),

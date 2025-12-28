@@ -199,9 +199,9 @@ export function UltimateTXHoldemScreen() {
 
     send({
       type: 'ultimate_tx_deal',
-      anteBet: state.anteBet,
-      blindBet: state.blindBet,
-      tripsBet: state.tripsBet,
+      ante: state.anteBet,
+      blind: state.blindBet,
+      trips: state.tripsBet,
     });
 
     setState((prev) => ({
@@ -213,16 +213,14 @@ export function UltimateTXHoldemScreen() {
   const handleBet = useCallback(async (multiplier: number) => {
     await haptics.betConfirm();
 
-    const playAmount = state.anteBet * multiplier;
-
     send({
       type: 'ultimate_tx_bet',
-      amount: playAmount,
+      multiplier,
     });
 
     setState((prev) => ({
       ...prev,
-      playBet: playAmount,
+      playBet: state.anteBet * multiplier,
       message: 'Waiting for cards...',
     }));
   }, [state.anteBet, send]);

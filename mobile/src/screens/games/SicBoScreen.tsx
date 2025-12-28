@@ -26,7 +26,7 @@ import type { SicBoMessage } from '../../types/protocol';
 interface SicBoBet {
   type: SicBoBetType;
   amount: number;
-  value?: number;
+  target?: number;
 }
 
 interface SicBoState {
@@ -69,6 +69,8 @@ export function SicBoScreen() {
   const [selectedChip, setSelectedChip] = useState<ChipValue>(25);
   const [showTutorial, setShowTutorial] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [comboMode, setComboMode] = useState<'NONE' | 'DOMINO' | 'HOP3_EASY' | 'HOP3_HARD' | 'HOP4_EASY'>('NONE');
+  const [comboPicks, setComboPicks] = useState<number[]>([]);
 
   const dice1Bounce = useSharedValue(0);
   const dice2Bounce = useSharedValue(0);
@@ -126,6 +128,10 @@ export function SicBoScreen() {
     }
   }, [lastMessage]); // dice1Bounce, dice2Bounce, dice3Bounce are SharedValues (stable refs) - must not be in deps
 
+  useEffect(() => {
+    setComboPicks([]);
+  }, [comboMode]);
+
   const dice1Style = useAnimatedStyle(() => ({
     transform: [{ translateY: dice1Bounce.value }],
   }));
@@ -136,7 +142,59 @@ export function SicBoScreen() {
     transform: [{ translateY: dice3Bounce.value }],
   }));
 
-  const addBet = useCallback((type: SicBoBetType, value?: number) => {
+  const handleComboPick = useCallback((num: number) => {
+    if (comboMode === 'NONE') return;
+
+    const place = (type: SicBoBetType, target?: number) => {
+      addBet(type, target);
+      setComboPicks([]);
+    };
+
+    if (comboMode === 'DOMINO') {
+      const next = comboPicks.includes(num)
+        ? comboPicks.filter((x) => x !== num)
+        : [...comboPicks, num].slice(0, 2);
+      if (next.length < 2) {
+        setComboPicks(next);
+        return;
+      }
+      const [a, b] = next;
+      if (a === b) {
+        setComboPicks([a]);
+        return;
+      }
+      const min = Math.min(a, b);
+      const max = Math.max(a, b);
+      return place('DOMINO', (min << 4) | max);
+    }
+
+    if (comboMode === 'HOP3_EASY' || comboMode === 'HOP4_EASY') {
+      const maxCount = comboMode === 'HOP3_EASY' ? 3 : 4;
+      const next = comboPicks.includes(num) ? comboPicks.filter((x) => x !== num) : [...comboPicks, num];
+      if (next.length > maxCount) return;
+      if (next.length < maxCount) {
+        setComboPicks(next);
+        return;
+      }
+      const mask = next.reduce((m, v) => m | (1 << (v - 1)), 0);
+      return place(comboMode, mask);
+    }
+
+    if (comboMode === 'HOP3_HARD') {
+      if (comboPicks.length === 0) {
+        setComboPicks([num]);
+        return;
+      }
+      const doubled = comboPicks[0];
+      if (num === doubled) {
+        setComboPicks([]);
+        return;
+      }
+      return place('HOP3_HARD', (doubled << 4) | num);
+    }
+  }, [comboMode, comboPicks, addBet]);
+
+  const addBet = useCallback((type: SicBoBetType, target?: number) => {
     if (state.phase !== 'betting') return;
 
     // Calculate current total bet
@@ -150,7 +208,7 @@ export function SicBoScreen() {
 
     setState((prev) => {
       const existingIndex = prev.bets.findIndex(
-        (b) => b.type === type && b.value === value
+        (b) => b.type === type && b.target === target
       );
 
       if (existingIndex >= 0) {
@@ -160,7 +218,7 @@ export function SicBoScreen() {
           newBets[existingIndex] = {
             type: existingBet.type,
             amount: existingBet.amount + selectedChip,
-            value: existingBet.value,
+            target: existingBet.target,
           };
         }
         return { ...prev, bets: newBets };
@@ -168,7 +226,7 @@ export function SicBoScreen() {
 
       return {
         ...prev,
-        bets: [...prev.bets, { type, amount: selectedChip, value }],
+        bets: [...prev.bets, { type, amount: selectedChip, target }],
       };
     });
   }, [state.phase, selectedChip, state.bets, balance]);
@@ -379,6 +437,17 @@ export function SicBoScreen() {
             </View>
 
             <ScrollView>
+              {/* Odd / Even */}
+              <Text style={styles.sectionTitle}>Odd / Even</Text>
+              <View style={styles.betRow}>
+                <Pressable style={styles.advancedBet} onPress={() => addBet('ODD')}>
+                  <Text style={styles.advancedBetText}>ODD</Text>
+                </Pressable>
+                <Pressable style={styles.advancedBet} onPress={() => addBet('EVEN')}>
+                  <Text style={styles.advancedBetText}>EVEN</Text>
+                </Pressable>
+              </View>
+
               {/* Totals */}
               <Text style={styles.sectionTitle}>Totals</Text>
               <View style={styles.totalsGrid}>
@@ -386,7 +455,7 @@ export function SicBoScreen() {
                   <Pressable
                     key={num}
                     style={styles.totalBet}
-                    onPress={() => addBet(`TOTAL_${num}` as SicBoBetType)}
+                    onPress={() => addBet('SUM', num)}
                   >
                     <Text style={styles.totalNumber}>{num}</Text>
                   </Pressable>
@@ -394,15 +463,29 @@ export function SicBoScreen() {
               </View>
 
               {/* Singles */}
-              <Text style={styles.sectionTitle}>Single Number (1:1)</Text>
+              <Text style={styles.sectionTitle}>Single Number</Text>
               <View style={styles.betRow}>
                 {[1, 2, 3, 4, 5, 6].map((num) => (
                   <Pressable
                     key={num}
                     style={styles.singleBet}
-                    onPress={() => addBet('SINGLE', num)}
+                    onPress={() => addBet('SINGLE_DIE', num)}
                   >
                     <Text style={styles.singleNumber}>{getDieFace(num)}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* Doubles */}
+              <Text style={styles.sectionTitle}>Specific Double</Text>
+              <View style={styles.betRow}>
+                {[1, 2, 3, 4, 5, 6].map((num) => (
+                  <Pressable
+                    key={`double-${num}`}
+                    style={styles.singleBet}
+                    onPress={() => addBet('DOUBLE_SPECIFIC', num)}
+                  >
+                    <Text style={styles.singleNumber}>{getDieFace(num)}{getDieFace(num)}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -412,7 +495,7 @@ export function SicBoScreen() {
               <View style={styles.betRow}>
                 <Pressable
                   style={styles.tripleBet}
-                  onPress={() => addBet('ANY_TRIPLE')}
+                  onPress={() => addBet('TRIPLE_ANY')}
                 >
                   <Text style={styles.tripleLabel}>Any Triple</Text>
                   <Text style={styles.tripleOdds}>30:1</Text>
@@ -423,12 +506,47 @@ export function SicBoScreen() {
                   <Pressable
                     key={num}
                     style={styles.specificTriple}
-                    onPress={() => addBet('SPECIFIC_TRIPLE', num)}
+                    onPress={() => addBet('TRIPLE_SPECIFIC', num)}
                   >
                     <Text style={styles.specificTripleText}>
                       {getDieFace(num)}{getDieFace(num)}{getDieFace(num)}
                     </Text>
                     <Text style={styles.specificTripleOdds}>180:1</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {/* Combo Builder */}
+              <Text style={styles.sectionTitle}>Combo Builder</Text>
+              <View style={styles.comboModes}>
+                <Pressable
+                  onPress={() => setComboMode('NONE')}
+                  style={[styles.comboMode, comboMode === 'NONE' && styles.comboModeActive]}
+                >
+                  <Text style={styles.comboModeText}>NONE</Text>
+                </Pressable>
+                {(['DOMINO', 'HOP3_EASY', 'HOP3_HARD', 'HOP4_EASY'] as const).map((mode) => (
+                  <Pressable
+                    key={mode}
+                    onPress={() => setComboMode(mode)}
+                    style={[styles.comboMode, comboMode === mode && styles.comboModeActive]}
+                  >
+                    <Text style={styles.comboModeText}>{mode.replace('_', ' ')}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <View style={styles.comboGrid}>
+                {[1, 2, 3, 4, 5, 6].map((num) => (
+                  <Pressable
+                    key={`combo-${num}`}
+                    style={[
+                      styles.comboPick,
+                      comboPicks.includes(num) && styles.comboPickActive,
+                    ]}
+                    onPress={() => handleComboPick(num)}
+                    disabled={comboMode === 'NONE'}
+                  >
+                    <Text style={styles.comboPickText}>{getDieFace(num)}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -662,5 +780,58 @@ const styles = StyleSheet.create({
   specificTripleOdds: {
     color: COLORS.gold,
     ...TYPOGRAPHY.caption,
+  },
+  advancedBet: {
+    flex: 1,
+    paddingVertical: SPACING.sm,
+    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+  },
+  advancedBetText: {
+    color: COLORS.textPrimary,
+    ...TYPOGRAPHY.label,
+  },
+  comboModes: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  comboMode: {
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surfaceElevated,
+  },
+  comboModeActive: {
+    borderColor: COLORS.gold,
+  },
+  comboModeText: {
+    color: COLORS.textPrimary,
+    ...TYPOGRAPHY.caption,
+    textTransform: 'uppercase',
+  },
+  comboGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.xs,
+  },
+  comboPick: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  comboPickActive: {
+    borderWidth: 1,
+    borderColor: COLORS.gold,
+  },
+  comboPickText: {
+    fontSize: 20,
   },
 });

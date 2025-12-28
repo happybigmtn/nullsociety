@@ -149,7 +149,8 @@ describe('Game Payload Builders', () => {
     it('encodes all guesses', () => {
       expect(buildHiLoPayload('higher')).toEqual(new Uint8Array([0]));
       expect(buildHiLoPayload('lower')).toEqual(new Uint8Array([1]));
-      expect(buildHiLoPayload('same')).toEqual(new Uint8Array([2]));
+      // Same = 3 in Rust (2 is unused/reserved)
+      expect(buildHiLoPayload('same')).toEqual(new Uint8Array([3]));
     });
   });
 });
@@ -211,26 +212,28 @@ describe('Transaction Building', () => {
       expect(wrapped[0]).toBe(SubmissionTag.Transactions);  // CRITICAL: 1, not 0
     });
 
-    it('includes vec length as u32 BE', () => {
+    it('includes vec length as varint', () => {
       const tx = new Uint8Array(100);
       const wrapped = wrapSubmission(tx);
 
-      const view = new DataView(wrapped.buffer);
-      expect(view.getUint32(1, false)).toBe(1);  // vec length = 1
+      // Vec length 1 is encoded as a single byte varint: 0x01
+      expect(wrapped[1]).toBe(1);
     });
 
     it('includes transaction bytes after header', () => {
       const tx = new Uint8Array([1, 2, 3, 4, 5]);
       const wrapped = wrapSubmission(tx);
 
-      expect(wrapped.slice(5)).toEqual(tx);
+      // Header is: tag (1 byte) + varint len (1 byte for len=1) = 2 bytes
+      expect(wrapped.slice(2)).toEqual(tx);
     });
 
     it('has correct total length', () => {
       const tx = new Uint8Array(100);
       const wrapped = wrapSubmission(tx);
 
-      expect(wrapped.length).toBe(1 + 4 + 100);  // tag + length + tx
+      // tag (1) + varint len (1 for small counts) + tx (100) = 102
+      expect(wrapped.length).toBe(1 + 1 + 100);
     });
   });
 

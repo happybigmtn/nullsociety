@@ -220,8 +220,11 @@ where
             buffer_size
         };
         let (mut tx, rx) = mpsc::channel(buffer_size);
+        // Clone queue_depth for the closure - the original is used in the struct
+        let queue_depth_inner = queue_depth.clone();
         let handle = context.spawn({
             move |mut context| async move {
+                let queue_depth = queue_depth_inner;
                 let mut backoff = Duration::from_millis(200);
                 loop {
                     // Try to connect

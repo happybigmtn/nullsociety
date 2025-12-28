@@ -6,11 +6,12 @@ const MAX_GRAPH_POINTS = 100;
 
 /**
  * Convert SicBoBet to numeric format for serialization
+ * Mappings from execution/src/casino/sic_bo.rs BetType enum
  */
 const sicBoBetToNumeric = (bet: SicBoBet): {betType: number, number: number, amount: number} => {
   const betTypeMap: Record<SicBoBet['type'], number> = {
     'SMALL': 0, 'BIG': 1, 'ODD': 2, 'EVEN': 3,
-    'SUM': 4, 'SINGLE_DIE': 5, 'DOUBLE_SPECIFIC': 6, 'TRIPLE_SPECIFIC': 7, 'TRIPLE_ANY': 8,
+    'TRIPLE_SPECIFIC': 4, 'TRIPLE_ANY': 5, 'DOUBLE_SPECIFIC': 6, 'SUM': 7, 'SINGLE_DIE': 8,
     'DOMINO': 9, 'HOP3_EASY': 10, 'HOP3_HARD': 11, 'HOP4_EASY': 12
   };
   return { betType: betTypeMap[bet.type], number: bet.target ?? 0, amount: bet.amount };

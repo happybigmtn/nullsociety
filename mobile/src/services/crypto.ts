@@ -6,9 +6,27 @@
  * Only signing operations and public key access are exported.
  */
 import { ed25519 } from '@noble/curves/ed25519';
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
 const PRIVATE_KEY_KEY = 'nullspace_private_key';
+const isWeb = Platform.OS === 'web';
+
+// Web-compatible secure storage fallback (uses localStorage on web)
+const WebSecureStore = {
+  async getItemAsync(key: string): Promise<string | null> {
+    return localStorage.getItem(key);
+  },
+  async setItemAsync(key: string, value: string): Promise<void> {
+    localStorage.setItem(key, value);
+  },
+  async deleteItemAsync(key: string): Promise<void> {
+    localStorage.removeItem(key);
+  },
+};
+
+// Use appropriate storage based on platform
+const KeyStore = isWeb ? WebSecureStore : SecureStore;
 
 /**
  * Convert bytes to hex string (React Native doesn't have Buffer)
@@ -38,14 +56,18 @@ async function getOrCreateKeyPairInternal(): Promise<{
   publicKey: Uint8Array;
   privateKey: Uint8Array;
 }> {
-  let privateKeyHex = await SecureStore.getItemAsync(PRIVATE_KEY_KEY);
+  let privateKeyHex = await KeyStore.getItemAsync(PRIVATE_KEY_KEY);
 
   if (!privateKeyHex) {
     const privateKey = ed25519.utils.randomPrivateKey();
     privateKeyHex = bytesToHex(privateKey);
-    await SecureStore.setItemAsync(PRIVATE_KEY_KEY, privateKeyHex, {
-      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-    });
+    if (isWeb) {
+      await KeyStore.setItemAsync(PRIVATE_KEY_KEY, privateKeyHex);
+    } else {
+      await SecureStore.setItemAsync(PRIVATE_KEY_KEY, privateKeyHex, {
+        keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      });
+    }
   }
 
   const privateKey = hexToBytes(privateKeyHex);
@@ -68,7 +90,7 @@ export async function getPublicKey(): Promise<Uint8Array> {
  * Private key is used internally and never exposed
  */
 export async function signMessage(message: Uint8Array): Promise<Uint8Array> {
-  const privateKeyHex = await SecureStore.getItemAsync(PRIVATE_KEY_KEY);
+  const privateKeyHex = await KeyStore.getItemAsync(PRIVATE_KEY_KEY);
   if (!privateKeyHex) {
     throw new Error('No key pair exists. Call getPublicKey() first to create one.');
   }
@@ -91,13 +113,13 @@ export function verifySignature(
  * Delete the stored key pair (for account reset)
  */
 export async function deleteKeyPair(): Promise<void> {
-  await SecureStore.deleteItemAsync(PRIVATE_KEY_KEY);
+  await KeyStore.deleteItemAsync(PRIVATE_KEY_KEY);
 }
 
 /**
  * Check if a key pair exists
  */
 export async function hasKeyPair(): Promise<boolean> {
-  const key = await SecureStore.getItemAsync(PRIVATE_KEY_KEY);
+  const key = await KeyStore.getItemAsync(PRIVATE_KEY_KEY);
   return key !== null;
 }

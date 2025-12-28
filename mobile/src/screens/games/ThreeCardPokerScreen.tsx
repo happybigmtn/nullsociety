@@ -156,8 +156,8 @@ export function ThreeCardPokerScreen() {
 
     send({
       type: 'three_card_poker_deal',
-      anteBet: state.anteBet,
-      pairPlusBet: state.pairPlusBet,
+      ante: state.anteBet,
+      pairPlus: state.pairPlusBet,
     });
 
     setState((prev) => ({

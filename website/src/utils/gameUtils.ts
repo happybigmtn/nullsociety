@@ -1218,17 +1218,6 @@ export const resolveCrapsBets = (
             } else {
                 remainingBets.push({ ...bet, progressMask: mask });
             }
-        } else if (bet.type === 'REPEATER') {
-            // Placeholder until backend support exists.
-            const sevenOut = total === 7 && point !== null;
-            if (sevenOut) {
-                loseAmount = bet.amount;
-                resolved = true;
-            } else {
-                remainingBets.push(bet);
-            }
-        }
-
         pnl += winAmount;
         if (loseAmount > 0) pnl -= loseAmount;
 
@@ -1251,8 +1240,7 @@ export const resolveCrapsBets = (
             'DIFF_DOUBLES',
             'RIDE_LINE',
             'REPLAY',
-            'HOT_ROLLER',
-            'REPEATER'
+            'HOT_ROLLER'
         ].includes(bet.type)) {
             remainingBets.push(bet);
         }

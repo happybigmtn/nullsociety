@@ -84,7 +84,20 @@ export const HiLoMessageSchema = BaseMessageSchema.extend({
 });
 
 // Baccarat-specific schemas
-export const BaccaratBetTypeSchema = z.enum(['PLAYER', 'BANKER', 'TIE']);
+export const BaccaratBetTypeSchema = z.enum([
+  'PLAYER',
+  'BANKER',
+  'TIE',
+  'P_PAIR',
+  'B_PAIR',
+  'LUCKY6',
+  'P_DRAGON',
+  'B_DRAGON',
+  'PANDA8',
+  'P_PERFECT_PAIR',
+  'B_PERFECT_PAIR',
+]);
+export const BaccaratOutcomeSchema = z.enum(['PLAYER', 'BANKER', 'TIE']);
 export const BaccaratMessageSchema = BaseMessageSchema.extend({
   type: z.enum(['state_update', 'game_result', 'cards_dealt']),
   balance: z.number().optional(),
@@ -92,7 +105,7 @@ export const BaccaratMessageSchema = BaseMessageSchema.extend({
   bankerCards: z.array(CardSchema).optional(),
   playerTotal: z.number().optional(),
   bankerTotal: z.number().optional(),
-  winner: BaccaratBetTypeSchema.optional(),
+  winner: BaccaratOutcomeSchema.optional(),
   message: z.string().optional(),
 });
 
@@ -241,7 +254,9 @@ export const BlackjackSplitRequestSchema = z.object({
 export const RouletteBetSchema = z.object({
   type: z.string(),
   amount: z.number().positive(),
-  number: z.number().int().min(0).max(36).optional(),
+  target: z.number().int().min(0).max(37).optional(),
+  number: z.number().int().min(0).max(37).optional(),
+  value: z.number().int().min(0).max(37).optional(),
 });
 
 export const RouletteSpinRequestSchema = z.object({
@@ -253,6 +268,7 @@ export const RouletteSpinRequestSchema = z.object({
 export const CrapsBetSchema = z.object({
   type: z.string(),
   amount: z.number().positive(),
+  target: z.number().int().min(0).max(12).optional(),
 });
 
 export const CrapsRollRequestSchema = z.object({
@@ -311,6 +327,9 @@ export const VideoPokerDrawRequestSchema = z.object({
 export const SicBoBetSchema = z.object({
   type: z.string(),
   amount: z.number().positive(),
+  target: z.number().int().min(0).max(255).optional(),
+  number: z.number().int().min(0).max(255).optional(),
+  value: z.number().int().min(0).max(255).optional(),
 });
 
 export const SicBoRollRequestSchema = z.object({
@@ -321,8 +340,8 @@ export const SicBoRollRequestSchema = z.object({
 // --- Three Card Poker Outbound ---
 export const ThreeCardPokerDealRequestSchema = z.object({
   type: z.literal('three_card_poker_deal'),
-  anteBet: z.number().positive(),
-  pairPlusBet: z.number().nonnegative(),
+  ante: z.number().positive(),
+  pairPlus: z.number().nonnegative().optional(),
 });
 
 export const ThreeCardPokerPlayRequestSchema = z.object({
@@ -336,9 +355,9 @@ export const ThreeCardPokerFoldRequestSchema = z.object({
 // --- Ultimate TX Hold'em Outbound ---
 export const UltimateTXDealRequestSchema = z.object({
   type: z.literal('ultimate_tx_deal'),
-  anteBet: z.number().positive(),
-  blindBet: z.number().positive(),
-  tripsBet: z.number().nonnegative().optional(),
+  ante: z.number().positive(),
+  blind: z.number().positive(),
+  trips: z.number().nonnegative().optional(),
 });
 
 export const UltimateTXBetRequestSchema = z.object({

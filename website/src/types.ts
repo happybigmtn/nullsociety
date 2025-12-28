@@ -70,8 +70,7 @@ export interface CrapsBet {
     | 'DIFF_DOUBLES'
     | 'RIDE_LINE'
     | 'REPLAY'
-    | 'HOT_ROLLER'
-    | 'REPEATER';
+    | 'HOT_ROLLER';
   amount: number;
   target?: number; // The number (e.g., 4 for a Place 4, or the Point for a Come bet)
   oddsAmount?: number; // Attached odds amount (confirmed on-chain)

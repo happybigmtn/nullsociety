@@ -393,7 +393,6 @@ const crapsBetToNumeric = (bet: CrapsBet): {betType: number, target: number, amo
     'RIDE_LINE': 20,
     'REPLAY': 21,
     'HOT_ROLLER': 22,
-    'REPEATER': 23,
   };
 
   // HARDWAY bets: compute actual bet type from target value
@@ -415,8 +414,7 @@ const crapsBetToNumeric = (bet: CrapsBet): {betType: number, target: number, amo
       || bet.type === 'DIFF_DOUBLES'
       || bet.type === 'RIDE_LINE'
       || bet.type === 'REPLAY'
-      || bet.type === 'HOT_ROLLER'
-      || bet.type === 'REPEATER') {
+      || bet.type === 'HOT_ROLLER') {
     target = 0;
   }
 
@@ -2764,7 +2762,6 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
           20: 'RIDE_LINE',
           21: 'REPLAY',
           22: 'HOT_ROLLER',
-          23: 'REPEATER',
         };
         const parsedBets: CrapsBet[] = [];
         let offset = betsOffset;
@@ -2937,7 +2934,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
           // Save bets for potential rebet on seven-out (before clearing)
           const savedBetsForRebet = sevenOut
             ? prev.crapsBets.filter((b) =>
-                !['FIRE', 'ATS_SMALL', 'ATS_TALL', 'ATS_ALL', 'MUGGSY', 'DIFF_DOUBLES', 'RIDE_LINE', 'REPLAY', 'HOT_ROLLER', 'REPEATER'].includes(b.type)
+                !['FIRE', 'ATS_SMALL', 'ATS_TALL', 'ATS_ALL', 'MUGGSY', 'DIFF_DOUBLES', 'RIDE_LINE', 'REPLAY', 'HOT_ROLLER'].includes(b.type)
               )
             : prev.crapsLastRoundBets;
 
@@ -4780,7 +4777,6 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
       'RIDE_LINE': 20,
       'REPLAY': 21,
       'HOT_ROLLER': 22,
-      'REPEATER': 23,
     };
 
     // HARDWAY bets: compute actual bet type from target value
@@ -4802,8 +4798,7 @@ export const useTerminalGame = (playMode: 'CASH' | 'FREEROLL' | null = null) => 
         || bet.type === 'DIFF_DOUBLES'
         || bet.type === 'RIDE_LINE'
         || bet.type === 'REPLAY'
-        || bet.type === 'HOT_ROLLER'
-        || bet.type === 'REPEATER') {
+        || bet.type === 'HOT_ROLLER') {
       target = 0;
     }
 

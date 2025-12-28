@@ -114,11 +114,11 @@ export function buildBlackjackPayload(move: 'hit' | 'stand' | 'double' | 'split'
 }
 
 /**
- * Hi-Lo move payload
- * Single byte: 0=higher, 1=lower, 2=same
+ * Hi-Lo move payload (from execution/src/casino/hilo.rs)
+ * Single byte: 0=higher, 1=lower, 2=cashout, 3=same
  */
 export function buildHiLoPayload(guess: 'higher' | 'lower' | 'same'): Uint8Array {
-  const guessMap = { higher: 0, lower: 1, same: 2 };
+  const guessMap = { higher: 0, lower: 1, same: 3 };
   return new Uint8Array([guessMap[guess]]);
 }
 
@@ -171,17 +171,32 @@ export function buildVideoPokerPayload(holds: boolean[]): Uint8Array {
 }
 
 /**
- * Craps bet payload
- * [betType:u8][amount:u64 BE]
+ * Craps place bet payload
+ * Action 0: [0][betType:u8][target:u8][amount:u64 BE]
+ *
+ * Bet types:
+ * - 0 = Pass Line, 1 = Don't Pass, 2 = Come, 3 = Don't Come
+ * - 4 = Place (target = point number), 5 = Field
+ * - etc. (see craps.rs for full list)
  */
-export function buildCrapsPayload(betType: number, amount: bigint): Uint8Array {
-  const result = new Uint8Array(9);
+export function buildCrapsPayload(betType: number, amount: bigint, target: number = 0): Uint8Array {
+  const result = new Uint8Array(11);  // 1 + 1 + 1 + 8
   const view = new DataView(result.buffer);
 
-  result[0] = betType;
-  view.setBigUint64(1, amount, false);
+  result[0] = 0;  // Action 0 = Place bet
+  result[1] = betType;
+  result[2] = target;
+  view.setBigUint64(3, amount, false);
 
   return result;
+}
+
+/**
+ * Craps roll dice payload
+ * Action 2: [2]
+ */
+export function buildCrapsRollPayload(): Uint8Array {
+  return new Uint8Array([2]);
 }
 
 /**

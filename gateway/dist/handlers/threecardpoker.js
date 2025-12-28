@@ -1,0 +1,104 @@
+/**
+ * Three Card Poker game handler
+ *
+ * Multi-stage flow matching execution/src/casino/three_card.rs:
+ * 1. CasinoStartGame → Betting stage
+ * 2. Deal move (2) → Decision stage (player cards dealt)
+ * 3. Play (0) or Fold (1) → AwaitingReveal or Complete
+ * 4. Reveal move (4) → Complete
+ */
+import { GameHandler } from './base.js';
+import { GameType } from '../codec/index.js';
+import { generateSessionId } from '../codec/transactions.js';
+import { ErrorCodes, createError } from '../types/errors.js';
+/** Three Card Poker move codes matching execution/src/casino/three_card.rs */
+const ThreeCardMove = {
+    Play: 0,
+    Fold: 1,
+    Deal: 2,
+    SetPairPlus: 3,
+    Reveal: 4,
+    SetSixCardBonus: 5,
+    SetProgressive: 6,
+    AtomicDeal: 7,
+    SetRules: 8,
+};
+export class ThreeCardPokerHandler extends GameHandler {
+    constructor() {
+        super(GameType.ThreeCard);
+    }
+    async handleMessage(ctx, msg) {
+        const msgType = msg.type;
+        switch (msgType) {
+            case 'threecardpoker_deal':
+            case 'three_card_poker_deal':
+                return this.handleDeal(ctx, msg);
+            case 'threecardpoker_play':
+            case 'three_card_poker_play':
+                return this.handlePlay(ctx);
+            case 'threecardpoker_fold':
+            case 'three_card_poker_fold':
+                return this.handleFold(ctx);
+            default:
+                return {
+                    success: false,
+                    error: createError(ErrorCodes.INVALID_MESSAGE, `Unknown threecardpoker message: ${msgType}`),
+                };
+        }
+    }
+    async handleDeal(ctx, msg) {
+        const ante = msg.ante;
+        const pairPlus = msg.pairPlus;
+        if (typeof ante !== 'number' || ante <= 0) {
+            return {
+                success: false,
+                error: createError(ErrorCodes.INVALID_BET, 'Invalid ante amount'),
+            };
+        }
+        // Pair plus is optional side bet
+        const totalBet = BigInt(ante) + BigInt(pairPlus ?? 0);
+        const gameSessionId = generateSessionId(ctx.session.publicKey, ctx.session.gameSessionCounter++);
+        // Step 1: Start game (enters Betting stage)
+        const startResult = await this.startGame(ctx, totalBet, gameSessionId);
+        if (!startResult.success) {
+            return startResult;
+        }
+        // Step 2: Send Deal move to deal cards (moves to Decision stage)
+        const dealPayload = new Uint8Array([ThreeCardMove.Deal]);
+        const dealResult = await this.makeMove(ctx, dealPayload);
+        if (!dealResult.success) {
+            return dealResult;
+        }
+        // Spread dealResult.response FIRST, then override type to ensure it's 'game_started'
+        return {
+            success: true,
+            response: {
+                ...(dealResult.response || {}),
+                type: 'game_started',
+                gameType: GameType.ThreeCard,
+                sessionId: ctx.session.activeGameId?.toString(),
+                ante: ante.toString(),
+            },
+        };
+    }
+    async handlePlay(ctx) {
+        // Play action (0) - continue with hand
+        const payload = new Uint8Array([ThreeCardMove.Play]);
+        const playResult = await this.makeMove(ctx, payload);
+        if (!playResult.success) {
+            return playResult;
+        }
+        // If in AwaitingReveal, auto-reveal
+        if (playResult.response?.type === 'game_move') {
+            const revealPayload = new Uint8Array([ThreeCardMove.Reveal]);
+            return this.makeMove(ctx, revealPayload);
+        }
+        return playResult;
+    }
+    async handleFold(ctx) {
+        // Fold action (1) - forfeit ante
+        const payload = new Uint8Array([ThreeCardMove.Fold]);
+        return this.makeMove(ctx, payload);
+    }
+}
+//# sourceMappingURL=threecardpoker.js.map

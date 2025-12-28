@@ -1,6 +1,6 @@
 /**
  * Session lifecycle manager
- * Handles player registration, deposits, and session tracking
+ * Handles player registration, deposits, session tracking, and event subscriptions
  */
 import { randomUUID } from 'crypto';
 import type { WebSocket } from 'ws';
@@ -8,6 +8,7 @@ import { ed25519 } from '@noble/curves/ed25519';
 
 import { NonceManager } from './nonce.js';
 import { SubmitClient } from '../backend/http.js';
+import { UpdatesClient, type CasinoGameEvent } from '../backend/updates.js';
 import {
   encodeCasinoRegister,
   encodeCasinoDeposit,
@@ -25,9 +26,11 @@ export class SessionManager {
   private byPublicKey: Map<string, Session> = new Map();
   private nonceManager: NonceManager;
   private submitClient: SubmitClient;
+  private backendUrl: string;
 
-  constructor(submitClient: SubmitClient, nonceManager?: NonceManager) {
+  constructor(submitClient: SubmitClient, backendUrl: string, nonceManager?: NonceManager) {
     this.submitClient = submitClient;
+    this.backendUrl = backendUrl;
     this.nonceManager = nonceManager ?? new NonceManager();
   }
 
@@ -66,30 +69,48 @@ export class SessionManager {
     this.sessions.set(ws, session);
     this.byPublicKey.set(publicKeyHex, session);
 
-    // Auto-register and deposit in background
-    this.initializePlayer(session, initialBalance).catch(err => {
+    // Register and deposit before returning session (must complete before client can play)
+    try {
+      await this.initializePlayer(session, initialBalance);
+    } catch (err) {
       console.error(`Failed to initialize player ${playerName}:`, err);
-    });
+    }
 
     return session;
   }
 
   /**
-   * Register player on-chain and deposit initial chips
+   * Register player on-chain and connect to updates stream.
+   * Note: Players receive INITIAL_CHIPS (1,000) on registration automatically.
+   * The faucet (CasinoDeposit) is rate-limited for new accounts so we don't auto-deposit.
+   *
+   * IMPORTANT: Must connect WebSocket FIRST before sending transactions,
+   * otherwise we miss the broadcast of results (race condition).
    */
-  private async initializePlayer(session: Session, initialBalance: bigint): Promise<void> {
-    // Step 1: Register player
+  private async initializePlayer(session: Session, _initialBalance: bigint): Promise<void> {
+    // Step 1: Connect to updates stream FIRST (before any transactions)
+    // This ensures we're subscribed to receive event broadcasts
+    try {
+      const updatesClient = new UpdatesClient(this.backendUrl);
+      await updatesClient.connectForAccount(session.publicKey);
+      session.updatesClient = updatesClient;
+      console.log(`Connected to updates stream for ${session.playerName}`);
+    } catch (err) {
+      console.warn(`Failed to connect to updates stream for ${session.playerName}:`, err);
+      // Non-fatal - game can still work, just won't get real-time events
+    }
+
+    // Step 2: Register player (grants INITIAL_CHIPS automatically)
+    // Now the WebSocket is ready to receive the registration result
     const registerResult = await this.registerPlayer(session);
     if (!registerResult) {
       console.warn(`Registration failed for ${session.playerName}`);
       return;
     }
 
-    // Step 2: Deposit test chips
-    const depositResult = await this.depositChips(session, initialBalance);
-    if (depositResult) {
-      session.balance = initialBalance;
-    }
+    // Player gets 1,000 chips on registration - mark as having balance
+    session.hasBalance = true;
+    session.balance = 1000n;
   }
 
   /**
@@ -178,6 +199,10 @@ export class SessionManager {
   destroySession(ws: WebSocket): Session | undefined {
     const session = this.sessions.get(ws);
     if (session) {
+      // Disconnect updates client
+      if (session.updatesClient) {
+        session.updatesClient.disconnect();
+      }
       this.byPublicKey.delete(session.publicKeyHex);
       this.sessions.delete(ws);
       console.log(`Session destroyed: ${session.playerName}`);
@@ -241,12 +266,10 @@ export class SessionManager {
   }
 
   /**
-   * Get backend URL from submit client (for nonce sync)
+   * Get backend URL (for nonce sync)
    */
-  private getBackendUrl(): string {
-    // Access private baseUrl through reflection or make it configurable
-    // For now, extract from submit client's baseUrl
-    return (this.submitClient as any).baseUrl ?? 'http://localhost:8080';
+  getBackendUrl(): string {
+    return this.backendUrl;
   }
 
   /**

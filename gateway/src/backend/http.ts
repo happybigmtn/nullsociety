@@ -10,11 +10,14 @@ export interface SubmitResult {
 export class SubmitClient {
   private baseUrl: string;
   private timeout: number;
+  private origin: string;
 
-  constructor(baseUrl: string, timeout: number = 10000) {
+  constructor(baseUrl: string, timeout: number = 10000, origin?: string) {
     // Remove trailing slash
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.timeout = timeout;
+    // Default origin for server-to-server requests (must match ALLOWED_HTTP_ORIGINS)
+    this.origin = origin || 'http://localhost:9010';
   }
 
   /**
@@ -29,6 +32,7 @@ export class SubmitClient {
         method: 'POST',
         headers: {
           'Content-Type': 'application/octet-stream',
+          'Origin': this.origin,
         },
         body: Buffer.from(submission),
         signal: controller.signal,
@@ -37,6 +41,7 @@ export class SubmitClient {
       clearTimeout(timeoutId);
 
       if (response.ok) {
+        console.log(`[SubmitClient] Transaction accepted`);
         return { accepted: true };
       }
 
@@ -49,6 +54,7 @@ export class SubmitClient {
         // Ignore parse errors
       }
 
+      console.log(`[SubmitClient] Transaction rejected: ${error}`);
       return { accepted: false, error };
     } catch (err) {
       clearTimeout(timeoutId);
@@ -71,6 +77,9 @@ export class SubmitClient {
     try {
       const response = await fetch(`${this.baseUrl}/health`, {
         method: 'GET',
+        headers: {
+          'Origin': this.origin,
+        },
         signal: AbortSignal.timeout(5000),
       });
       return response.ok;
@@ -88,6 +97,9 @@ export class SubmitClient {
   } | null> {
     try {
       const response = await fetch(`${this.baseUrl}/account/${publicKeyHex}`, {
+        headers: {
+          'Origin': this.origin,
+        },
         signal: AbortSignal.timeout(5000),
       });
 

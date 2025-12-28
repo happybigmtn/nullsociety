@@ -3,6 +3,7 @@
  */
 import type { WebSocket } from 'ws';
 import type { GameType } from '../codec/constants.js';
+import type { UpdatesClient } from '../backend/updates.js';
 
 /**
  * Client session state
@@ -49,6 +50,9 @@ export interface Session {
 
   /** Last activity timestamp */
   lastActivityAt: number;
+
+  /** WebSocket client for backend updates (optional, created after registration) */
+  updatesClient?: UpdatesClient;
 }
 
 /**

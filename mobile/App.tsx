@@ -8,6 +8,7 @@
  * - 60fps animations, native haptics
  * - On-chain provably fair gaming
  */
+import { registerRootComponent } from 'expo';
 import { StatusBar, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { RootNavigator } from './src/navigation/RootNavigator';
@@ -15,7 +16,7 @@ import { COLORS } from './src/constants/theme';
 import { useAppState } from './src/hooks';
 import { AuthProvider, WebSocketProvider } from './src/context';
 
-export default function App() {
+function App() {
   // Handle app lifecycle state persistence
   useAppState();
 
@@ -37,3 +38,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
 });
+
+// Register the app component - required for Expo to mount on all platforms
+registerRootComponent(App);

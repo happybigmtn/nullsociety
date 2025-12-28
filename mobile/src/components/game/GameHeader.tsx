@@ -43,6 +43,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderColor: COLORS.border,
   },
   leftSection: {
     flexDirection: 'row',
@@ -50,13 +53,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   backButton: {
-    padding: SPACING.xs,
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
     marginRight: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.sm,
   },
   backText: {
     color: COLORS.textSecondary,
-    fontSize: 24,
-    fontWeight: 'bold',
+    ...TYPOGRAPHY.label,
   },
   balanceContainer: {
     alignItems: 'flex-start',
@@ -64,14 +70,17 @@ const styles = StyleSheet.create({
   balanceLabel: {
     color: COLORS.textMuted,
     ...TYPOGRAPHY.caption,
+    textTransform: 'uppercase',
   },
   balance: {
     color: COLORS.primary,
-    ...TYPOGRAPHY.displayMedium,
+    ...TYPOGRAPHY.h2,
   },
   title: {
     color: COLORS.textPrimary,
-    ...TYPOGRAPHY.h3,
+    ...TYPOGRAPHY.label,
+    textTransform: 'uppercase',
+    letterSpacing: 2,
     flex: 1,
     textAlign: 'center',
   },

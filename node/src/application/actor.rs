@@ -13,7 +13,7 @@ use crate::{
 use commonware_consensus::{marshal, threshold_simplex::types::View};
 use commonware_cryptography::{
     bls12381::primitives::{poly::public, variant::MinSig},
-    ed25519::Batch,
+    ed25519::{Batch, PublicKey},
     sha256::Digest,
     BatchVerifier, Committable, Digestible, Sha256,
 };
@@ -97,14 +97,25 @@ impl NonceCache {
 
     fn get(&mut self, now: SystemTime, public: &PublicKey) -> Option<u64> {
         self.evict_expired(now);
-        let entry = self.entries.get_mut(public)?;
-        if self.is_expired(entry, now) {
+        // Check if entry exists and if it's expired (without holding mutable borrow)
+        let (is_expired, next_nonce) = {
+            let entry = self.entries.get(public)?;
+            let expired = match now.duration_since(entry.last_seen) {
+                Ok(elapsed) => elapsed > self.ttl,
+                Err(_) => false,
+            };
+            (expired, entry.next_nonce)
+        };
+        if is_expired {
             self.remove(public);
             return None;
         }
-        entry.last_seen = now;
+        // Update last_seen and touch LRU
+        if let Some(entry) = self.entries.get_mut(public) {
+            entry.last_seen = now;
+        }
         self.touch(public);
-        Some(entry.next_nonce)
+        Some(next_nonce)
     }
 
     fn insert(&mut self, now: SystemTime, public: PublicKey, next_nonce: u64) {
@@ -136,7 +147,13 @@ impl NonceCache {
                 break;
             };
             let expired = match self.entries.get(&oldest) {
-                Some(entry) => self.is_expired(entry, now),
+                Some(entry) => {
+                    // Inline expiry check to avoid borrow issues
+                    match now.duration_since(entry.last_seen) {
+                        Ok(elapsed) => elapsed > self.ttl,
+                        Err(_) => false,
+                    }
+                }
                 None => true,
             };
             if !expired {

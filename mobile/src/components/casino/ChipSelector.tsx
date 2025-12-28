@@ -11,7 +11,7 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { haptics } from '../../services/haptics';
-import { COLORS, SPACING, ANIMATION } from '../../constants/theme';
+import { COLORS, SPACING, ANIMATION, TYPOGRAPHY } from '../../constants/theme';
 import { CHIP_VALUES } from '../../constants/theme';
 import type { ChipValue } from '../../types';
 
@@ -182,7 +182,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
   },
   chipText: {
-    fontWeight: 'bold',
+    ...TYPOGRAPHY.caption,
+    fontWeight: '700',
     fontSize: 11,
   },
 });

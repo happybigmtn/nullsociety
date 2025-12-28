@@ -19,10 +19,13 @@ export class CasinoWarHandler extends GameHandler {
 
     switch (msgType) {
       case 'casinowar_deal':
+      case 'casino_war_deal':
         return this.handleDeal(ctx, msg);
       case 'casinowar_war':
+      case 'casino_war_war':
         return this.handleWar(ctx);
       case 'casinowar_surrender':
+      case 'casino_war_surrender':
         return this.handleSurrender(ctx);
       default:
         return {
@@ -59,8 +62,8 @@ export class CasinoWarHandler extends GameHandler {
   }
 
   private async handleSurrender(ctx: HandlerContext): Promise<HandleResult> {
-    // Surrender action
-    const payload = new Uint8Array([0]);
+    // Surrender action (Move::Surrender = 2 in casino_war.rs)
+    const payload = new Uint8Array([2]);
     return this.makeMove(ctx, payload);
   }
 }

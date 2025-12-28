@@ -3,36 +3,44 @@
  * Following principles: Radical Simplicity, Progressive Disclosure, Clarity, Tactile Response
  */
 
+import { Platform } from 'react-native';
+
+const FONT_FAMILY = Platform.select({
+  ios: 'Menlo',
+  android: 'monospace',
+  default: 'monospace',
+});
+
 export const COLORS = {
   // Core palette
-  background: '#0A0A0A',
-  surface: '#141414',
-  surfaceElevated: '#1A1A1A',
-  border: '#2A2A2A',
+  background: '#050505',
+  surface: '#0A0A0A',
+  surfaceElevated: '#111111',
+  border: '#333333',
 
   // Primary actions
-  primary: '#00FF00',
-  primaryDark: '#00CC00',
+  primary: '#00FF41',
+  primaryDark: '#00CC33',
 
   // Secondary/accent
-  accent: '#FF4444',
+  accent: '#FF003C',
   gold: '#FFD700',
 
   // Text hierarchy
-  textPrimary: '#FFFFFF',
-  textSecondary: '#888888',
-  textMuted: '#666666',
-  textDisabled: '#444444',
+  textPrimary: '#E5E5E5',
+  textSecondary: '#B3B3B3',
+  textMuted: '#6B7280',
+  textDisabled: '#333333',
 
   // Card suits
-  suitRed: '#EF4444',
+  suitRed: '#FF003C',
   suitBlack: '#1F2937',
 
   // Semantic
-  success: '#22C55E',
-  error: '#EF4444',
-  warning: '#F59E0B',
-  info: '#3B82F6',
+  success: '#00FF41',
+  error: '#FF003C',
+  warning: '#FBBF24',
+  info: '#38BDF8',
 } as const;
 
 export const SPACING = {
@@ -56,27 +64,32 @@ export const TYPOGRAPHY = {
   // Display - for large numbers (balance, bet amounts)
   displayLarge: {
     fontSize: 48,
-    fontWeight: 'bold' as const,
+    fontWeight: '700' as const,
     letterSpacing: -1,
+    fontFamily: FONT_FAMILY,
   },
   displayMedium: {
     fontSize: 36,
-    fontWeight: 'bold' as const,
+    fontWeight: '700' as const,
     letterSpacing: -0.5,
+    fontFamily: FONT_FAMILY,
   },
 
   // Headings
   h1: {
     fontSize: 28,
-    fontWeight: 'bold' as const,
+    fontWeight: '700' as const,
+    fontFamily: FONT_FAMILY,
   },
   h2: {
     fontSize: 24,
     fontWeight: '600' as const,
+    fontFamily: FONT_FAMILY,
   },
   h3: {
     fontSize: 20,
     fontWeight: '600' as const,
+    fontFamily: FONT_FAMILY,
   },
 
   // Body
@@ -84,27 +97,32 @@ export const TYPOGRAPHY = {
     fontSize: 18,
     fontWeight: 'normal' as const,
     lineHeight: 28,
+    fontFamily: FONT_FAMILY,
   },
   body: {
     fontSize: 16,
     fontWeight: 'normal' as const,
     lineHeight: 24,
+    fontFamily: FONT_FAMILY,
   },
   bodySmall: {
     fontSize: 14,
     fontWeight: 'normal' as const,
     lineHeight: 20,
+    fontFamily: FONT_FAMILY,
   },
 
   // Labels
   label: {
     fontSize: 14,
-    fontWeight: '500' as const,
-    letterSpacing: 0.5,
+    fontWeight: '600' as const,
+    letterSpacing: 1,
+    fontFamily: FONT_FAMILY,
   },
   caption: {
     fontSize: 12,
     fontWeight: 'normal' as const,
+    fontFamily: FONT_FAMILY,
   },
 } as const;
 

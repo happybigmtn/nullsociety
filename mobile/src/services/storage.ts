@@ -1,13 +1,54 @@
 /**
  * Storage service using MMKV for high-performance local storage
  * With encryption key stored in SecureStore
+ * Falls back to localStorage on web
  */
+import { Platform } from 'react-native';
 import { MMKV } from 'react-native-mmkv';
 import * as SecureStore from 'expo-secure-store';
 
 const ENCRYPTION_KEY_ID = 'mmkv_encryption_key';
+const isWeb = Platform.OS === 'web';
 
-let storageInstance: MMKV | null = null;
+// Web storage adapter that mimics MMKV interface
+class WebStorage {
+  private prefix = 'nullspace:';
+
+  getBoolean(key: string): boolean | undefined {
+    const val = localStorage.getItem(this.prefix + key);
+    if (val === null) return undefined;
+    return val === 'true';
+  }
+
+  getString(key: string): string | undefined {
+    return localStorage.getItem(this.prefix + key) ?? undefined;
+  }
+
+  getNumber(key: string): number | undefined {
+    const val = localStorage.getItem(this.prefix + key);
+    if (val === null) return undefined;
+    return parseFloat(val);
+  }
+
+  set(key: string, value: boolean | string | number): void {
+    localStorage.setItem(this.prefix + key, String(value));
+  }
+
+  delete(key: string): void {
+    localStorage.removeItem(this.prefix + key);
+  }
+
+  contains(key: string): boolean {
+    return localStorage.getItem(this.prefix + key) !== null;
+  }
+
+  clearAll(): void {
+    const keys = Object.keys(localStorage).filter(k => k.startsWith(this.prefix));
+    keys.forEach(k => localStorage.removeItem(k));
+  }
+}
+
+let storageInstance: MMKV | WebStorage | null = null;
 
 // Re-export storage instance for direct access (after initialization)
 export { storageInstance as storage };
@@ -32,11 +73,17 @@ async function getOrCreateEncryptionKey(): Promise<string> {
 }
 
 /**
- * Initialize encrypted MMKV storage
+ * Initialize encrypted MMKV storage (or WebStorage on web)
  * Must be called before using any storage functions
  */
-export async function initializeStorage(): Promise<MMKV> {
+export async function initializeStorage(): Promise<MMKV | WebStorage> {
   if (storageInstance) return storageInstance;
+
+  if (isWeb) {
+    storageInstance = new WebStorage();
+    return storageInstance;
+  }
+
   const encryptionKey = await getOrCreateEncryptionKey();
   storageInstance = new MMKV({
     id: 'nullspace-storage',
@@ -46,11 +93,14 @@ export async function initializeStorage(): Promise<MMKV> {
 }
 
 /**
- * Get the storage instance
- * Throws if storage not initialized
+ * Get the storage instance (auto-initializes on web)
  */
-export function getStorage(): MMKV {
+export function getStorage(): MMKV | WebStorage {
   if (!storageInstance) {
+    if (isWeb) {
+      storageInstance = new WebStorage();
+      return storageInstance;
+    }
     throw new Error('Storage not initialized. Call initializeStorage first.');
   }
   return storageInstance;

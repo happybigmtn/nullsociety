@@ -19,8 +19,10 @@ export class VideoPokerHandler extends GameHandler {
 
     switch (msgType) {
       case 'videopoker_deal':
+      case 'video_poker_deal':
         return this.handleDeal(ctx, msg);
       case 'videopoker_hold':
+      case 'video_poker_draw':
         return this.handleHold(ctx, msg);
       default:
         return {
@@ -54,7 +56,8 @@ export class VideoPokerHandler extends GameHandler {
     ctx: HandlerContext,
     msg: Record<string, unknown>
   ): Promise<HandleResult> {
-    const holds = msg.holds as boolean[] | undefined;
+    // Accept both 'holds' (gateway canonical) and 'held' (mobile app)
+    const holds = (msg.holds ?? msg.held) as boolean[] | undefined;
 
     if (!holds || !Array.isArray(holds) || holds.length !== 5) {
       return {

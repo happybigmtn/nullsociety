@@ -2,6 +2,8 @@
  * Shared type definitions for the mobile app
  */
 
+import type { BaccaratBetName, CrapsBetName, RouletteBetName, SicBoBetName } from '../constants/betTypes';
+
 // Re-export game ID constants and types from centralized location
 export { GAME_IDS, GAME_NAMES, getGameName } from '../constants/games';
 export type { GameId } from '../constants/games';
@@ -64,43 +66,10 @@ export interface TutorialStep {
 export type ChipValue = 1 | 5 | 25 | 100 | 500 | 1000;
 
 // Roulette bet types
-export type RouletteBetType =
-  | 'RED'
-  | 'BLACK'
-  | 'ODD'
-  | 'EVEN'
-  | '1-18'
-  | '19-36'
-  | 'FIRST_12'
-  | 'SECOND_12'
-  | 'THIRD_12'
-  | 'COLUMN_1'
-  | 'COLUMN_2'
-  | 'COLUMN_3'
-  | 'STRAIGHT';
+export type RouletteBetType = RouletteBetName;
 
 // Craps bet types
-export type CrapsBetType =
-  | 'PASS'
-  | 'DONT_PASS'
-  | 'COME'
-  | 'DONT_COME'
-  | 'FIELD'
-  | 'PLACE_4'
-  | 'PLACE_5'
-  | 'PLACE_6'
-  | 'PLACE_8'
-  | 'PLACE_9'
-  | 'PLACE_10'
-  | 'HARD_4'
-  | 'HARD_6'
-  | 'HARD_8'
-  | 'HARD_10'
-  | 'ANY_7'
-  | 'ANY_CRAPS'
-  | 'YO_11'
-  | 'SNAKE_EYES'
-  | 'BOXCARS';
+export type CrapsBetType = CrapsBetName;
 
 // Video poker hand rankings
 export type PokerHand =
@@ -116,29 +85,10 @@ export type PokerHand =
   | 'NOTHING';
 
 // Baccarat bet types
-export type BaccaratBetType = 'PLAYER' | 'BANKER' | 'TIE';
+export type BaccaratBetType = BaccaratBetName;
 
 // Sic Bo bet types
-export type SicBoBetType =
-  | 'SMALL'
-  | 'BIG'
-  | 'TOTAL_4'
-  | 'TOTAL_5'
-  | 'TOTAL_6'
-  | 'TOTAL_7'
-  | 'TOTAL_8'
-  | 'TOTAL_9'
-  | 'TOTAL_10'
-  | 'TOTAL_11'
-  | 'TOTAL_12'
-  | 'TOTAL_13'
-  | 'TOTAL_14'
-  | 'TOTAL_15'
-  | 'TOTAL_16'
-  | 'TOTAL_17'
-  | 'ANY_TRIPLE'
-  | 'SPECIFIC_TRIPLE'
-  | 'SINGLE';
+export type SicBoBetType = SicBoBetName;
 
 // Three Card Poker hand rankings
 export type ThreeCardPokerHand =

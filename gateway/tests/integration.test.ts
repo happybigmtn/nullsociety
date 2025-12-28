@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { WebSocket } from 'ws';
 
-const GATEWAY_PORT = process.env.TEST_GATEWAY_PORT || '9001';
+const GATEWAY_PORT = process.env.TEST_GATEWAY_PORT || '9010';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
 
 // Skip integration tests unless explicitly enabled
@@ -96,7 +96,7 @@ describe.skipIf(!INTEGRATION_ENABLED)('Gateway Integration Tests', () => {
   beforeAll(async () => {
     // Check if backend is reachable
     try {
-      const response = await fetch(`${BACKEND_URL}/health`);
+      const response = await fetch(`${BACKEND_URL}/healthz`);
       if (!response.ok) {
         throw new Error('Backend health check failed');
       }
@@ -134,7 +134,20 @@ describe.skipIf(!INTEGRATION_ENABLED)('Gateway Integration Tests', () => {
   });
 
   it('should return balance info', async () => {
-    const response = await sendAndReceive(ws, { type: 'get_balance' });
+    // Wait for background registration/deposit to complete
+    // Registration happens async after session_ready is sent
+    let response: Record<string, unknown>;
+    let attempts = 0;
+    const maxAttempts = 20;
+
+    do {
+      await new Promise((r) => setTimeout(r, 100)); // Wait 100ms between attempts
+      response = await sendAndReceive(ws, { type: 'get_balance' });
+      attempts++;
+    } while (
+      (!response.registered || !response.hasBalance) &&
+      attempts < maxAttempts
+    );
 
     expect(response.type).toBe('balance');
     expect(response.registered).toBe(true);

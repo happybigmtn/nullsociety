@@ -35,10 +35,10 @@ const styles = StyleSheet.create({
   button: {
     width: 36,
     height: 36,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -46,8 +46,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
   },
   text: {
-    color: COLORS.textSecondary,
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

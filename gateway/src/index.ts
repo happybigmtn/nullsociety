@@ -12,16 +12,17 @@ import { GameType } from './codec/index.js';
 import { ErrorCodes, createError } from './types/errors.js';
 
 // Configuration from environment
-const PORT = parseInt(process.env.GATEWAY_PORT || '9001', 10);
+const PORT = parseInt(process.env.GATEWAY_PORT || '9010', 10);
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
 
 // Core services
 const nonceManager = new NonceManager();
 const submitClient = new SubmitClient(BACKEND_URL);
-const sessionManager = new SessionManager(submitClient, nonceManager);
+const sessionManager = new SessionManager(submitClient, BACKEND_URL, nonceManager);
 const handlers = createHandlerRegistry();
 
 // Message type to GameType mapping
+// Includes both canonical names and mobile app variations (with underscores)
 const messageGameTypeMap: Record<string, number> = {
   // Baccarat
   baccarat_deal: GameType.Baccarat,
@@ -33,10 +34,13 @@ const messageGameTypeMap: Record<string, number> = {
   blackjack_double: GameType.Blackjack,
   blackjack_split: GameType.Blackjack,
 
-  // Casino War
+  // Casino War (mobile uses underscores)
   casinowar_deal: GameType.CasinoWar,
   casinowar_war: GameType.CasinoWar,
   casinowar_surrender: GameType.CasinoWar,
+  casino_war_deal: GameType.CasinoWar,
+  casino_war_war: GameType.CasinoWar,
+  casino_war_surrender: GameType.CasinoWar,
 
   // Craps
   craps_bet: GameType.Craps,
@@ -44,6 +48,7 @@ const messageGameTypeMap: Record<string, number> = {
 
   // Hi-Lo
   hilo_deal: GameType.HiLo,
+  hilo_bet: GameType.HiLo,
   hilo_higher: GameType.HiLo,
   hilo_lower: GameType.HiLo,
   hilo_same: GameType.HiLo,
@@ -52,23 +57,33 @@ const messageGameTypeMap: Record<string, number> = {
   // Roulette
   roulette_spin: GameType.Roulette,
 
-  // Sic Bo
+  // Sic Bo (mobile uses underscore)
   sicbo_roll: GameType.SicBo,
+  sic_bo_roll: GameType.SicBo,
 
-  // Three Card Poker
+  // Three Card Poker (mobile uses underscores)
   threecardpoker_deal: GameType.ThreeCard,
   threecardpoker_play: GameType.ThreeCard,
   threecardpoker_fold: GameType.ThreeCard,
+  three_card_poker_deal: GameType.ThreeCard,
+  three_card_poker_play: GameType.ThreeCard,
+  three_card_poker_fold: GameType.ThreeCard,
 
-  // Ultimate Texas Hold'em
+  // Ultimate Texas Hold'em (mobile uses different prefix)
   ultimateholdem_deal: GameType.UltimateHoldem,
   ultimateholdem_bet: GameType.UltimateHoldem,
   ultimateholdem_check: GameType.UltimateHoldem,
   ultimateholdem_fold: GameType.UltimateHoldem,
+  ultimate_tx_deal: GameType.UltimateHoldem,
+  ultimate_tx_bet: GameType.UltimateHoldem,
+  ultimate_tx_check: GameType.UltimateHoldem,
+  ultimate_tx_fold: GameType.UltimateHoldem,
 
-  // Video Poker
+  // Video Poker (mobile uses underscores and 'draw' vs 'hold')
   videopoker_deal: GameType.VideoPoker,
   videopoker_hold: GameType.VideoPoker,
+  video_poker_deal: GameType.VideoPoker,
+  video_poker_draw: GameType.VideoPoker,
 };
 
 /**
@@ -101,6 +116,8 @@ async function handleMessage(ws: WebSocket, rawData: Buffer): Promise<void> {
   }
 
   const msgType = msg.type as string | undefined;
+  console.log(`[Gateway] Received message: ${msgType}`, JSON.stringify(msg).slice(0, 200));
+
   if (!msgType) {
     sendError(ws, ErrorCodes.INVALID_MESSAGE, 'Missing message type');
     return;
@@ -157,10 +174,13 @@ async function handleMessage(ws: WebSocket, rawData: Buffer): Promise<void> {
   };
 
   // Execute handler
+  console.log(`[Gateway] Executing handler for ${msgType}...`);
   const result = await handler.handleMessage(ctx, msg);
+  console.log(`[Gateway] Handler result:`, result.success ? 'success' : 'failed', result.error?.message ?? '');
 
   if (result.success) {
     if (result.response) {
+      console.log(`[Gateway] Sending response:`, JSON.stringify(result.response).slice(0, 200));
       send(ws, result.response);
     }
   } else if (result.error) {
