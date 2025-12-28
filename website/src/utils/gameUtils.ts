@@ -1218,6 +1218,7 @@ export const resolveCrapsBets = (
             } else {
                 remainingBets.push({ ...bet, progressMask: mask });
             }
+        }
         pnl += winAmount;
         if (loseAmount > 0) pnl -= loseAmount;
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MobileDrawer } from './MobileDrawer';
+import { Menu, X, ChevronUp } from 'lucide-react';
 
 interface Action {
     type?: 'button' | 'divider';
@@ -7,7 +7,7 @@ interface Action {
     onClick?: () => void;
     disabled?: boolean;
     active?: boolean;
-    className?: string; // Optional custom class
+    className?: string;
 }
 
 interface GameControlBarProps {
@@ -15,9 +15,10 @@ interface GameControlBarProps {
     primaryAction?: Action;
     secondaryActions?: Action[];
     className?: string;
-    variant?: 'row' | 'stack';
+    variant?: 'row' | 'stack'; // kept for interface compatibility
     ariaLabel?: string;
-    mobileMenuLabel?: string; // Label for the "Bets/Options" button on mobile
+    mobileMenuLabel?: string;
+    balance?: string; // New prop for displaying balance
 }
 
 export const GameControlBar: React.FC<GameControlBarProps> = ({
@@ -25,160 +26,116 @@ export const GameControlBar: React.FC<GameControlBarProps> = ({
     primaryAction,
     secondaryActions = [],
     className = '',
-    variant = 'row',
     ariaLabel = 'Game controls',
     mobileMenuLabel = 'BETS',
+    balance = '$1,000.00', // Default placeholder
 }) => {
     const [menuOpen, setMenuOpen] = useState(false);
 
-    // Desktop base: absolute bottom
-    // Mobile base: fixed bottom
-    const base =
-        'ns-controlbar fixed bottom-0 left-0 right-0 md:sticky md:bottom-0 bg-terminal-black/95 backdrop-blur border-t-2 border-gray-700 z-50 pb-[env(safe-area-inset-bottom)] md:pb-0';
-    
-    // Layout for standard mode
-    const layout =
-        variant === 'stack'
-            ? 'p-2'
-            : 'h-16 md:h-20 flex items-center justify-between md:justify-center gap-2 p-2 md:px-4';
-
-    // If no new props are used, render children directly (legacy/custom mode)
-    if (!primaryAction && secondaryActions.length === 0) {
+    // If no primary/secondary actions are passed, render children in the new island container
+    if (!primaryAction && secondaryActions.length === 0 && children) {
         return (
-            <div role="group" aria-label={ariaLabel} className={[base, layout, className].filter(Boolean).join(' ')}>
+             <div className="fixed bottom-6 left-4 right-4 h-16 bg-glass-dark backdrop-blur-xl rounded-full border border-glass-border shadow-float flex items-center justify-between px-4 z-50">
                 {children}
             </div>
         );
     }
 
-    const hasSecondary = secondaryActions.length > 0;
-    const collapseSecondary = secondaryActions.length > 3;
-
     return (
-        <div role="group" aria-label={ariaLabel} className={[base, layout, className].filter(Boolean).join(' ')}>
-            {/* Mobile: Left Actions (Menu or Direct) */}
-            <div className="flex md:hidden flex-1 justify-start gap-2">
-                {children} {/* Render custom children (like modifiers) on left */}
-                
-                {hasSecondary && (
-                    collapseSecondary ? (
-                        <button
-                            type="button"
-                            onClick={() => setMenuOpen(true)}
-                            className="h-12 px-4 border border-gray-600 rounded bg-gray-900 text-gray-300 font-bold text-xs tracking-widest hover:bg-gray-800"
-                        >
-                            {mobileMenuLabel}
-                        </button>
-                    ) : (
-                        secondaryActions.map((action, i) => (
-                            <button
-                                key={i}
-                                type="button"
-                                onClick={action.onClick}
-                                disabled={action.disabled}
-                                className={`h-12 px-3 border rounded text-xs font-bold tracking-widest ${
-                                    action.active
-                                        ? 'border-terminal-green bg-terminal-green/20 text-terminal-green'
-                                        : 'border-gray-700 bg-gray-900 text-gray-400'
-                                } ${action.disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-800'} ${action.className || ''}`}
-                            >
-                                {action.label}
-                            </button>
-                        ))
-                    )
-                )}
-            </div>
+        <>
+            {/* Main Floating Island */}
+            <div 
+                role="group" 
+                aria-label={ariaLabel}
+                className={`fixed bottom-6 left-4 right-4 h-16 bg-black/80 backdrop-blur-xl rounded-full border border-white/10 shadow-float flex items-center justify-between px-2 z-50 transition-all duration-300 ${className}`}
+            >
+                {/* Left: Balance Info */}
+                <div className="flex flex-col pl-4">
+                    <span className="text-[10px] text-gray-400 tracking-widest font-medium">BALANCE</span>
+                    <span className="text-white font-medium text-sm tabular-nums tracking-wide">{balance}</span>
+                </div>
 
-            {/* Desktop: Centered Row */}
-            <div className="hidden md:flex items-center gap-4">
-                {children}
-                {secondaryActions.map((action, i) =>
-                    action.type === 'divider' ? (
-                        <span key={i} className="text-gray-600 text-xs tracking-widest font-mono px-1">
-                            {action.label}
-                        </span>
-                    ) : (
-                        <button
-                            key={i}
-                            type="button"
-                            onClick={action.onClick}
-                            disabled={action.disabled}
-                            className={`h-12 px-4 border rounded text-sm font-bold tracking-widest transition-all ${
-                                action.active
-                                    ? 'border-terminal-green bg-terminal-green/20 text-terminal-green shadow-[0_0_10px_rgba(74,222,128,0.2)]'
-                                    : 'border-gray-700 bg-gray-900 text-gray-400 hover:border-gray-500 hover:text-white'
-                            } ${action.disabled ? 'opacity-50 cursor-not-allowed' : ''} ${action.className || ''}`}
-                        >
-                            {action.label}
-                        </button>
-                    )
-                )}
-            </div>
-
-            {/* Primary Action (Always Right on Mobile, Right/End on Desktop) */}
-            {primaryAction && (
-                <button
-                    type="button"
-                    onClick={primaryAction.onClick}
-                    disabled={primaryAction.disabled}
-                    className={`h-12 md:h-14 px-6 md:px-8 rounded border-2 font-bold text-sm md:text-base tracking-widest uppercase transition-all shadow-[0_0_15px_rgba(0,0,0,0.5)] ${
-                        primaryAction.disabled
-                            ? 'border-gray-800 bg-gray-900 text-gray-600 cursor-not-allowed'
-                            : 'border-terminal-green bg-terminal-green text-black hover:bg-white hover:border-white hover:scale-105 active:scale-95'
-                    } ${primaryAction.className || ''}`}
-                >
-                    {primaryAction.label}
-                </button>
-            )}
-
-            {/* Mobile Bets Menu */}
-            {hasSecondary && collapseSecondary && (
-                <div
-                    className={`fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm transition-opacity duration-200 ${
-                        menuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-                    }`}
-                    onClick={() => setMenuOpen(false)}
-                >
-                    <div
-                        className={`absolute bottom-0 left-0 right-0 bg-terminal-black border-t-2 border-terminal-green p-4 pb-8 transition-transform duration-300 ${
-                            menuOpen ? 'translate-y-0' : 'translate-y-full'
-                        }`}
-                        onClick={(e) => e.stopPropagation()}
+                {/* Center: Primary Action (Floating FAB) */}
+                {primaryAction && (
+                    <button
+                        type="button"
+                        onClick={primaryAction.onClick}
+                        disabled={primaryAction.disabled}
+                        className={`absolute -top-6 left-1/2 -translate-x-1/2 w-20 h-20 rounded-full shadow-lg flex items-center justify-center text-white font-bold tracking-widest text-sm transition-all duration-200 
+                        ${primaryAction.disabled 
+                            ? 'bg-gray-700 cursor-not-allowed grayscale' 
+                            : 'bg-action-primary hover:scale-105 active:scale-95 hover:shadow-xl'
+                        } ${primaryAction.className || ''}`}
                     >
-                        <div className="flex justify-between items-center mb-4 border-b border-gray-800 pb-2">
-                            <span className="text-sm font-bold text-terminal-green tracking-widest">{mobileMenuLabel}</span>
-                            <button onClick={() => setMenuOpen(false)} className="text-gray-500 hover:text-white px-2">
-                                [CLOSE]
-                            </button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto">
-                            {secondaryActions.map((action, i) =>
-                                action.type === 'divider' ? (
-                                    <div key={i} className="col-span-2 text-gray-500 text-xs tracking-widest font-mono text-center py-1 border-b border-gray-800">
-                                        {action.label}
-                                    </div>
-                                ) : (
-                                    <button
-                                        key={i}
-                                        type="button"
-                                        onClick={() => {
-                                            action.onClick?.();
-                                        }}
-                                        disabled={action.disabled}
-                                        className={`h-14 border rounded flex flex-col items-center justify-center gap-1 ${
-                                            action.active
-                                                ? 'border-terminal-green bg-terminal-green/10 text-terminal-green'
-                                                : 'border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800'
-                                        } ${action.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                    >
-                                        <span className="font-bold text-xs tracking-widest">{action.label}</span>
-                                    </button>
-                                )
-                            )}
-                        </div>
+                        {primaryAction.label}
+                    </button>
+                )}
+
+                {/* Right: Menu Toggle */}
+                <button 
+                    onClick={() => setMenuOpen(true)}
+                    className="p-3 rounded-full hover:bg-white/10 active:scale-95 transition-colors"
+                >
+                    <Menu className="text-white w-6 h-6" />
+                </button>
+            </div>
+
+            {/* Bottom Sheet / Menu Overlay */}
+            <div 
+                className={`fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${
+                    menuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                }`}
+                onClick={() => setMenuOpen(false)}
+            >
+                <div 
+                    className={`absolute bottom-0 left-0 right-0 bg-white dark:bg-zinc-900 rounded-t-3xl p-6 pb-10 transition-transform duration-300 cubic-bezier(0.2, 0.8, 0.2, 1) ${
+                        menuOpen ? 'translate-y-0' : 'translate-y-full'
+                    }`}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {/* Sheet Handle */}
+                    <div className="w-12 h-1 bg-gray-300 dark:bg-gray-700 rounded-full mx-auto mb-6" />
+
+                    {/* Header */}
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">{mobileMenuLabel}</h3>
+                        <button onClick={() => setMenuOpen(false)} className="p-2 bg-gray-100 dark:bg-gray-800 rounded-full">
+                            <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                        </button>
+                    </div>
+
+                    {/* Actions Grid */}
+                    <div className="grid grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto">
+                         {children && <div className="col-span-2 mb-4">{children}</div>}
+
+                        {secondaryActions.map((action, i) => 
+                            action.type === 'divider' ? (
+                                <div key={i} className="col-span-2 text-gray-400 text-xs font-medium tracking-widest text-center py-2 uppercase">
+                                    {action.label}
+                                </div>
+                            ) : (
+                                <button
+                                    key={i}
+                                    type="button"
+                                    onClick={() => {
+                                        action.onClick?.();
+                                        // Optional: Close menu on action?
+                                        // setMenuOpen(false); 
+                                    }}
+                                    disabled={action.disabled}
+                                    className={`h-14 rounded-xl flex flex-col items-center justify-center gap-1 transition-all ${
+                                        action.active
+                                            ? 'bg-action-primary text-white shadow-lg shadow-blue-500/20'
+                                            : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700'
+                                    } ${action.disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                >
+                                    <span className="font-semibold text-sm">{action.label}</span>
+                                </button>
+                            )
+                        )}
                     </div>
                 </div>
-            )}
-        </div>
+            </div>
+        </>
     );
 };

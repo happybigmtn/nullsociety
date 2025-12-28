@@ -5,9 +5,26 @@ Goal: validate 1:1 parity between mobile native and mobile web across bet types,
 ## Start the local chain
 1. Generate configs if needed:
    `cargo run --bin generate-keys -- --nodes 4 --output configs/local`
-2. Start the local network:
+
+2. **Set required environment variables** for CORS/origin handling:
+   ```bash
+   # Required for gateway to communicate with simulator
+   export ALLOW_HTTP_NO_ORIGIN=true
+   export ALLOWED_HTTP_ORIGINS="http://localhost:9010"
+   export ALLOW_WS_NO_ORIGIN=true
+   export ALLOWED_WS_ORIGINS="http://localhost:9010"
+   ```
+
+   Without these variables:
+   - HTTP requests from the gateway will be rejected (403)
+   - WebSocket connections for the updates stream will fail
+
+3. Start the local network:
    `./scripts/start-local-network.sh --fresh`
-3. Confirm the simulator is healthy:
+
+   **Note:** The network script starts both the simulator AND consensus nodes. The simulator alone (without nodes) only accepts transactions but does not execute them - you won't receive game events.
+
+4. Confirm the simulator is healthy:
    `curl -s http://localhost:8080/healthz`
 
 ## Start the mobile gateway
@@ -95,3 +112,29 @@ Hi-Lo
 - [ ] Typography and palette match the terminal styling
 - [ ] Buttons and chips share the same hierarchy/contrast
 - [ ] Mobile web view and native view layouts feel consistent (spacing, headers, controls)
+
+## Troubleshooting
+
+### HTTP 403 errors from simulator
+**Symptom:** `curl http://localhost:8080/healthz` returns 403
+**Cause:** Missing HTTP origin configuration
+**Fix:** Export `ALLOW_HTTP_NO_ORIGIN=true` and `ALLOWED_HTTP_ORIGINS="http://localhost:9010"` before starting the network
+
+### WebSocket connection rejected (403) for updates stream
+**Symptom:** Gateway logs show `WebSocket origin rejected: http://localhost:9010 (allowed: )`
+**Cause:** Missing WebSocket origin configuration (separate from HTTP)
+**Fix:** Export `ALLOW_WS_NO_ORIGIN=true` and `ALLOWED_WS_ORIGINS="http://localhost:9010"` before starting the network
+
+### Timeout waiting for game events
+**Symptom:** Tests connect successfully but timeout waiting for `started`, `move`, or `complete` events
+**Cause:** Only the simulator is running - game logic requires consensus nodes to execute transactions
+**Fix:** Ensure you're running `./scripts/start-local-network.sh` (not just the simulator binary alone)
+
+### All environment variables at once
+```bash
+export ALLOW_HTTP_NO_ORIGIN=true
+export ALLOWED_HTTP_ORIGINS="http://localhost:9010"
+export ALLOW_WS_NO_ORIGIN=true
+export ALLOWED_WS_ORIGINS="http://localhost:9010"
+./scripts/start-local-network.sh --fresh
+```

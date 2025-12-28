@@ -18,14 +18,46 @@
 }
 
 body {
-  background-color: #050505;
-  color: #e5e5e5;
-  font-family: 'JetBrains Mono', monospace;
+  background-color: #f9f9f9; /* titanium-50 */
+  color: #262626; /* titanium-800 */
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 *:focus-visible {
-  outline: 2px solid #00ff41;
+  outline: 2px solid #007AFF;
   outline-offset: 2px;
+}
+
+/* Global Game Perspective */
+.game-perspective {
+  perspective: 1000px;
+  transform-style: preserve-3d;
+}
+
+/* 3D Transform Utilities */
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+}
+
+/* Custom scrollbar - Minimalist */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d4d4d4; /* titanium-300 */
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a3a3a3;
 }
 
 @media (max-width: 639px) {
@@ -38,283 +70,16 @@ body {
   display: none;
 }
 
-:root[data-touch-mode="true"] .ns-action {
-  color: #e5e5e5;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  line-height: 1;
-}
+/* Legacy Terminal Class Keep (for safety, can be removed later) */
+.bg-terminal-black { background-color: #0a0a0a; }
+.text-terminal-green { color: #00ff41; }
 
-.ns-controlbar button {
-  min-height: 44px;
-  min-width: 44px;
-  justify-content: center;
-  touch-action: manipulation;
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #111;
-}
-::-webkit-scrollbar-thumb {
-  background: #333;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #555;
-}
-
-/* Scanline effect */
-.scanline {
-  background: linear-gradient(
-    to bottom,
-    rgba(255,255,255,0),
-    rgba(255,255,255,0) 50%,
-    rgba(0,0,0,0.1) 50%,
-    rgba(0,0,0,0.1)
-  );
-  background-size: 100% 4px;
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  pointer-events: none;
-  z-index: 50;
-  opacity: 0.15;
-}
-
-/* Terminal color classes */
-.bg-terminal-black {
-  background-color: #0a0a0a;
-}
-
-.bg-terminal-dark {
-  background-color: #111111;
-}
-
-.bg-terminal-green {
-  background-color: #00ff41;
-}
-
-.text-terminal-green {
-  color: #00ff41;
-}
-
-.text-terminal-accent {
-  color: #ff003c;
-}
-
-.text-terminal-gold {
-  color: #ffd700;
-}
-
-.border-terminal-green {
-  border-color: #00ff41;
-}
-
-.border-terminal-dim {
-  border-color: #333333;
-}
-
-/* Slide-in animation for new events */
+/* Win Animations - Refined */
 @keyframes slideIn {
-  from {
-    transform: translateX(-100%);
-  }
-
-  to {
-    transform: translateX(0);
-  }
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
 }
 
 .animate-slideIn {
-  animation: slideIn 0.2s ease-out;
-}
-
-/* Win Animations */
-@keyframes explosion {
-  0% {
-    transform: translate(0, 0) scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(calc(var(--dir-x) * 100px), calc(var(--dir-y) * 100px)) scale(0);
-    opacity: 0;
-  }
-}
-
-.animate-explosion {
-  animation: explosion var(--speed) ease-out forwards;
-  animation-delay: var(--delay);
-}
-
-@keyframes bounceIn {
-  0% {
-    transform: scale(0);
-    opacity: 0;
-  }
-  50% {
-    transform: scale(1.2);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-.animate-bounce-in {
-  animation: bounceIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-}
-
-/* Cards + Dice (micro-interactions) */
-@keyframes cardDeal {
-  0% {
-    opacity: 0;
-    transform: translateY(14px) scale(0.98) rotate(-2deg);
-  }
-  60% {
-    opacity: 1;
-    transform: translateY(-2px) scale(1.01) rotate(0.5deg);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1) rotate(0);
-  }
-}
-
-.animate-card-deal {
-  animation: cardDeal 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-@keyframes diceRoll {
-  0% {
-    transform: translateY(0) rotate(0deg) scale(1);
-  }
-  20% {
-    transform: translateY(-10px) rotate(140deg) scale(1.03);
-  }
-  45% {
-    transform: translateY(6px) rotate(260deg) scale(0.98);
-  }
-  70% {
-    transform: translateY(-4px) rotate(320deg) scale(1.01);
-  }
-  100% {
-    transform: translateY(0) rotate(360deg) scale(1);
-  }
-}
-
-.animate-dice-roll {
-  animation: diceRoll 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-@keyframes rouletteSpin {
-  0% {
-    transform: rotate(-140deg) scale(0.92);
-    opacity: 0.9;
-  }
-  60% {
-    transform: rotate(18deg) scale(1.03);
-    opacity: 1;
-  }
-  100% {
-    transform: rotate(0) scale(1);
-    opacity: 1;
-  }
-}
-
-.animate-roulette-spin {
-  animation: rouletteSpin 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.card-back {
-  background:
-    radial-gradient(100px 60px at 30% 30%, rgba(0, 255, 65, 0.08), rgba(0, 0, 0, 0)),
-    radial-gradient(140px 90px at 70% 70%, rgba(255, 0, 60, 0.06), rgba(0, 0, 0, 0)),
-    linear-gradient(135deg, #0b0b0b, #060606);
-}
-
-@keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-.card-shimmer {
-  background: linear-gradient(
-    110deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.35) 35%,
-    rgba(255, 255, 255, 0) 70%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.4s linear infinite;
-}
-
-@keyframes bet-flash-win {
-  0% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
-    background-color: rgba(34, 197, 94, 0.15);
-  }
-  100% {
-    box-shadow: 0 0 0 12px rgba(34, 197, 94, 0);
-    background-color: transparent;
-  }
-}
-
-@keyframes bet-flash-loss {
-  0% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
-    background-color: rgba(239, 68, 68, 0.12);
-  }
-  100% {
-    box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
-    background-color: transparent;
-  }
-}
-
-@keyframes bet-flash-push {
-  0% {
-    box-shadow: 0 0 0 0 rgba(148, 163, 184, 0.5);
-    background-color: rgba(148, 163, 184, 0.08);
-  }
-  100% {
-    box-shadow: 0 0 0 10px rgba(148, 163, 184, 0);
-    background-color: transparent;
-  }
-}
-
-.bet-flash-win {
-  animation: bet-flash-win 1.2s ease-out;
-  border-color: rgba(34, 197, 94, 0.45);
-}
-
-.bet-flash-loss {
-  animation: bet-flash-loss 1.2s ease-out;
-  border-color: rgba(239, 68, 68, 0.45);
-}
-
-.bet-flash-push {
-  animation: bet-flash-push 1.2s ease-out;
-  border-color: rgba(148, 163, 184, 0.45);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation: none !important;
-    transition: none !important;
-    scroll-behavior: auto !important;
-  }
-}
-
-:root[data-reduced-motion="true"] *,
-:root[data-reduced-motion="true"] *::before,
-:root[data-reduced-motion="true"] *::after {
-  animation: none !important;
-  transition: none !important;
-  scroll-behavior: auto !important;
+  animation: slideIn 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }

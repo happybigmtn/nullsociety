@@ -1,8 +1,8 @@
-
 import React, { useMemo, useCallback } from 'react';
 import { GameState, RouletteBet } from '../../../types';
 import { getRouletteColor, calculateRouletteExposure, formatRouletteNumber } from '../../../utils/gameUtils';
 import { MobileDrawer } from '../MobileDrawer';
+import { Pseudo3DWheel } from '../pseudo3d/Pseudo3DWheel';
 
 export const RouletteView = React.memo<{
     gameState: GameState;
@@ -170,31 +170,24 @@ export const RouletteView = React.memo<{
                         </div>
                     </MobileDrawer>
                 </div>
-                {/* Last Number Display */}
-                <div className="w-full flex-1 min-h-[320px] flex flex-col items-center justify-center gap-4">
-                     <button
-                         type="button"
-                         onClick={() => actions?.deal?.()}
-                         className={`w-44 h-44 rounded-full border-4 flex items-center justify-center text-4xl font-black tracking-widest transition-transform ${
-                            getRouletteColor(lastNum ?? 0) === 'RED'
-                                ? 'border-terminal-accent text-terminal-accent'
-                                : getRouletteColor(lastNum ?? 0) === 'BLACK'
-                                    ? 'border-gray-500 text-white'
-                                    : 'border-terminal-green text-terminal-green'
-                         } ${isSpinning ? 'animate-roulette-spin' : ''}`}
-                         aria-label="Spin roulette"
-                     >
-                         {lastNum === null ? '--' : formatRouletteNumber(lastNum)}
-                     </button>
+                {/* Last Number Display - NEW PSEUDO-3D WHEEL */}
+                <div className="w-full flex-1 min-h-[320px] flex flex-col items-center justify-center gap-4 scale-75 sm:scale-100 transition-transform">
+                     <Pseudo3DWheel 
+                        lastNumber={lastNum} 
+                        isSpinning={isSpinning}
+                        style={{ width: 280, height: 280 }}
+                     />
+                     
+                     {/* Spinning Label */}
                      {isSpinning && (
-                         <div className="text-[10px] tracking-[0.4em] uppercase text-gray-500">
-                             spinning
+                         <div className="text-[10px] tracking-[0.4em] uppercase text-gray-500 animate-pulse">
+                             spinning...
                          </div>
                      )}
                      
                      {/* History */}
                      {gameState.rouletteHistory.length > 0 && (
-                         <div className="flex gap-2 opacity-75">
+                         <div className="flex gap-2 opacity-75 mt-4">
                              {gameState.rouletteHistory.slice(-8).reverse().map((num, i) => (
                                  <div key={i} className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border ${getRouletteColor(num) === 'RED' ? 'border-terminal-accent text-terminal-accent' : getRouletteColor(num) === 'BLACK' ? 'border-gray-500 text-white' : 'border-terminal-green text-terminal-green'}`}>
                                      {formatRouletteNumber(num)}
