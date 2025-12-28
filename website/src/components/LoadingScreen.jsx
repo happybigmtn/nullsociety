@@ -1,21 +1,31 @@
 import React from 'react';
-import RetroBox from './RetroBox';
-import RetroText from './RetroText';
 
 const LoadingScreen = () => {
   return (
-    <div className="min-h-screen bg-retro-blue flex items-center justify-center p-4">
-      <RetroBox>
-        <div className="text-center">
-          <div className="mb-6 sm:mb-8">
-            <pre className="text-base sm:text-xl lg:text-2xl leading-tight font-retro inline-block text-retro-white">
-{`▓▓▓▓▓▓▓▓
-▒LOADING▒
-░░░░░░░░`}</pre>
-          </div>
-          <RetroText className="text-sm sm:text-lg lg:text-xl">INITIALIZING BATTLEWARE...</RetroText>
+    <div className="min-h-screen bg-titanium-50 flex flex-col items-center justify-center p-6 gap-8 animate-scale-in">
+      <div className="relative group">
+        {/* Modern Minimalist Spinner */}
+        <div className="w-24 h-24 rounded-full border-[3px] border-titanium-200" />
+        <div className="absolute inset-0 w-24 h-24 rounded-full border-[3px] border-action-primary border-t-transparent animate-spin shadow-lg shadow-action-primary/10" />
+        
+        {/* Inner static hub */}
+        <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-3 h-3 bg-titanium-300 rounded-full animate-pulse" />
         </div>
-      </RetroBox>
+      </div>
+
+      <div className="flex flex-col items-center gap-2">
+        <span className="text-[10px] font-black text-titanium-400 tracking-[0.4em] uppercase">Initialising System</span>
+        <h2 className="text-xl font-bold text-titanium-900 tracking-tight font-display">Nullspace</h2>
+      </div>
+
+      {/* Subtle Progress Indicator */}
+      <div className="w-48 h-1 bg-titanium-100 rounded-full overflow-hidden">
+        <div className="h-full bg-titanium-900 w-1/3 animate-[shimmer_2s_infinite_linear]" 
+             style={{ 
+                backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)' 
+             }} />
+      </div>
     </div>
   );
 };

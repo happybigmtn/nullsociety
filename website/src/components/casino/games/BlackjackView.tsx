@@ -94,84 +94,94 @@ export const BlackjackView = React.memo<{
     };
     return (
         <>
-            <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-6 md:gap-8 relative z-10 pt-8 sm:pt-10 pb-24 sm:pb-20">
-                <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">BLACKJACK</h1>
+            <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-8 relative pt-12 pb-24 animate-scale-in">
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
+                    <Label size="micro">Blackjack</Label>
+                    <div className="h-1 w-8 bg-titanium-200 rounded-full" />
+                </div>
+                
                 <div className="absolute top-2 left-2 z-40">
                     <MobileDrawer label="INFO" title="BLACKJACK">
-                        <div className="space-y-3">
-                            <div className="text-[11px] text-gray-300 leading-relaxed font-mono">
+                        <div className="space-y-4 p-2">
+                            <p className="text-body-sm text-titanium-800 font-semibold leading-relaxed">
                                 Get as close to 21 as possible without going over. Dealer stands on 17.
-                            </div>
-                            <div className="text-[10px] text-gray-600 leading-relaxed font-mono">
-                                Controls: HIT (H), STAND (S), DOUBLE (D), SPLIT (P). Insurance is local-mode only.
+                            </p>
+                            <div className="bg-titanium-50 p-4 rounded-2xl border border-titanium-100">
+                                <Label size="micro" className="mb-2 block">Controls</Label>
+                                <p className="text-[11px] text-titanium-500 font-bold uppercase tracking-wider">
+                                    Hit (H) • Stand (S) • Double (D) • Split (P)
+                                </p>
                             </div>
                         </div>
                     </MobileDrawer>
                 </div>
                 {/* Dealer Area */}
-                <div className="min-h-[96px] sm:min-h-[120px] flex items-center justify-center opacity-75">
+                <div className="min-h-[120px] flex items-center justify-center opacity-80">
                     {gameState.dealerCards.length > 0 ? (
-                        <div className="flex flex-col items-center gap-2">
-                            <span className="text-sm font-bold tracking-widest text-white font-mono">DEALER <span className="text-white">({dealerValue})</span></span>
+                        <div className="flex flex-col items-center gap-4">
+                            <div className="flex items-center gap-2">
+                                <Label variant="destructive">Dealer</Label>
+                                <span className="px-2 py-0.5 rounded-md bg-titanium-100 text-titanium-900 font-black text-[10px] tabular-nums">{dealerValue}</span>
+                            </div>
                             <Hand
                                 cards={gameState.dealerCards}
                                 forcedColor="text-action-destructive"
                             />
                         </div>
                     ) : (
-                        <div className="flex flex-col items-center gap-2">
-                             <span className="text-sm font-bold tracking-widest text-white font-mono">DEALER</span>
-                             <div className="w-12 h-[4.5rem] sm:w-14 sm:h-20 md:w-16 md:h-24 border-2 border-dashed border-action-destructive rounded" />
+                        <div className="flex flex-col items-center gap-3">
+                             <Label variant="secondary">Dealer</Label>
+                             <div className="w-14 h-20 border-2 border-dashed border-titanium-200 rounded-xl" />
                         </div>
                     )}
                 </div>
 
                 {/* Center Info */}
-                <div className="text-center space-y-3 relative z-20">
-                        <div className="text-lg sm:text-2xl font-bold text-action-primary tracking-widest leading-tight animate-pulse font-mono">
-                            {gameState.message}
-                        </div>
+                <div className="text-center relative z-20 px-6">
+                        <h2 className="text-2xl sm:text-3xl font-extrabold text-titanium-900 tracking-tight font-display animate-scale-in">
+                            {gameState.message || 'Place Your Bet'}
+                        </h2>
                 </div>
 
                 {/* Player Area - Highlighted */}
-                <div className="min-h-[96px] sm:min-h-[120px] flex gap-8 items-center justify-center">
+                <div className="min-h-[120px] flex gap-12 items-center justify-center">
                     {/* Finished Split Hands */}
                     {gameState.completedHands.length > 0 && (
-                            <div className="flex gap-2 opacity-50 scale-75 origin-right">
+                            <div className="flex gap-3 opacity-40 scale-90 origin-right grayscale">
                             {gameState.completedHands.map((h, i) => (
                                 <Hand
                                     key={i}
                                     cards={h.cards}
                                     title={formatCompletedTitle(i, h)}
-                                    forcedColor={h?.result < 0 ? 'text-action-destructive' : 'text-action-success'}
                                 />
                             ))}
                             </div>
                     )}
 
-                    <div className="flex flex-col items-center gap-2 scale-110 transition-transform">
-                        <span className="text-sm font-bold tracking-widest text-white font-mono">
-                            YOU <span className="text-white">({playerValue})</span>
+                    <div className="flex flex-col items-center gap-4 scale-110">
+                        <div className="flex items-center gap-2">
+                            <Label variant="gold">You</Label>
+                            <span className="px-2 py-0.5 rounded-md bg-titanium-100 text-titanium-900 font-black text-[10px] tabular-nums">{playerValue}</span>
                             {(gameState.completedHands.length > 0 || gameState.blackjackStack.length > 0) ? (
-                                <span className="text-gray-500 text-xs"> · HAND {activeHandNumber}</span>
+                                <span className="text-titanium-400 text-[10px] font-bold uppercase tracking-widest ml-1">Hand {activeHandNumber}</span>
                             ) : null}
-                        </span>
+                        </div>
                         {gameState.playerCards.length > 0 ? (
                              <Hand
                                 cards={gameState.playerCards}
                                 forcedColor="text-action-success"
                             />
                         ) : (
-                            <div className="w-12 h-[4.5rem] sm:w-14 sm:h-20 md:w-16 md:h-24 border-2 border-dashed border-action-success/50 rounded" />
+                            <div className="w-14 h-20 border-2 border-dashed border-action-success/30 rounded-xl bg-action-success/5 shadow-inner" />
                         )}
                     </div>
 
                     {/* Pending Split Hands */}
                     {gameState.blackjackStack.length > 0 && (
-                            <div className="flex gap-1 sm:gap-1.5 md:gap-2 opacity-50 scale-75 origin-left">
+                            <div className="flex gap-2 opacity-30 scale-90 origin-left">
                             {gameState.blackjackStack.map((h, i) => (
-                                <div key={i} className="w-12 h-[4.5rem] sm:w-14 sm:h-20 md:w-16 md:h-24 bg-titanium-200 border-2 border-gray-700 rounded flex items-center justify-center">
-                                    <span className="text-xs text-gray-500 font-mono">WAIT</span>
+                                <div key={i} className="w-14 h-20 bg-titanium-100 border border-titanium-200 rounded-xl flex items-center justify-center">
+                                    <Label size="micro">Wait</Label>
                                 </div>
                             ))}
                             </div>

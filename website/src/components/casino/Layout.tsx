@@ -1,9 +1,9 @@
-
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { LeaderboardEntry, PlayerStats, GameType, CrapsEventLog, ResolvedBet } from '../../types';
 import { formatTime, HELP_CONTENT, buildHistoryEntry, formatSummaryLine, prependPnlLine, formatPnlLabel } from '../../utils/gameUtils';
 import { MobileDrawer } from './MobileDrawer';
+import { Label } from './ui/Label';
 
 interface HeaderProps {
     phase: string;
@@ -42,36 +42,36 @@ export const Header: React.FC<HeaderProps> = ({
     playMode,
     children,
 }) => (
-    <header className="h-14 border-b border-titanium-200 flex items-center justify-between px-4 sm:px-6 z-10 bg-glass-light backdrop-blur-xl sticky top-0">
-    <div className="flex items-center gap-4 sm:gap-8">
-        <span className="font-bold tracking-tight text-titanium-900 text-lg">nullspace</span>
+    <header className="h-14 border-b border-titanium-200 flex items-center justify-between px-6 z-10 bg-glass-light backdrop-blur-xl sticky top-0">
+    <div className="flex items-center gap-8">
+        <span className="font-display font-extrabold tracking-tight text-titanium-900 text-xl">nullspace</span>
         <div className="hidden lg:flex items-center gap-3">
             <button 
                 onClick={() => setFocusMode(!focusMode)}
-                className={`text-[11px] font-semibold px-3 py-1 rounded-full transition-all duration-200 border ${
+                className={`text-label font-bold px-4 py-1.5 rounded-full transition-all duration-200 border ${
                     focusMode 
                         ? 'bg-titanium-900 text-white border-titanium-900 shadow-sm' 
-                        : 'text-titanium-800 bg-white border-titanium-200 hover:border-titanium-400'
+                        : 'text-titanium-800 bg-white border-titanium-200 hover:border-titanium-400 shadow-soft'
                 }`}
             >
                 {focusMode ? 'Focus On' : 'Focus'}
             </button>
-            {onToggleSound ? (
+            {onToggleSound && (
                 <button
                     type="button"
                     onClick={onToggleSound}
-                    className={`text-[11px] font-semibold px-3 py-1 rounded-full transition-all duration-200 border ${
+                    className={`text-label font-bold px-4 py-1.5 rounded-full transition-all duration-200 border ${
                         soundEnabled 
-                            ? 'bg-white text-titanium-800 border-titanium-200 hover:border-titanium-400' 
+                            ? 'bg-white text-titanium-800 border-titanium-200 hover:border-titanium-400 shadow-soft' 
                             : 'bg-titanium-100 text-titanium-400 border-titanium-100'
                     }`}
                 >
                     {soundEnabled ? 'Sound' : 'Muted'}
                 </button>
-            ) : null}
+            )}
             <NavLink
                 to="/security"
-                className="text-[11px] font-semibold px-3 py-1 rounded-full transition-all duration-200 border text-titanium-800 bg-white border-titanium-200 hover:border-titanium-400"
+                className="text-label font-bold px-4 py-1.5 rounded-full transition-all duration-200 border text-titanium-800 bg-white border-titanium-200 hover:border-titanium-400 shadow-soft"
             >
                 Security
             </NavLink>
@@ -79,33 +79,33 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                     type="button"
                     onClick={onToggleHelp}
-                    className="text-[11px] font-semibold px-3 py-1 rounded-full transition-all duration-200 border text-titanium-800 bg-white border-titanium-200 hover:border-titanium-400"
+                    className="text-label font-bold px-4 py-1.5 rounded-full transition-all duration-200 border text-titanium-800 bg-white border-titanium-200 hover:border-titanium-400 shadow-soft"
                 >
                     Help
                 </button>
             )}
         </div>
     </div>
-    <div className="flex items-center gap-4 sm:gap-6 text-sm">
+    <div className="flex items-center gap-6">
             {showTimer && (
-                <div className="flex items-center gap-2 px-3 py-1 bg-titanium-100 rounded-full border border-titanium-200">
-                    <span className="text-titanium-400 text-[10px] font-bold tracking-widest uppercase">Timer</span>
-                    <span className={`font-mono font-bold tabular-nums ${tournamentTime < 60 ? 'text-action-destructive animate-pulse' : 'text-titanium-900'}`}>{formatTime(tournamentTime)}</span>
+                <div className="flex items-center gap-2 px-4 py-1.5 bg-titanium-100 rounded-full border border-titanium-200">
+                    <Label size="micro">Timer</Label>
+                    <span className={`font-mono font-bold tabular-nums text-sm ${tournamentTime < 60 ? 'text-action-destructive animate-pulse' : 'text-titanium-900'}`}>{formatTime(tournamentTime)}</span>
                 </div>
             )}
             
             {playMode !== 'CASH' && (
-                <div className="hidden md:flex items-center gap-4">
-                    <div className="flex items-center gap-2">
-                        <span className="text-titanium-400 text-[10px] font-bold tracking-widest uppercase">Shields</span>
+                <div className="hidden md:flex items-center gap-6">
+                    <div className="flex items-center gap-3">
+                        <Label size="micro">Shields</Label>
                         <div className="flex gap-1.5">
                             {[...Array(3)].map((_, i) => (
                                 <div key={i} className={`w-2 h-2 rounded-full transition-colors ${i < stats.shields ? 'bg-action-primary shadow-sm' : 'bg-titanium-200'}`} />
                             ))}
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-titanium-400 text-[10px] font-bold tracking-widest uppercase">Aura</span>
+                    <div className="flex items-center gap-3">
+                        <Label size="micro">Aura</Label>
                         <div className="flex gap-1 items-center h-3">
                             {[...Array(5)].map((_, i) => (
                                 <div
@@ -124,8 +124,8 @@ export const Header: React.FC<HeaderProps> = ({
 
             <div className="flex items-center gap-3">
                 <div className="flex flex-col items-end">
-                    <span className="text-titanium-400 text-[9px] font-bold tracking-widest uppercase leading-none mb-0.5">Balance</span>
-                    <span className="text-titanium-900 font-bold text-base sm:text-lg tracking-tight tabular-nums leading-none" style={{ fontFamily: 'Space Grotesk' }}>
+                    <Label size="micro" className="mb-0.5">Balance</Label>
+                    <span className="text-titanium-900 font-bold text-lg tracking-tight tabular-nums leading-none font-display">
                         ${stats.chips.toLocaleString()}
                     </span>
                 </div>
@@ -133,7 +133,7 @@ export const Header: React.FC<HeaderProps> = ({
             {children}
     </div>
     </header>
-);;
+);
 
 export const TournamentAlert: React.FC<{ tournamentTime: number }> = ({ tournamentTime }) => {
     if (tournamentTime === 60 || tournamentTime === 59 || tournamentTime === 58) {
@@ -162,6 +162,20 @@ export const TournamentAlert: React.FC<{ tournamentTime: number }> = ({ tourname
     return null;
 };
 
+interface SidebarProps {
+    leaderboard: LeaderboardEntry[];
+    history: string[];
+    viewMode?: 'RANK' | 'PAYOUT';
+    currentChips?: number;
+    prizePool?: number;
+    totalPlayers?: number;
+    winnersPct?: number;
+    gameType?: GameType;
+    crapsEventLog?: CrapsEventLog[];
+    resolvedBets?: ResolvedBet[];
+    resolvedBetsKey?: number;
+}
+
 export const Sidebar: React.FC<SidebarProps> = ({ leaderboard, history, viewMode = 'RANK', currentChips, prizePool, totalPlayers, winnersPct = 0.15, gameType, crapsEventLog = [], resolvedBets = [], resolvedBetsKey = 0 }) => {
     const effectivePlayerCount = totalPlayers ?? leaderboard.length;
     const bubbleIndex = Math.max(1, Math.min(effectivePlayerCount, Math.ceil(effectivePlayerCount * winnersPct)));
@@ -188,25 +202,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ leaderboard, history, viewMode
         const displayChips = isUser && currentChips !== undefined ? currentChips : entry.chips;
 
         return (
-            <React.Fragment key={isSticky ? 'sticky-you' : i}>
-                <div className={`flex justify-between items-center py-2 px-3 rounded-xl transition-colors ${
+            <React.Fragment key={isSticky ? 'sticky-you' : i}>                <div className={`flex justify-between items-center py-2 px-4 rounded-xl transition-colors ${
                     isSticky 
                         ? 'bg-titanium-900 text-white shadow-lg' 
                         : isUser ? 'bg-titanium-100 text-titanium-900' : 'text-titanium-800'
-                }`}>
-                    <div className="flex items-center gap-3">
+                }`}>                    <div className="flex items-center gap-3">
                         <span className={`text-[10px] font-bold font-mono w-4 text-center ${isSticky ? 'text-titanium-400' : 'text-titanium-300'}`}>{rank}</span>
-                        <span className={`text-sm font-medium ${isSticky ? 'text-white' : 'text-titanium-800'}`}>{entry.name}</span>
+                        <span className={`text-sm font-semibold ${isSticky ? 'text-white' : 'text-titanium-800'}`}>{entry.name}</span>
                     </div>
                     <span className={`text-sm font-bold tabular-nums ${
                         isSticky ? 'text-white' : 
                         viewMode === 'PAYOUT' && rank <= bubbleIndex ? 'text-action-success' : 'text-titanium-900'
-                    }`}>
-                        {viewMode === 'RANK' ? `$${Math.floor(displayChips).toLocaleString()}` : getPayout(rank)}
+                    }`}>                        {viewMode === 'RANK' ? `$${Math.floor(displayChips).toLocaleString()}` : getPayout(rank)}
                     </span>
                 </div>
                 {!isSticky && isMoneyCutoff && (
-                    <div className="border-b border-titanium-200 my-3 relative h-px">
+                    <div className="border-b border-titanium-200 my-3 relative h-px mx-2">
                         <span className="absolute left-1/2 -top-2 -translate-x-1/2 bg-white px-2 text-[9px] font-bold text-titanium-400 tracking-widest uppercase">
                             Money Line
                         </span>
@@ -220,21 +231,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ leaderboard, history, viewMode
         const lines = entry.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         if (lines.length === 0) return null;
 
-        const pnlIndex = lines.findIndex((line, idx) => idx > 0 && /^[+-]\$/.test(line));
+        const pnlIndex = lines.findIndex((line, idx) => idx > 0 && /^[+-]/.test(line));
         const pnlLine = pnlIndex > 0 ? lines[pnlIndex] : null;
         const pnlClass = pnlLine?.startsWith('+$') ? 'text-action-success' : 'text-action-destructive';
         const detailLines = lines.slice(1).filter((_, idx) => (pnlIndex < 0 ? true : idx + 1 !== pnlIndex));
 
         return (
-            <div key={key} className="flex flex-col gap-1 py-2 border-b border-titanium-100 last:border-0">
-                <div className="text-xs font-semibold text-titanium-800 leading-tight">{lines[0]}</div>
+            <div key={key} className="flex flex-col gap-1 py-3 border-b border-titanium-100 last:border-0 px-2">
+                <div className="text-xs font-bold text-titanium-800 leading-tight">> {lines[0]}</div>
                 {pnlLine && (
-                    <div className={`${pnlClass} text-xs font-bold tabular-nums`}>
+                    <div className={`${pnlClass} text-xs font-black tabular-nums`}>
                         {pnlLine}
                     </div>
                 )}
                 {detailLines.map((line, i) => (
-                    <div key={i} className="text-[10px] text-titanium-400 leading-snug">
+                    <div key={i} className="text-[10px] font-medium text-titanium-400 leading-snug">
                         {line}
                     </div>
                 ))}
@@ -251,54 +262,46 @@ export const Sidebar: React.FC<SidebarProps> = ({ leaderboard, history, viewMode
         return (
             <div
                 key={`${resolvedBetsKey}-${bet.id}-${idx}`}
-                className="bg-white border border-titanium-200 rounded-xl px-3 py-2 flex items-center justify-between shadow-soft"
+                className="bg-white border border-titanium-200 rounded-2xl px-4 py-2.5 flex items-center justify-between shadow-soft"
             >
-                <span className="text-[11px] font-bold text-titanium-800 uppercase tracking-tight truncate mr-2">{bet.label}</span>
-                <span className={`text-[11px] font-bold tabular-nums ${pnlClass}`}>{pnlText}</span>
+                <span className="text-[11px] font-black text-titanium-900 uppercase tracking-tight truncate mr-2">{bet.label}</span>
+                <span className={`text-[11px] font-black tabular-nums ${pnlClass}`}>{pnlText}</span>
             </div>
         );
     };
 
     return (
         <aside className="w-72 border-l border-titanium-200 bg-white hidden lg:flex flex-col">
-            {/* Live Feed Header */}
-            <div className="px-6 pt-6 pb-4 flex-none">
+            <div className="px-6 pt-8 pb-4 flex-none">
                 <div className="flex justify-between items-center">
-                    <h3 className="text-[10px] font-bold text-titanium-400 tracking-widest uppercase">{viewMode === 'RANK' ? 'Live Feed' : 'Payouts'}</h3>
-                    <button onClick={() => {}} className="text-[9px] font-bold text-titanium-400 bg-titanium-100 px-2 py-0.5 rounded-full hover:bg-titanium-200 transition-colors">
+                    <Label variant="primary">{viewMode === 'RANK' ? 'Live Feed' : 'Payouts'}</Label>
+                    <button onClick={() => {}} className="text-[10px] font-bold text-titanium-400 bg-titanium-100 px-3 py-1 rounded-full hover:bg-titanium-200 transition-colors">
                         Toggle [L]
                     </button>
                 </div>
             </div>
 
-            {/* Fixed User Row */}
             {userEntry && (
                 <div className="flex-none px-4 pb-4">
                      {renderEntry(userEntry, 0, true)}
                 </div>
             )}
 
-            {/* Scrollable Leaderboard */}
-            <div className="overflow-y-auto px-4 space-y-1.5 flex-1 min-h-0">
+            <div className="overflow-y-auto px-4 space-y-1 flex-1 min-h-0 scrollbar-hide">
                 {leaderboard.map((entry, i) => renderEntry(entry, i, false))}
             </div>
 
             {resolvedEntries.length > 0 && (
-                <div className="flex-none p-4 bg-titanium-50 border-t border-titanium-200">
-                    <div className="text-[9px] font-bold text-titanium-400 uppercase tracking-widest mb-3 text-center">
-                        Last Resolved
-                    </div>
+                <div className="flex-none p-6 bg-titanium-50 border-t border-titanium-200">
+                    <Label className="mb-4 text-center block" size="micro">Last Resolved</Label>
                     <div className="flex flex-col gap-2">
                         {resolvedEntries.slice(0, 5).map((bet, i) => renderResolvedBet(bet, i))}
                     </div>
                 </div>
             )}
 
-            {/* Logs Area */}
             <div className="flex-1 border-t border-titanium-200 p-6 bg-white flex flex-col min-h-0">
-                <h3 className="text-[10px] font-bold text-titanium-400 uppercase tracking-widest mb-4 flex-none">
-                    {isCraps ? 'Roll Log' : 'History'}
-                </h3>
+                <Label className="mb-4 block" size="micro">{isCraps ? 'Roll Log' : 'History'}</Label>
                 <div className="flex-1 overflow-y-auto flex flex-col scrollbar-hide min-h-0">
                     {isCraps ? (
                         crapsEventLog.length === 0 ? (
@@ -324,23 +327,24 @@ export const Footer: React.FC<{ currentBet?: number }> = ({ currentBet }) => {
     const isCustom = currentBet && !bets.includes(currentBet);
 
     return (
-        <footer className="hidden lg:flex fixed bottom-0 left-0 right-0 lg:right-72 border-t border-titanium-200 bg-glass-light backdrop-blur-xl h-10 items-center justify-center gap-6 px-6 z-20">
-            <span className="text-[9px] font-bold text-titanium-400 tracking-widest uppercase mr-2">Quick Bet Keys</span>
-            {bets.map((bet, i) => {
-                const label = bet >= 1000 ? `${bet/1000}k` : `$${bet}`;
-                const isSelected = currentBet === bet;
-                return (
-                    <div key={i} className="flex items-center gap-1.5">
-                        <span className="text-titanium-300 text-[10px] font-mono">^{i + 1}</span>
-                        <span className={`text-[11px] font-bold tabular-nums transition-colors ${isSelected ? 'text-action-primary' : 'text-titanium-800'}`}>
-                            {label}
-                        </span>
-                    </div>
-                );
-            })}
-            <div className="flex items-center gap-1.5 ml-4">
-                <span className="text-titanium-300 text-[10px] font-mono">^0</span>
-                <span className={`text-[11px] font-bold transition-colors ${isCustom ? 'text-action-primary' : 'text-titanium-800'}`}>Custom</span>
+        <footer className="hidden lg:flex fixed bottom-0 left-0 right-0 lg:right-72 border-t border-titanium-200 bg-glass-light backdrop-blur-xl h-10 items-center justify-center gap-8 px-6 z-20">
+            <Label size="micro">Quick Bet Keys</Label>
+            <div className="flex gap-6">
+                {bets.map((bet, i) => {
+                    const isSelected = currentBet === bet;
+                    return (
+                        <div key={i} className="flex items-center gap-2 group cursor-pointer">
+                            <span className="text-titanium-300 text-[10px] font-mono group-hover:text-titanium-500">^ {i + 1}</span>
+                            <span className={`text-xs font-black tabular-nums transition-all group-hover:scale-110 ${isSelected ? 'text-action-primary' : 'text-titanium-800'}`}>
+                                ${bet >= 1000 ? `${bet/1000}k` : bet}
+                            </span>
+                        </div>
+                    );
+                })}
+                <div className="flex items-center gap-2 group cursor-pointer">
+                    <span className="text-titanium-300 text-[10px] font-mono group-hover:text-titanium-500">^0</span>
+                    <span className={`text-xs font-black transition-all group-hover:scale-110 ${isCustom ? 'text-action-primary' : 'text-titanium-800'}`}>Custom</span>
+                </div>
             </div>
         </footer>
     );
@@ -366,36 +370,42 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, searchQu
             onClick={onClose}
         >
             <div
-                className="w-full max-w-[640px] bg-white rounded-3xl shadow-float overflow-hidden flex flex-col border border-titanium-200 max-h-[60vh]"
+                className="w-full max-w-[640px] bg-white rounded-[32px] shadow-float overflow-hidden flex flex-col border border-titanium-200 max-h-[60vh] animate-scale-in"
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="px-6 py-5 border-b border-titanium-100 flex items-center gap-4">
+                <div className="px-8 py-6 border-b border-titanium-100 flex items-center gap-4 bg-titanium-50/50">
+                    <span className="text-action-primary font-black text-xl font-mono">>
                     <input
                         ref={inputRef}
                         type="text"
                         value={searchQuery}
                         onChange={(e) => onSearchChange(e.target.value)}
-                        className="flex-1 bg-transparent outline-none text-titanium-900 placeholder-titanium-300 font-medium text-lg"
-                        placeholder="Search games..."
+                        className="flex-1 bg-transparent outline-none text-titanium-900 placeholder-titanium-300 font-bold text-xl tracking-tight"
+                        placeholder="Search Nullspace..."
                         autoFocus
                     />
-                    <div className="text-[10px] font-bold text-titanium-400 bg-titanium-100 px-2 py-1 rounded-md uppercase tracking-widest">Esc to close</div>
+                    <div className="text-[10px] font-black text-titanium-400 bg-white border border-titanium-200 px-3 py-1.5 rounded-full uppercase tracking-widest">Esc</div>
                 </div>
-                <div className="flex-1 overflow-y-auto py-2 scrollbar-hide">
+                <div className="flex-1 overflow-y-auto py-4 scrollbar-hide">
                     {filtered.map((game, i) => (
                         <div
                             key={game}
                             onClick={() => onSelectGame(game)}
-                            className="flex items-center justify-between px-6 py-3.5 hover:bg-titanium-50 cursor-pointer group transition-colors"
+                            className="flex items-center justify-between px-8 py-4 hover:bg-titanium-50 cursor-pointer group transition-all active:scale-[0.99]"
                         >
-                            <span className="text-titanium-800 font-semibold text-base group-hover:text-action-primary">{game}</span>
-                            <span className="text-titanium-300 font-mono text-xs opacity-0 group-hover:opacity-100 transition-opacity">
-                                Enter to play
+                            <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 rounded-xl bg-titanium-100 border border-titanium-200 flex items-center justify-center text-[10px] font-black text-titanium-400 group-hover:bg-action-primary group-hover:text-white transition-colors shadow-soft">
+                                    {i < 9 ? i + 1 : i === 9 ? 0 : ''}
+                                </div>
+                                <span className="text-titanium-900 font-bold text-lg tracking-tight group-hover:translate-x-1 transition-transform">{game}</span>
+                            </div>
+                            <span className="text-titanium-300 font-bold text-[10px] uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+                                Launch Game
                             </span>
                         </div>
                     ))}
                     {filtered.length === 0 && (
-                        <div className="px-6 py-8 text-titanium-400 text-center italic font-medium">No games match your search.</div>
+                        <div className="px-8 py-12 text-titanium-400 text-center italic font-semibold">No results found.</div>
                     )}
                 </div>
             </div>
@@ -408,10 +418,10 @@ export const CustomBetOverlay: React.FC<{ isOpen: boolean; betString: string; in
 
     return (
          <div className="fixed inset-0 bg-titanium-900/60 backdrop-blur-lg z-[100] flex items-center justify-center px-4">
-             <div className="bg-white rounded-[40px] p-10 shadow-float flex flex-col items-center gap-6 w-full max-w-sm border border-titanium-200">
-                 <div className="text-[10px] font-bold tracking-[0.2em] text-titanium-400 uppercase">Set Custom Bet</div>
-                 <div className="flex items-center text-6xl text-titanium-900 font-bold tracking-tighter">
-                     <span className="text-titanium-200">$</span>
+             <div className="bg-white rounded-[48px] p-12 shadow-float flex flex-col items-center gap-8 w-full max-w-md border border-titanium-200 animate-scale-in">
+                 <Label size="micro" variant="primary">Set Custom Wager</Label>
+                 <div className="flex items-center text-8xl text-titanium-900 font-extrabold tracking-tighter font-display">
+                     <span className="text-titanium-200">$
                      <input
                         ref={inputRef}
                         type="text"
@@ -420,12 +430,12 @@ export const CustomBetOverlay: React.FC<{ isOpen: boolean; betString: string; in
                         className="bg-transparent outline-none text-center w-full"
                      />
                  </div>
-                 <div className="flex flex-col gap-3 w-full">
-                    <div className="h-1 bg-titanium-100 rounded-full w-full overflow-hidden">
-                        <div className="h-full bg-action-primary w-1/3 animate-pulse" />
+                 <div className="flex flex-col gap-4 w-full">
+                    <div className="h-1.5 bg-titanium-100 rounded-full w-full overflow-hidden">
+                        <div className="h-full bg-action-primary w-1/3 animate-pulse rounded-full shadow-lg shadow-action-primary/20" />
                     </div>
-                    <div className="text-[10px] font-medium text-titanium-400 text-center uppercase tracking-widest mt-2">
-                        Use number keys to type
+                    <div className="text-[11px] font-bold text-titanium-400 text-center uppercase tracking-[0.2em] mt-2">
+                        Use number keys to enter amount
                     </div>
                  </div>
              </div>
@@ -450,27 +460,27 @@ export const HelpOverlay: React.FC<HelpOverlayProps> = ({ isOpen, onClose, gameT
 
         return (
             <div className="fixed inset-0 bg-titanium-900/40 backdrop-blur-md z-[110] flex items-center justify-center p-6">
-                <div className="bg-white rounded-3xl shadow-float max-w-md w-full flex flex-col border border-titanium-200 overflow-hidden">
-                    <div className="p-8 border-b border-titanium-100 bg-titanium-50">
-                         <div className="text-[10px] font-bold text-action-primary mb-3 uppercase tracking-[0.2em]">Rule Detail</div>
-                         <h2 className="text-2xl font-bold text-titanium-900 tracking-tight">{detailInfo.title}</h2>
+                <div className="bg-white rounded-[40px] shadow-float max-w-md w-full flex flex-col border border-titanium-200 overflow-hidden animate-scale-in">
+                    <div className="p-10 border-b border-titanium-100 bg-titanium-50/50">
+                         <Label variant="gold" size="micro" className="mb-3 block">Instruction Detail</Label>
+                         <h2 className="text-3xl font-extrabold text-titanium-900 tracking-tight">{detailInfo.title}</h2>
                     </div>
-                    <div className="p-8 space-y-8">
+                    <div className="p-10 space-y-10">
                         <div>
-                            <h4 className="text-action-success font-bold text-[10px] uppercase tracking-widest mb-2">Win</h4>
-                            <p className="text-sm text-titanium-800 font-medium leading-relaxed">{detailInfo.win}</p>
+                            <Label variant="success" size="micro" className="mb-2 block">Win Condition</Label>
+                            <p className="text-base text-titanium-800 font-semibold leading-relaxed">{detailInfo.win}</p>
                         </div>
                         <div>
-                            <h4 className="text-action-destructive font-bold text-[10px] uppercase tracking-widest mb-2">Loss</h4>
-                            <p className="text-sm text-titanium-800 font-medium leading-relaxed">{detailInfo.loss}</p>
+                            <Label variant="destructive" size="micro" className="mb-2 block">Loss Condition</Label>
+                            <p className="text-base text-titanium-800 font-semibold leading-relaxed">{detailInfo.loss}</p>
                         </div>
-                        <div className="bg-titanium-50 p-4 rounded-2xl border border-titanium-100">
-                            <h4 className="text-titanium-400 font-bold text-[10px] uppercase tracking-widest mb-2">Example</h4>
-                            <p className="text-xs text-titanium-600 font-mono leading-relaxed">{detailInfo.example}</p>
+                        <div className="bg-titanium-50 p-6 rounded-3xl border border-titanium-100 shadow-inner-light">
+                            <Label variant="primary" size="micro" className="mb-2 block opacity-50">Practical Example</Label>
+                            <p className="text-xs text-titanium-600 font-bold font-mono leading-relaxed">{detailInfo.example}</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-4 text-center text-xs font-bold text-titanium-400 uppercase tracking-widest border-t border-titanium-100 hover:bg-titanium-50 transition-colors">
-                        Close
+                    <button onClick={onClose} className="p-6 text-center text-xs font-black text-titanium-400 uppercase tracking-[0.3em] border-t border-titanium-100 hover:bg-titanium-50 transition-colors active:scale-95">
+                        Back to List
                     </button>
                 </div>
             </div>
@@ -482,9 +492,11 @@ export const HelpOverlay: React.FC<HelpOverlayProps> = ({ isOpen, onClose, gameT
     const renderGridItems = (items: {key: string, label: string}[]) => (
         <div className="grid grid-cols-2 gap-4">
             {items.map(item => (
-                <div key={item.key} className="flex items-center gap-3">
-                    <span className="w-8 h-8 flex items-center justify-center bg-titanium-900 text-white rounded-lg font-bold text-xs shadow-sm">{item.key}</span>
-                    <span className="text-sm font-semibold text-titanium-800 uppercase tracking-tight">{item.label}</span>
+                <div key={item.key} className="flex items-center gap-4 bg-titanium-50 border border-titanium-100 p-3 rounded-2xl shadow-soft">
+                    <div className="w-10 h-10 flex items-center justify-center bg-titanium-900 text-white rounded-xl font-black text-sm shadow-md">
+                        {item.key}
+                    </div>
+                    <span className="text-sm font-bold text-titanium-800 uppercase tracking-tight">{item.label}</span>
                 </div>
             ))}
         </div>
@@ -505,44 +517,44 @@ export const HelpOverlay: React.FC<HelpOverlayProps> = ({ isOpen, onClose, gameT
                     {key: 'SPACE', label: 'Spin'}
                 ]);
             default:
-                return <div className="text-titanium-400 font-medium text-sm">Standard controls: [SPACE] to action.</div>;
+                return <div className="text-titanium-400 font-bold text-center py-12 italic">Standard interaction: [SPACE] to confirm.</div>;
         }
     };
 
     return (
         <div className="fixed inset-0 bg-titanium-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-6" onClick={onClose}>
-            <div className="bg-white rounded-[32px] shadow-float max-w-2xl w-full flex flex-col border border-titanium-200 overflow-hidden" onClick={e => e.stopPropagation()}>
-                <div className="p-8 border-b border-titanium-100 flex justify-between items-center bg-titanium-50">
+            <div className="bg-white rounded-[48px] shadow-float max-w-2xl w-full flex flex-col border border-titanium-200 overflow-hidden animate-scale-in" onClick={e => e.stopPropagation()}>
+                <div className="p-10 border-b border-titanium-100 flex justify-between items-center bg-titanium-50/50">
                     <div>
-                        <h2 className="text-2xl font-bold text-titanium-900 tracking-tight">Rules & Controls</h2>
-                        <p className="text-xs text-titanium-400 font-semibold mt-1 uppercase tracking-widest">Keyboard shortcuts for power play</p>
+                        <h2 className="text-3xl font-extrabold text-titanium-900 tracking-tight">Manual</h2>
+                        <Label variant="primary" size="micro" className="mt-1 block opacity-60">Keyboard shortcuts for power users</Label>
                     </div>
-                    <button onClick={onClose} className="w-10 h-10 flex items-center justify-center bg-white rounded-full border border-titanium-200 text-titanium-400 hover:text-titanium-900 transition-colors">
+                    <button onClick={onClose} className="w-12 h-12 flex items-center justify-center bg-white rounded-full border border-titanium-200 text-titanium-400 hover:text-titanium-900 transition-all hover:scale-110 active:scale-90 shadow-soft">
                         ✕
                     </button>
                 </div>
 
-                <div className="p-8 overflow-y-auto space-y-10">
-                    <div className="space-y-4">
-                        <h3 className="text-[10px] font-bold text-titanium-400 uppercase tracking-[0.2em] border-b border-titanium-100 pb-2">Global Controls</h3>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
-                            <div className="flex items-center gap-3">
-                                <span className="bg-titanium-100 text-titanium-900 px-2 py-1 rounded-md font-bold text-xs uppercase shadow-inner-light">/</span>
-                                <span className="text-xs font-bold text-titanium-800 uppercase tracking-tight">Menu</span>
+                <div className="p-10 overflow-y-auto space-y-12 scrollbar-hide">
+                    <div className="space-y-6">
+                        <Label variant="gold" size="micro" className="border-b border-titanium-100 pb-2 block">System Commands</Label>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-8">
+                            <div className="flex items-center gap-4 group">
+                                <span className="bg-titanium-100 text-titanium-900 w-10 h-10 flex items-center justify-center rounded-xl font-black text-sm border border-titanium-200 shadow-soft group-hover:scale-110 transition-transform">/
+                                <span className="text-xs font-black text-titanium-800 uppercase tracking-widest">Menu</span>
                             </div>
-                            <div className="flex items-center gap-3">
-                                <span className="bg-titanium-100 text-titanium-900 px-2 py-1 rounded-md font-bold text-xs uppercase shadow-inner-light">?</span>
-                                <span className="text-xs font-bold text-titanium-800 uppercase tracking-tight">Help</span>
+                            <div className="flex items-center gap-4 group">
+                                <span className="bg-titanium-100 text-titanium-900 w-10 h-10 flex items-center justify-center rounded-xl font-black text-sm border border-titanium-200 shadow-soft group-hover:scale-110 transition-transform">?
+                                <span className="text-xs font-black text-titanium-800 uppercase tracking-widest">Help</span>
                             </div>
-                            <div className="flex items-center gap-3">
-                                <span className="bg-titanium-100 text-titanium-900 px-2 py-1 rounded-md font-bold text-xs uppercase shadow-inner-light">L</span>
-                                <span className="text-xs font-bold text-titanium-800 uppercase tracking-tight">Leaderboard</span>
+                            <div className="flex items-center gap-4 group">
+                                <span className="bg-titanium-100 text-titanium-900 w-10 h-10 flex items-center justify-center rounded-xl font-black text-sm border border-titanium-200 shadow-soft group-hover:scale-110 transition-transform">L
+                                <span className="text-xs font-black text-titanium-800 uppercase tracking-widest">Feed</span>
                             </div>
                         </div>
                     </div>
 
-                    <div className="space-y-4">
-                        <h3 className="text-[10px] font-bold text-titanium-400 uppercase tracking-[0.2em] border-b border-titanium-100 pb-2">{gameType} Controls</h3>
+                    <div className="space-y-6">
+                        <Label variant="primary" size="micro" className="border-b border-titanium-100 pb-2 block underline-offset-8">Game Operations [{gameType}]</Label>
                         {getContent()}
                     </div>
                 </div>
@@ -552,14 +564,14 @@ export const HelpOverlay: React.FC<HelpOverlayProps> = ({ isOpen, onClose, gameT
 };
 
 export type ResponsiblePlaySettings = {
-    realityCheckMinutes: number; // 0 = off
-    maxWager: number; // 0 = unlimited
-    maxLoss: number; // 0 = unlimited (absolute loss)
-    maxSessionMinutes: number; // 0 = unlimited
-    cooldownUntilMs: number; // 0 = none
-    sessionStartMs: number; // 0 = not started
-    pnlBaseline: number; // baseline of stats.pnlHistory at session start
-    nextRealityCheckMs: number; // 0 = none scheduled
+    realityCheckMinutes: number;
+    maxWager: number;
+    maxLoss: number;
+    maxSessionMinutes: number;
+    cooldownUntilMs: number;
+    sessionStartMs: number;
+    pnlBaseline: number;
+    nextRealityCheckMs: number;
 };
 
 type ResponsiblePlayOverlayProps = {
@@ -602,61 +614,61 @@ export const ResponsiblePlayOverlay: React.FC<ResponsiblePlayOverlayProps> = ({
 
     return (
         <div className="fixed inset-0 bg-titanium-900/60 backdrop-blur-lg z-[100] flex items-center justify-center p-6" onClick={onClose}>
-            <div className="bg-white rounded-[40px] shadow-float max-w-xl w-full flex flex-col border border-titanium-200 overflow-hidden" onClick={e => e.stopPropagation()}>
-                <div className="p-10 border-b border-titanium-100 bg-titanium-50">
-                    <div className="text-[10px] font-bold text-titanium-400 uppercase tracking-[0.2em] mb-3">
-                        {mode === 'reality' ? 'Safety Notification' : 'Play Settings'}
-                    </div>
-                    <h2 className="text-3xl font-bold text-titanium-900 tracking-tight">Session Summary</h2>
+            <div className="bg-white rounded-[48px] shadow-float max-w-xl w-full flex flex-col border border-titanium-200 overflow-hidden animate-scale-in">
+                <div className="p-12 border-b border-titanium-100 bg-titanium-50/50 text-center">
+                    <Label variant="destructive" size="micro" className="mb-4 block tracking-[0.4em]">
+                        {mode === 'reality' ? 'Player Protection' : 'Operation Settings'}
+                    </Label>
+                    <h2 className="text-4xl font-extrabold text-titanium-900 tracking-tight font-display">Session Insight</h2>
                 </div>
 
-                <div className="p-10 space-y-10">
-                    <div className="grid grid-cols-3 gap-4">
-                        <div className="bg-titanium-50 p-5 rounded-3xl border border-titanium-100">
-                            <span className="text-[9px] font-bold text-titanium-400 uppercase tracking-widest block mb-1">Duration</span>
-                            <span className="text-lg font-bold text-titanium-900 tabular-nums">{summary.sessionMinutes}m</span>
+                <div className="p-12 space-y-12">
+                    <div className="grid grid-cols-3 gap-6">
+                        <div className="bg-titanium-50 p-6 rounded-[32px] border border-titanium-100 shadow-inner-light">
+                            <Label size="micro" className="block mb-2 opacity-60">Time</Label>
+                            <span className="text-2xl font-black text-titanium-900 tabular-nums">{summary.sessionMinutes}m</span>
                         </div>
-                        <div className="bg-titanium-50 p-5 rounded-3xl border border-titanium-100">
-                            <span className="text-[9px] font-bold text-titanium-400 uppercase tracking-widest block mb-1">Net PnL</span>
-                            <span className={`text-lg font-bold tabular-nums ${summary.netPnl < 0 ? 'text-action-destructive' : 'text-action-success'}`}>
+                        <div className="bg-titanium-50 p-6 rounded-[32px] border border-titanium-100 shadow-inner-light">
+                            <Label size="micro" className="block mb-2 opacity-60">Return</Label>
+                            <span className={`text-2xl font-black tabular-nums ${summary.netPnl < 0 ? 'text-action-destructive' : 'text-action-success'}`}>
                                 {summary.netPnl >= 0 ? '+' : '-'}${Math.abs(summary.netPnl).toLocaleString()}
                             </span>
                         </div>
-                        <div className="bg-titanium-50 p-5 rounded-3xl border border-titanium-100">
-                            <span className="text-[9px] font-bold text-titanium-400 uppercase tracking-widest block mb-1">Balance</span>
-                            <span className="text-lg font-bold text-titanium-900 tabular-nums">${summary.chips.toLocaleString()}</span>
+                        <div className="bg-titanium-50 p-6 rounded-[32px] border border-titanium-100 shadow-inner-light">
+                            <Label size="micro" className="block mb-2 opacity-60">Bankroll</Label>
+                            <span className="text-2xl font-black text-titanium-900 tabular-nums">${summary.chips.toLocaleString()}</span>
                         </div>
                     </div>
 
-                    <div className="space-y-6">
-                        <div className="flex items-center justify-between">
+                    <div className="space-y-8">
+                        <div className="flex items-center justify-between group">
                             <div>
-                                <h4 className="text-sm font-bold text-titanium-900 uppercase tracking-tight">Reality Check</h4>
-                                <p className="text-[11px] text-titanium-400 font-medium">Notification interval in minutes</p>
+                                <h4 className="text-base font-black text-titanium-900 uppercase tracking-tight">Reality Check</h4>
+                                <p className="text-xs text-titanium-400 font-bold">Notification cadence</p>
                             </div>
                             <select
-                                className="bg-white border border-titanium-200 rounded-xl px-4 py-2 text-sm font-bold text-titanium-800 outline-none focus:border-action-primary transition-colors"
+                                className="bg-titanium-50 border border-titanium-200 rounded-2xl px-6 py-3 text-sm font-black text-titanium-800 outline-none focus:border-action-primary transition-all shadow-soft"
                                 value={settings.realityCheckMinutes}
                                 onChange={(e) => setNumber('realityCheckMinutes', e.target.value)}
                             >
-                                <option value={0}>Disabled</option>
-                                <option value={15}>15 mins</option>
-                                <option value={30}>30 mins</option>
-                                <option value={60}>1 hour</option>
+                                <option value={0}>Deactivated</option>
+                                <option value={15}>15 Minutes</option>
+                                <option value={30}>30 Minutes</option>
+                                <option value={60}>60 Minutes</option>
                             </select>
                         </div>
 
                         <div className="flex items-center justify-between">
                             <div>
-                                <h4 className="text-sm font-bold text-titanium-900 uppercase tracking-tight">Cooldown Mode</h4>
-                                <p className="text-[11px] text-titanium-400 font-medium">{cooldownMinutes > 0 ? `Active for ${cooldownMinutes}m` : 'Pause gaming temporarily'}</p>
+                                <h4 className="text-base font-black text-titanium-900 uppercase tracking-tight">Cooldown Mode</h4>
+                                <p className="text-xs text-titanium-400 font-bold">{cooldownMinutes > 0 ? `Active for ${cooldownMinutes}m` : 'Pause active participation'}</p>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex gap-3">
                                 {[15, 30, 60].map(m => (
                                     <button 
                                         key={m}
                                         onClick={() => onCooldown(m)}
-                                        className="w-10 h-10 rounded-full border border-titanium-200 text-xs font-bold text-titanium-800 hover:border-titanium-900 transition-colors"
+                                        className="w-12 h-12 rounded-2xl border border-titanium-200 text-xs font-black text-titanium-800 hover:bg-titanium-900 hover:text-white transition-all shadow-soft active:scale-90"
                                     >
                                         {m}
                                     </button>
@@ -666,18 +678,18 @@ export const ResponsiblePlayOverlay: React.FC<ResponsiblePlayOverlayProps> = ({
                     </div>
                 </div>
 
-                <div className="p-10 border-t border-titanium-100 bg-titanium-50 flex items-center gap-4">
+                <div className="p-12 border-t border-titanium-100 bg-titanium-50/50 flex items-center gap-6">
                     <button
                         onClick={onStop}
-                        className="flex-1 h-14 rounded-full border-2 border-action-destructive text-action-destructive font-bold text-xs uppercase tracking-[0.2em] hover:bg-action-destructive/5 transition-colors"
+                        className="flex-1 h-16 rounded-full border-2 border-action-destructive text-action-destructive font-black text-xs uppercase tracking-[0.3em] hover:bg-action-destructive text-white transition-all active:scale-95 shadow-lg shadow-action-destructive/10"
                     >
                         End Session
                     </button>
                     <button
                         onClick={mode === 'reality' ? onContinue : onClose}
-                        className="flex-1 h-14 rounded-full bg-titanium-900 text-white font-bold text-xs uppercase tracking-[0.2em] shadow-lg shadow-titanium-900/20"
+                        className="flex-1 h-16 rounded-full bg-titanium-900 text-white font-black text-xs uppercase tracking-[0.3em] shadow-xl shadow-titanium-900/30 hover:scale-[1.02] active:scale-95 transition-all"
                     >
-                        {mode === 'reality' ? 'Keep Playing' : 'Save & Close'}
+                        {mode === 'reality' ? 'Continue' : 'Acknowledge'}
                     </button>
                 </div>
             </div>

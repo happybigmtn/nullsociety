@@ -176,89 +176,70 @@ export const BaccaratView = React.memo<{
 
     return (
         <>
-            <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-4 sm:gap-6 md:gap-8 relative pt-8 sm:pt-10 pb-24 sm:pb-20 lg:pl-64">
-                <h1 className="absolute top-0 text-xl font-bold text-gray-500 tracking-widest uppercase">BACCARAT</h1>
+            <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-12 relative pt-12 pb-24 animate-scale-in">
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
+                    <Label size="micro">Baccarat</Label>
+                    <div className="h-1 w-8 bg-titanium-200 rounded-full" />
+                </div>
+
                 <div className="absolute top-2 left-2 z-40">
-                    <MobileDrawer label="BETS" title="BACCARAT BETS">
-                        <div className="space-y-2">
-                            {allBets.map((b, i) => (
-                                <div
-                                    key={i}
-                                    className={`flex justify-between items-center text-xs border p-2 rounded bg-black/40 ${
-                                        i === 0 ? 'border-action-success/30' : 'border-gray-800'
-                                    }`}
-                                >
-                                    <span className={`font-bold text-[10px] ${b.type === 'PLAYER' || b.type === 'BANKER' ? 'text-action-success' : 'text-gray-400'}`}>{b.type}</span>
-                                    <div className="text-white text-[10px]">${b.amount}</div>
-                                </div>
-                            ))}
+                    <MobileDrawer label="INFO" title="BACCARAT">
+                        <div className="space-y-4 p-2">
+                            <p className="text-body-sm text-titanium-800 font-semibold leading-relaxed">
+                                Closest to 9 wins. Aces are 1, Face cards and 10s are 0.
+                            </p>
+                            <div className="bg-titanium-50 p-4 rounded-2xl border border-titanium-100">
+                                <Label size="micro" className="mb-2 block">Controls</Label>
+                                <p className="text-[11px] text-titanium-500 font-bold uppercase tracking-wider">
+                                    PLAYER (P) • BANKER (B) • TIE (E)
+                                </p>
+                            </div>
                         </div>
                     </MobileDrawer>
                 </div>
-                <div className="min-h-[180px] w-full max-w-2xl flex flex-col items-center justify-center gap-6">
-                    <div className="flex flex-col items-center gap-2 opacity-75">
-                        <span className={`text-sm font-bold tracking-widest ${bankerColor}`}>{bankerLabel}</span>
+                <div className="min-h-[180px] w-full max-w-2xl flex flex-col items-center justify-center gap-12 px-6">
+                    <div className="flex flex-col items-center gap-4 opacity-80 group transition-transform hover:scale-105">
+                        <div className="flex items-center gap-2">
+                            <Label variant="destructive">Banker</Label>
+                            <span className="px-2 py-0.5 rounded-md bg-titanium-100 text-titanium-900 font-black text-[10px] tabular-nums group-hover:bg-action-destructive group-hover:text-white transition-colors">{bankerValue}</span>
+                        </div>
                         <Hand cards={gameState.dealerCards} forcedColor={bankerColor} />
                     </div>
-                    <div className="flex flex-col items-center gap-2">
-                        <span className={`text-sm font-bold tracking-widest ${playerColor}`}>{playerLabel}</span>
+
+                    <div className="h-px w-32 bg-titanium-200" />
+
+                    <div className="flex flex-col items-center gap-4 group transition-transform hover:scale-105">
+                        <div className="flex items-center gap-2">
+                            <Label variant="gold">Player</Label>
+                            <span className="px-2 py-0.5 rounded-md bg-titanium-100 text-titanium-900 font-black text-[10px] tabular-nums group-hover:bg-action-primary group-hover:text-white transition-colors">{playerValue}</span>
+                        </div>
                         <Hand cards={gameState.playerCards} forcedColor={playerColor} />
                     </div>
                 </div>
                 {/* Center Info */}
-                <div className="text-center space-y-2 relative z-20 py-2 sm:py-4">
-                    <div className="text-lg sm:text-2xl font-bold text-action-primary tracking-widest leading-tight animate-pulse">
-                        {gameState.message}
-                    </div>
-                    <div className="flex flex-wrap items-center justify-center gap-2 text-[11px]">
-                        <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass(gameState.baccaratSelection)}`}>
-                            <span className={gameState.stage === 'RESULT' && getWinnerClass(gameState.baccaratSelection).includes('text-action-success') ? 'text-action-success' : 'text-white'}>
+                <div className="text-center space-y-2 relative z-20 py-2 sm:py-4 px-6">
+                    <h2 className="text-2xl sm:text-3xl font-extrabold text-titanium-900 tracking-tight font-display animate-scale-in">
+                        {gameState.message || 'Place Your Bets'}
+                    </h2>
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                        <span className={`px-3 py-1 rounded-full border text-[10px] font-bold uppercase tracking-widest transition-all ${getWinnerClass(gameState.baccaratSelection)}`}>
+                            <span className={gameState.stage === 'RESULT' && getWinnerClass(gameState.baccaratSelection).includes('text-action-success') ? 'text-action-success' : 'text-titanium-900'}>
                                 {gameState.baccaratSelection}
                             </span> ${gameState.bet.toLocaleString()}
                         </span>
                         {sideBetAmounts.TIE > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('TIE')}`}>
+                            <span className={`px-3 py-1 rounded-full border text-[10px] font-bold uppercase tracking-widest transition-all ${getWinnerClass('TIE')}`}>
                                 TIE ${sideBetAmounts.TIE.toLocaleString()}
                             </span>
                         )}
                         {sideBetAmounts.P_PAIR > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_PAIR')}`}>
+                            <span className={`px-3 py-1 rounded-full border text-[10px] font-bold uppercase tracking-widest transition-all ${getWinnerClass('P_PAIR')}`}>
                                 P.PAIR ${sideBetAmounts.P_PAIR.toLocaleString()}
                             </span>
                         )}
                         {sideBetAmounts.B_PAIR > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_PAIR')}`}>
+                            <span className={`px-3 py-1 rounded-full border text-[10px] font-bold uppercase tracking-widest transition-all ${getWinnerClass('B_PAIR')}`}>
                                 B.PAIR ${sideBetAmounts.B_PAIR.toLocaleString()}
-                            </span>
-                        )}
-                        {sideBetAmounts.LUCKY6 > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('LUCKY6')}`}>
-                                LUCKY6 ${sideBetAmounts.LUCKY6.toLocaleString()}
-                            </span>
-                        )}
-                        {sideBetAmounts.P_DRAGON > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_DRAGON')}`}>
-                                P.DRAGON ${sideBetAmounts.P_DRAGON.toLocaleString()}
-                            </span>
-                        )}
-                        {sideBetAmounts.B_DRAGON > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_DRAGON')}`}>
-                                B.DRAGON ${sideBetAmounts.B_DRAGON.toLocaleString()}
-                            </span>
-                        )}
-                        {sideBetAmounts.PANDA8 > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('PANDA8')}`}>
-                                PANDA8 ${sideBetAmounts.PANDA8.toLocaleString()}
-                            </span>
-                        )}
-                        {sideBetAmounts.P_PERFECT_PAIR > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('P_PERFECT_PAIR')}`}>
-                                P.PP ${sideBetAmounts.P_PERFECT_PAIR.toLocaleString()}
-                            </span>
-                        )}
-                        {sideBetAmounts.B_PERFECT_PAIR > 0 && (
-                            <span className={`px-2 py-0.5 rounded border transition-all ${getWinnerClass('B_PERFECT_PAIR')}`}>
-                                B.PP ${sideBetAmounts.B_PERFECT_PAIR.toLocaleString()}
                             </span>
                         )}
                     </div>

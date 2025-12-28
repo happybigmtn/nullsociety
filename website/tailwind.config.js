@@ -8,29 +8,36 @@ module.exports = {
     extend: {
       fontFamily: {
         mono: ['"Space Mono"', 'monospace'],
-        sans: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
+        sans: ['"Plus Jakarta Sans"', 'Inter', 'system-ui', 'sans-serif'],
         display: ['"Outfit"', 'sans-serif'],
+      },
+      fontSize: {
+        'micro': ['10px', { lineHeight: '1', letterSpacing: '0.15em' }],
+        'label': ['11px', { lineHeight: '1.2', letterSpacing: '0.1em' }],
+        'body-sm': ['13px', { lineHeight: '1.4' }],
+        'body': ['15px', { lineHeight: '1.5' }],
       },
       colors: {
         titanium: {
-          50: '#f9f9f9', // Backgrounds
-          100: '#f2f2f7', // Surfaces (iOS secondary system fill)
-          200: '#e5e5ea', // Borders (iOS separator)
-          300: '#d1d1d6', // Inactive
-          400: '#8e8e93', // Labels (Darkened for WCAG AA - iOS secondary label)
-          500: '#636366', // Tertiary text
-          800: '#2c2c2e', // Primary Text
-          900: '#1c1c1e', // Strong Headings
+          50: '#f9f9f9',
+          100: '#f2f2f7',
+          200: '#e5e5ea',
+          300: '#d1d1d6',
+          400: '#a2a2a7', // Borderline contrast
+          500: '#636366', // Better contrast for labels (WCAG AA)
+          800: '#2c2c2e',
+          900: '#1c1c1e',
         },
         glass: {
           light: 'rgba(255, 255, 255, 0.75)',
-          dark: 'rgba(28, 28, 30, 0.8)', // Unified dark glass
+          dark: 'rgba(28, 28, 30, 0.8)',
           border: 'rgba(0, 0, 0, 0.05)',
         },
         action: {
-          primary: '#007AFF', // iOS Blue
-          success: '#34C759', // iOS Green
-          destructive: '#FF3B30', // iOS Red
+          primary: '#5E5CE6', // Nullspace Signature Indigo (more distinctive than generic blue)
+          success: '#34C759',
+          destructive: '#FF3B30',
+          gold: '#FFCC00',
         },
         // Legacy Terminal Colors (kept for safe migration)
         terminal: {
@@ -46,6 +53,22 @@ module.exports = {
         'soft': '0 2px 12px rgba(0,0,0,0.03)',
         'float': '0 20px 48px rgba(0,0,0,0.08)',
         'inner-light': 'inset 0 1px 0 rgba(255,255,255,0.5)',
+        'card-elevated': '0 8px 32px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,0.8)',
+      },
+      borderRadius: {
+        'sm': '8px',
+        'md': '12px',
+        'lg': '20px',
+        'xl': '32px',
+        '2xl': '40px',
+        '3xl': '48px',
+      },
+      spacing: {
+        'px-4': '4px',
+        'px-8': '8px',
+        'px-16': '16px',
+        'px-24': '24px',
+        'px-32': '32px',
       },
       animation: {
         'shimmer': 'shimmer 2s infinite linear',
