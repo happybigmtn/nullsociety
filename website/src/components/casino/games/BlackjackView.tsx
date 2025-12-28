@@ -20,14 +20,12 @@ const CHIP_COLORS: Record<number, { bg: string; border: string; text: string }> 
     10000: { bg: 'bg-blue-600', border: 'border-blue-400', text: 'text-white' },
 };
 
-// Chip component for bet size display
 const ChipButton: React.FC<{
     value: number;
     selected?: boolean;
     onClick?: () => void;
     size?: 'sm' | 'md' | 'lg';
 }> = ({ value, selected, onClick, size = 'lg' }) => {
-    const colors = CHIP_COLORS[value] || CHIP_COLORS[25];
     const label = value >= 1000 ? `${value / 1000}K` : value.toString();
     const sizes = { sm: 'w-10 h-10 text-xs', md: 'w-12 h-12 text-sm', lg: 'w-14 h-14 text-base' };
 
@@ -36,16 +34,14 @@ const ChipButton: React.FC<{
             type="button"
             onClick={onClick}
             className={`
-                ${sizes[size]} relative rounded-full font-bold font-mono
-                ${colors.bg} ${colors.text} border-4 ${colors.border}
-                flex items-center justify-center transition-all duration-150
+                ${sizes[size]} relative rounded-full font-bold
+                flex items-center justify-center transition-all duration-300
                 ${onClick ? 'cursor-pointer hover:scale-110 active:scale-95' : ''}
-                ${selected ? 'ring-2 ring-white ring-offset-2 ring-offset-black shadow-lg' : ''}
+                ${selected ? 'bg-titanium-900 text-white shadow-float ring-2 ring-offset-2 ring-titanium-900' : 'bg-white text-titanium-800 border border-titanium-200 shadow-soft'}
             `}
-            style={{ boxShadow: `inset 0 2px 4px rgba(255,255,255,0.3), inset 0 -2px 4px rgba(0,0,0,0.3)` }}
+            style={{ fontFamily: 'Space Grotesk' }}
         >
-            <div className="absolute inset-0.5 rounded-full border-2 border-dashed border-white/30" />
-            <span className="relative z-10 drop-shadow-md">{label}</span>
+            <span className="relative z-10">{label}</span>
         </button>
     );
 };
@@ -174,7 +170,7 @@ export const BlackjackView = React.memo<{
                     {gameState.blackjackStack.length > 0 && (
                             <div className="flex gap-1 sm:gap-1.5 md:gap-2 opacity-50 scale-75 origin-left">
                             {gameState.blackjackStack.map((h, i) => (
-                                <div key={i} className="w-12 h-[4.5rem] sm:w-14 sm:h-20 md:w-16 md:h-24 bg-terminal-dim border-2 border-gray-700 rounded flex items-center justify-center">
+                                <div key={i} className="w-12 h-[4.5rem] sm:w-14 sm:h-20 md:w-16 md:h-24 bg-titanium-200 border-2 border-gray-700 rounded flex items-center justify-center">
                                     <span className="text-xs text-gray-500 font-mono">WAIT</span>
                                 </div>
                             ))}
@@ -189,7 +185,7 @@ export const BlackjackView = React.memo<{
                                         shadow-[0_0_20px_rgba(255,215,0,0.3),inset_0_0_30px_rgba(255,215,0,0.05)]
                                         animate-pulse-glow">
                             {/* Animated shimmer overlay */}
-                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-terminal-gold/10 to-transparent
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-action-primary/10 to-transparent
                                             animate-shimmer pointer-events-none" />
 
                             <div className="relative p-3">

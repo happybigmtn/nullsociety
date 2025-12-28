@@ -16,7 +16,7 @@ export const CardRender: React.FC<{ card: Card; small?: boolean; forcedColor?: s
       <div
         className={`${
           small ? 'w-9 h-[3.25rem] sm:w-10 sm:h-14 md:w-11 md:h-[4rem]' : 'w-12 h-[4.5rem] sm:w-14 sm:h-20 md:w-16 md:h-24'
-        } bg-terminal-dim border border-gray-600 rounded flex items-center justify-center`}
+        } bg-titanium-200 border border-gray-600 rounded flex items-center justify-center`}
       >
         <span className="text-gray-500 opacity-50 text-xs">?</span>
       </div>

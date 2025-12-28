@@ -271,7 +271,7 @@ export const RegistrationView: React.FC<RegistrationViewProps> = ({
                                       step="10"
                                       value={botConfig.numBots}
                                       onChange={(e) => onBotConfigChange({ ...botConfig, numBots: parseInt(e.target.value) })}
-                                      className="flex-1 accent-terminal-green bg-gray-800"
+                                      className="flex-1 accent-action-success bg-gray-800"
                                   />
                                   <span className="text-action-success font-mono w-12 text-right">{botConfig.numBots}</span>
                               </div>
@@ -290,7 +290,7 @@ export const RegistrationView: React.FC<RegistrationViewProps> = ({
                                       step="1000"
                                       value={botConfig.betIntervalMs}
                                       onChange={(e) => onBotConfigChange({ ...botConfig, betIntervalMs: parseInt(e.target.value) })}
-                                      className="flex-1 accent-terminal-green bg-gray-800"
+                                      className="flex-1 accent-action-success bg-gray-800"
                                   />
                                   <span className="text-action-success font-mono w-12 text-right">{botConfig.betIntervalMs / 1000}s</span>
                               </div>

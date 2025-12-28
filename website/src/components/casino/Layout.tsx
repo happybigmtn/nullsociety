@@ -125,7 +125,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-3">
                 <div className="flex flex-col items-end">
                     <span className="text-titanium-400 text-[9px] font-bold tracking-widest uppercase leading-none mb-0.5">Balance</span>
-                    <span className="text-titanium-900 font-bold text-base sm:text-lg tracking-tight tabular-nums leading-none">
+                    <span className="text-titanium-900 font-bold text-base sm:text-lg tracking-tight tabular-nums leading-none" style={{ fontFamily: 'Space Grotesk' }}>
                         ${stats.chips.toLocaleString()}
                     </span>
                 </div>

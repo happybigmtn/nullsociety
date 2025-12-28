@@ -1,46 +1,50 @@
 /**
  * Jony Ive-inspired design system constants
- * Following principles: Radical Simplicity, Progressive Disclosure, Clarity, Tactile Response
+ * Principles: Radical Simplicity, Progressive Disclosure, Clarity, Tactile Response
+ * Palette: Titanium & Glass
  */
 
 import { Platform } from 'react-native';
 
 const FONT_FAMILY = Platform.select({
-  ios: 'Menlo',
+  ios: 'System',
+  android: 'sans-serif-medium',
+  default: 'System',
+});
+
+const MONO_FONT = Platform.select({
+  ios: 'Courier',
   android: 'monospace',
   default: 'monospace',
 });
 
 export const COLORS = {
-  // Core palette
-  background: '#050505',
-  surface: '#0A0A0A',
-  surfaceElevated: '#111111',
-  border: '#333333',
+  // Titanium Palette
+  background: '#F9F9F9', 
+  surface: '#FFFFFF', 
+  surfaceElevated: '#FFFFFF',
+  border: '#E5E5EA', 
 
-  // Primary actions
-  primary: '#00FF41',
-  primaryDark: '#00CC33',
-
-  // Secondary/accent
-  accent: '#FF003C',
-  gold: '#FFD700',
+  // Action Colors
+  primary: '#007AFF',
+  primaryDark: '#005BB5',
+  success: '#34C759',
+  destructive: '#FF3B30',
+  gold: '#FFCC00',
 
   // Text hierarchy
-  textPrimary: '#E5E5E5',
-  textSecondary: '#B3B3B3',
-  textMuted: '#6B7280',
-  textDisabled: '#333333',
+  textPrimary: '#1C1C1E', 
+  textSecondary: '#636366',
+  textMuted: '#8E8E93', // WCAG AA compliant on white
+  textDisabled: '#D1D1D6',
 
   // Card suits
-  suitRed: '#FF003C',
-  suitBlack: '#1F2937',
+  suitRed: '#FF3B30',
+  suitBlack: '#1C1C1E',
 
-  // Semantic
-  success: '#00FF41',
-  error: '#FF003C',
-  warning: '#FBBF24',
-  info: '#38BDF8',
+  // Glass
+  glassLight: 'rgba(255, 255, 255, 0.75)',
+  glassDark: 'rgba(28, 28, 30, 0.8)',
 } as const;
 
 export const SPACING = {
@@ -53,117 +57,96 @@ export const SPACING = {
 } as const;
 
 export const RADIUS = {
-  sm: 4,
-  md: 8,
-  lg: 16,
-  xl: 24,
+  sm: 8,
+  md: 12,
+  lg: 20,
+  xl: 32,
   full: 9999,
 } as const;
 
 export const TYPOGRAPHY = {
-  // Display - for large numbers (balance, bet amounts)
   displayLarge: {
     fontSize: 48,
-    fontWeight: '700' as const,
+    fontWeight: '800' as const,
     letterSpacing: -1,
     fontFamily: FONT_FAMILY,
+    color: COLORS.textPrimary,
   },
   displayMedium: {
     fontSize: 36,
     fontWeight: '700' as const,
     letterSpacing: -0.5,
     fontFamily: FONT_FAMILY,
+    color: COLORS.textPrimary,
   },
-
-  // Headings
   h1: {
     fontSize: 28,
     fontWeight: '700' as const,
     fontFamily: FONT_FAMILY,
+    color: COLORS.textPrimary,
   },
   h2: {
     fontSize: 24,
     fontWeight: '600' as const,
     fontFamily: FONT_FAMILY,
+    color: COLORS.textPrimary,
   },
   h3: {
     fontSize: 20,
     fontWeight: '600' as const,
     fontFamily: FONT_FAMILY,
+    color: COLORS.textPrimary,
   },
-
-  // Body
   bodyLarge: {
     fontSize: 18,
-    fontWeight: 'normal' as const,
+    fontWeight: '500' as const,
     lineHeight: 28,
     fontFamily: FONT_FAMILY,
+    color: COLORS.textPrimary,
   },
   body: {
     fontSize: 16,
-    fontWeight: 'normal' as const,
+    fontWeight: '400' as const,
     lineHeight: 24,
     fontFamily: FONT_FAMILY,
+    color: COLORS.textSecondary,
   },
-  bodySmall: {
-    fontSize: 14,
-    fontWeight: 'normal' as const,
-    lineHeight: 20,
-    fontFamily: FONT_FAMILY,
-  },
-
-  // Labels
   label: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    letterSpacing: 1,
+    fontSize: 10,
+    fontWeight: '700' as const,
+    letterSpacing: 1.5,
     fontFamily: FONT_FAMILY,
+    textTransform: 'uppercase' as const,
+    color: COLORS.textMuted,
   },
-  caption: {
+  mono: {
+    fontFamily: MONO_FONT,
     fontSize: 12,
-    fontWeight: 'normal' as const,
-    fontFamily: FONT_FAMILY,
-  },
+  }
 } as const;
 
-// Animation timing
 export const ANIMATION = {
   fast: 150,
   normal: 300,
   slow: 500,
   spring: {
-    damping: 15,
-    stiffness: 150,
+    damping: 20,
+    stiffness: 120,
+    mass: 1,
   },
 } as const;
 
-// Chip values
 export const CHIP_VALUES = [1, 5, 25, 100, 500, 1000] as const;
 
-// Game-specific colors
-export const GAME_COLORS = {
-  hi_lo: '#8B5CF6',
-  blackjack: '#10B981',
-  roulette: '#EF4444',
-  craps: '#F59E0B',
-  baccarat: '#EC4899',
-  casino_war: '#6366F1',
-  video_poker: '#14B8A6',
-  sic_bo: '#F97316',
-  three_card_poker: '#8B5CF6',
-  ultimate_texas_holdem: '#EAB308',
-} as const;
-
-// Game-specific detailed colors for in-game use
 export const GAME_DETAIL_COLORS = {
   roulette: {
-    red: '#DC2626',
-    black: '#1F2937',
-    green: '#16A34A',
+    red: '#FF3B30',
+    black: '#1C1C1E',
+    green: '#34C759',
   },
   craps: {
-    pass: '#22C55E',
-    dontPass: '#EF4444',
-    field: '#F59E0B',
+    pass: '#34C759',
+    dontPass: '#FF3B30',
+    field: '#FFCC00',
   },
 } as const;

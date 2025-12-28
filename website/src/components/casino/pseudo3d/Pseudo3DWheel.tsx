@@ -14,9 +14,9 @@ const ROULETTE_NUMBERS = [
 ];
 
 const getNumberColor = (num: number) => {
-    if (num === 0) return '#00ff41'; // Terminal Green
+    if (num === 0) return '#34C759'; // Action Success (Green)
     const redNums = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
-    return redNums.includes(num) ? '#ff003c' : '#111111';
+    return redNums.includes(num) ? '#FF3B30' : '#1C1C1E'; // Action Destructive / Titanium 900
 };
 
 export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
@@ -26,67 +26,59 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
     style,
     onSpinComplete
 }) => {
-    // Wheel rotation state
     const [rotation, setRotation] = useState(0);
 
-    // Calculate target rotation based on number
     const getTargetRotation = (target: number) => {
         const index = ROULETTE_NUMBERS.indexOf(target);
         if (index === -1) return 0;
         const segmentAngle = 360 / 37;
-        // Adjust for index position + random spins (5-10 full spins)
         const baseRotation = index * segmentAngle;
-        const extraSpins = (5 + Math.floor(Math.random() * 5)) * 360; 
-        return -(baseRotation + extraSpins); // Negative for clockwise spin visual
+        const extraSpins = (6 + Math.floor(Math.random() * 4)) * 360; 
+        return -(baseRotation + extraSpins);
     };
 
     const { rotate } = useSpring({
         rotate: isSpinning && lastNumber !== null 
             ? getTargetRotation(lastNumber) 
             : rotation,
-        config: { mass: 5, tension: 80, friction: 30, clamp: true },
+        config: isSpinning ? { mass: 4, tension: 100, friction: 40 } : config.stiff,
         onRest: () => {
             if (isSpinning && onSpinComplete) {
                 onSpinComplete();
             }
-            // Normalize rotation for next spin to prevent huge numbers
-            if (!isSpinning) {
-                 const currentRot = rotation % 360;
-                 setRotation(currentRot); 
-            }
         }
     });
     
-    // Ball Animation (Orbit)
-    // Simplified: Ball stays at top (12 o'clock) while wheel spins? 
-    // Or ball spins opposite?
-    // Let's make the ball spin counter-clockwise relative to wheel
-    const { ballRotate, ballRadius } = useSpring({
-        ballRotate: isSpinning ? 720 + Math.random() * 360 : 0,
-        ballRadius: isSpinning ? 130 : 110, // Ball drops in
-        config: isSpinning ? { duration: 3000, easing: t => t * (2-t) } : { duration: 500 }
+    // Improved Ball Animation (Spiral + Bounce)
+    const { ballRotate, ballRadius, ballBounce } = useSpring({
+        ballRotate: isSpinning ? 1440 + Math.random() * 720 : 0,
+        ballRadius: isSpinning ? 130 : 115, // Spiral inward
+        ballBounce: isSpinning ? 0 : 2, // Slight bounce on settle
+        config: isSpinning 
+            ? { duration: 3500, easing: t => t * t * (3 - 2 * t) } 
+            : { mass: 3, tension: 120, friction: 14 } // Overshoot config for settling
     });
 
     return (
         <div className={`relative ${className}`} style={{ width: 320, height: 320, ...style }}>
-            {/* Outer Static Ring */}
-            <div className="absolute inset-0 rounded-full border-[16px] border-[#1a1a1a] shadow-2xl flex items-center justify-center bg-[#0a0a0a]">
+            {/* Shadow beneath wheel */}
+            <div className="absolute inset-4 rounded-full bg-black/20 blur-2xl" />
+
+            {/* Outer Static Ring (Titanium) */}
+            <div className="absolute inset-0 rounded-full border-[12px] border-titanium-200 shadow-float flex items-center justify-center bg-titanium-100 overflow-hidden">
                 
                 {/* Spinning Wheel */}
                 <animated.div 
-                    className="w-full h-full rounded-full relative"
+                    className="w-full h-full rounded-full relative shadow-inner"
                     style={{ transform: rotate.to(r => `rotate(${r}deg)`) }}
                 >
-                    {/* Render Segments via Conic Gradient or SVG? SVG is cleaner for numbers */}
                     <svg viewBox="0 0 320 320" className="w-full h-full transform -rotate-90">
                         {ROULETTE_NUMBERS.map((num, i) => {
                             const angle = 360 / 37;
                             const rotation = i * angle;
                             const color = getNumberColor(num);
                             
-                            // Calculate SVG path for wedge
-                            // Center is 160,160. Radius 140 (leave border).
-                            const r = 140;
+                            const r = 148;
                             const startA = (rotation - angle/2) * Math.PI / 180;
                             const endA = (rotation + angle/2) * Math.PI / 180;
                             const x1 = 160 + r * Math.cos(startA);
@@ -94,8 +86,7 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
                             const x2 = 160 + r * Math.cos(endA);
                             const y2 = 160 + r * Math.sin(endA);
 
-                            // Text position (closer to edge)
-                            const textR = 120;
+                            const textR = 124;
                             const textA = rotation * Math.PI / 180;
                             const tx = 160 + textR * Math.cos(textA);
                             const ty = 160 + textR * Math.sin(textA);
@@ -105,17 +96,18 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
                                     <path 
                                         d={`M160,160 L${x1},${y1} A${r},${r} 0 0,1 ${x2},${y2} Z`} 
                                         fill={color}
-                                        stroke="#1a1a1a"
-                                        strokeWidth="1"
+                                        stroke="rgba(255,255,255,0.05)"
+                                        strokeWidth="0.5"
                                     />
                                     <text 
                                         x={tx} 
                                         y={ty} 
                                         fill="white" 
-                                        fontSize="12" 
-                                        fontWeight="bold"
+                                        fontSize="10" 
+                                        fontWeight="800"
                                         textAnchor="middle" 
                                         dominantBaseline="middle"
+                                        style={{ fontFamily: 'Space Grotesk' }}
                                         transform={`rotate(${rotation + 90}, ${tx}, ${ty})`}
                                     >
                                         {num}
@@ -123,25 +115,34 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
                                 </g>
                             );
                         })}
-                        {/* Center Hub */}
-                        <circle cx="160" cy="160" r="40" fill="#1a1a1a" stroke="#333" strokeWidth="2" />
+                        {/* Center Hub (Titanium Gradient) */}
+                        <defs>
+                            <radialGradient id="hubGradient" cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stopColor="#f9f9f9" />
+                                <stop offset="100%" stopColor="#d1d1d6" />
+                            </radialGradient>
+                        </defs>
+                        <circle cx="160" cy="160" r="45" fill="url(#hubGradient)" />
+                        <circle cx="160" cy="160" r="40" fill="none" stroke="rgba(0,0,0,0.05)" strokeWidth="1" />
                     </svg>
                 </animated.div>
 
                 {/* Ball */}
                 <animated.div 
-                    className="absolute w-4 h-4 bg-white rounded-full shadow-[0_0_10px_white] z-10"
+                    className="absolute w-3.5 h-3.5 bg-white rounded-full shadow-lg z-10"
                     style={{
-                        transform: ballRotate.to(r => `rotate(${-r}deg) translateY(-${115}px)`), // Simple orbit for now
-                        opacity: isSpinning ? 1 : 0 // Hide ball when not spinning for clean look, or keep it on winning number
+                        transform: ballRotate.to(r => 
+                            `rotate(${-r}deg) translateY(-${115}px) scale(${isSpinning ? 1 : 1.1})`
+                        ),
+                        opacity: isSpinning || lastNumber !== null ? 1 : 0
                     }}
                 />
                 
                 {/* Pointer / Flapper */}
-                <div className="absolute top-[-10px] left-1/2 -translate-x-1/2 w-4 h-8 bg-action-primary z-20 shadow-lg" style={{ clipPath: 'polygon(0% 0%, 100% 0%, 50% 100%)' }} />
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1 h-6 bg-action-primary z-20 rounded-full" />
                 
                 {/* Gloss Overlay */}
-                <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-white/5 to-transparent pointer-events-none" />
+                <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-white/20 via-transparent to-black/5 pointer-events-none" />
             </div>
         </div>
     );

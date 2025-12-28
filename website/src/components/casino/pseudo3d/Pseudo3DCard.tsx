@@ -3,18 +3,18 @@ import { useSpring, animated } from '@react-spring/web';
 
 interface Pseudo3DCardProps {
   suit: 'hearts' | 'diamonds' | 'clubs' | 'spades' | string;
-  rank: string; // 'A', 'K', 'Q', 'J', '10', '9', etc.
+  rank: string;
   faceUp?: boolean;
-  index?: number; // For stagger effect
+  index?: number;
   style?: React.CSSProperties;
   className?: string;
 }
 
 const suitColors: Record<string, string> = {
-  hearts: '#FF3B30',   // Red
-  diamonds: '#FF3B30', // Red
-  clubs: '#1C1C1E',    // Black
-  spades: '#1C1C1E',   // Black
+  hearts: '#FF3B30',
+  diamonds: '#FF3B30',
+  clubs: '#1C1C1E',
+  spades: '#1C1C1E',
 };
 
 const suitIcons: Record<string, string> = {
@@ -40,10 +40,10 @@ export const Pseudo3DCard: React.FC<Pseudo3DCardProps> = ({
 
   const { transform, opacity } = useSpring({
     opacity: 1,
-    transform: `perspective(600px) rotateY(${isFlipped ? 180 : 0}deg) translateY(0px)`,
-    from: { opacity: 0, transform: `perspective(600px) rotateY(180deg) translateY(-50px)` },
-    config: { mass: 1, tension: 180, friction: 20 }, // Standard spring physics
-    delay: index * 100, // Stagger deal
+    transform: `perspective(1200px) rotateY(${isFlipped ? 180 : 0}deg) translateY(0px)`,
+    from: { opacity: 0, transform: `perspective(1200px) rotateY(180deg) translateY(-100px)` },
+    config: { mass: 1, tension: 210, friction: 20 },
+    delay: index * 80,
   });
 
   const color = suitColors[suit.toLowerCase()] || '#1C1C1E';
@@ -52,43 +52,46 @@ export const Pseudo3DCard: React.FC<Pseudo3DCardProps> = ({
   return (
     <div className={`relative w-24 h-36 ${className}`} style={style}>
       <animated.div
-        className="w-full h-full relative preserve-3d cursor-pointer shadow-soft hover:shadow-float transition-shadow duration-300"
+        className="w-full h-full relative preserve-3d cursor-pointer shadow-soft hover:shadow-float active:scale-95 transition-all duration-300"
         style={{ transform, opacity }}
       >
         {/* Front Face */}
         <div
-          className="absolute inset-0 w-full h-full bg-white rounded-xl backface-hidden flex flex-col justify-between p-2 border border-gray-200"
+          className="absolute inset-0 w-full h-full bg-white rounded-xl backface-hidden flex flex-col justify-between p-3 border border-titanium-200"
           style={{ transform: 'rotateY(0deg)' }}
         >
-          {/* Top Left */}
           <div className="flex flex-col items-center leading-none">
-            <span className="font-bold text-lg font-mono tracking-tighter" style={{ color }}>{rank}</span>
-            <span className="text-sm" style={{ color }}>{icon}</span>
+            <span className="font-extrabold text-xl tracking-tighter" style={{ color, fontFamily: 'Space Grotesk' }}>{rank}</span>
+            <span className="text-sm mt-0.5" style={{ color }}>{icon}</span>
           </div>
 
-          {/* Center (Simplified for now) */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
-             <span className="text-6xl" style={{ color }}>{icon}</span>
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-5">
+             <span className="text-8xl" style={{ color }}>{icon}</span>
           </div>
 
-          {/* Bottom Right */}
           <div className="flex flex-col items-center leading-none rotate-180">
-            <span className="font-bold text-lg font-mono tracking-tighter" style={{ color }}>{rank}</span>
-            <span className="text-sm" style={{ color }}>{icon}</span>
+            <span className="font-extrabold text-xl tracking-tighter" style={{ color, fontFamily: 'Space Grotesk' }}>{rank}</span>
+            <span className="text-sm mt-0.5" style={{ color }}>{icon}</span>
           </div>
         </div>
 
-        {/* Back Face */}
+        {/* Back Face - Sophisticated Geometric Pattern */}
         <div
-          className="absolute inset-0 w-full h-full bg-zinc-900 rounded-xl backface-hidden border-2 border-white/10"
-          style={{
-            transform: 'rotateY(180deg)',
-            background: `radial-gradient(circle, #333 1px, transparent 1px) 0 0 / 8px 8px, #111`
-            // Simple geometric pattern for back
-          }}
+          className="absolute inset-0 w-full h-full bg-titanium-900 rounded-xl backface-hidden border-2 border-white/10 overflow-hidden shadow-inner"
+          style={{ transform: 'rotateY(180deg)' }}
         >
-            <div className="w-full h-full flex items-center justify-center">
-                <div className="w-8 h-12 border border-white/10 rounded-sm opacity-30"></div>
+            <div 
+                className="w-full h-full opacity-20"
+                style={{
+                    backgroundImage: `linear-gradient(45deg, #fff 25%, transparent 25%), linear-gradient(-45deg, #fff 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #fff 75%), linear-gradient(-45deg, transparent 75%, #fff 75%)`,
+                    backgroundSize: '16px 16px',
+                    backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px'
+                }}
+            />
+            <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-12 h-20 border border-white/20 rounded-lg flex items-center justify-center">
+                    <div className="w-8 h-14 border border-white/10 rounded-md bg-white/5" />
+                </div>
             </div>
         </div>
       </animated.div>

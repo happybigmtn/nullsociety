@@ -102,7 +102,7 @@ export const LiquidityPanel: React.FC<LiquidityPanelProps> = ({
           <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
               type="checkbox"
-              className="accent-terminal-green"
+              className="accent-action-success"
               checked={autoMatchRatio}
               onChange={(e) => onToggleAutoMatch(e.target.checked)}
               disabled={!poolReady}

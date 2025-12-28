@@ -293,7 +293,7 @@ export const CrapsView = React.memo<{
                         <div className="relative bg-titanium-900/95 border-2 border-action-primary rounded text-center overflow-hidden
                                         shadow-[0_0_20px_rgba(255,215,0,0.3),inset_0_0_30px_rgba(255,215,0,0.05)]
                                         animate-pulse-glow">
-                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-terminal-gold/10 to-transparent
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-action-primary/10 to-transparent
                                             animate-shimmer pointer-events-none" />
                             <div className="relative p-3">
                                 <div className="text-xs font-bold text-action-primary tracking-[0.3em] mb-2 font-mono flex items-center justify-center gap-2">

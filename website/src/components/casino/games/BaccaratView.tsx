@@ -6,6 +6,7 @@ import { Hand } from '../GameComponents';
 import { cardIdToString } from '../../../utils/gameStateParser';
 import { MobileDrawer } from '../MobileDrawer';
 import { SideBetMenu } from './SideBetMenu';
+import { Label } from '../ui/Label';
 
 type BetGroup = 'NONE' | 'BONUS';
 
@@ -269,7 +270,7 @@ export const BaccaratView = React.memo<{
                         <div className="relative bg-titanium-900/95 border-2 border-action-primary rounded text-center overflow-hidden
                                         shadow-[0_0_20px_rgba(255,215,0,0.3),inset_0_0_30px_rgba(255,215,0,0.05)]
                                         animate-pulse-glow">
-                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-terminal-gold/10 to-transparent
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-action-primary/10 to-transparent
                                             animate-shimmer pointer-events-none" />
                             <div className="relative p-3">
                                 <div className="text-xs font-bold text-action-primary tracking-[0.3em] mb-2 font-mono flex items-center justify-center gap-2">
@@ -308,23 +309,23 @@ export const BaccaratView = React.memo<{
                 <div className="flex-none flex border-b border-gray-800">
                     <button
                         onClick={() => setLeftSidebarView('EXPOSURE')}
-                        className={`flex-1 py-2 text-[10px] font-bold tracking-widest uppercase transition-colors ${
+                        className={`flex-1 py-2 flex items-center justify-center transition-colors ${
                             leftSidebarView === 'EXPOSURE'
-                                ? 'text-action-success border-b-2 border-action-success bg-action-success/10'
-                                : 'text-gray-500 hover:text-gray-300'
+                                ? 'border-b-2 border-action-primary bg-action-primary/10'
+                                : 'hover:bg-titanium-100'
                         }`}
                     >
-                        EXPOSURE
+                        <Label variant={leftSidebarView === 'EXPOSURE' ? 'gold' : 'primary'}>Exposure</Label>
                     </button>
                     <button
                         onClick={() => setLeftSidebarView('SIDE_BETS')}
-                        className={`flex-1 py-2 text-[10px] font-bold tracking-widest uppercase transition-colors ${
+                        className={`flex-1 py-2 flex items-center justify-center transition-colors ${
                             leftSidebarView === 'SIDE_BETS'
-                                ? 'text-amber-400 border-b-2 border-amber-400 bg-amber-400/10'
-                                : 'text-gray-500 hover:text-gray-300'
+                                ? 'border-b-2 border-action-primary bg-action-primary/10'
+                                : 'hover:bg-titanium-100'
                         }`}
                     >
-                        SIDE BETS
+                        <Label variant={leftSidebarView === 'SIDE_BETS' ? 'gold' : 'primary'}>Side Bets</Label>
                     </button>
                 </div>
 

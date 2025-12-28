@@ -7,27 +7,30 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        mono: ['"JetBrains Mono"', 'monospace'],
-        sans: ['"Inter"', 'sans-serif'],
+        mono: ['"Space Mono"', 'monospace'],
+        sans: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
+        display: ['"Space Grotesk"', 'sans-serif'],
       },
       colors: {
         titanium: {
           50: '#f9f9f9', // Backgrounds
-          100: '#f0f0f0', // Cards / Surfaces
-          200: '#e5e5e5', // Borders
-          300: '#d4d4d4', // Inactive Icons
-          800: '#262626', // Primary Text
-          900: '#171717', // Strong Headings
+          100: '#f2f2f7', // Surfaces (iOS secondary system fill)
+          200: '#e5e5ea', // Borders (iOS separator)
+          300: '#d1d1d6', // Inactive
+          400: '#8e8e93', // Labels (Darkened for WCAG AA - iOS secondary label)
+          500: '#636366', // Tertiary text
+          800: '#2c2c2e', // Primary Text
+          900: '#1c1c1e', // Strong Headings
         },
         glass: {
-          light: 'rgba(255, 255, 255, 0.7)',
-          dark: 'rgba(0, 0, 0, 0.6)',
-          border: 'rgba(255, 255, 255, 0.2)',
+          light: 'rgba(255, 255, 255, 0.75)',
+          dark: 'rgba(28, 28, 30, 0.8)', // Unified dark glass
+          border: 'rgba(0, 0, 0, 0.05)',
         },
         action: {
-          primary: '#007AFF', // iOS Blue (Buttons)
-          success: '#34C759', // Win / Positive
-          destructive: '#FF3B30', // Loss / Remove
+          primary: '#007AFF', // iOS Blue
+          success: '#34C759', // iOS Green
+          destructive: '#FF3B30', // iOS Red
         },
         // Legacy Terminal Colors (kept for safe migration)
         terminal: {
@@ -40,9 +43,9 @@ module.exports = {
         }
       },
       boxShadow: {
-        'soft': '0 4px 24px rgba(0,0,0,0.04)',
-        'float': '0 12px 32px rgba(0,0,0,0.08)',
-        'inner-light': 'inset 0 1px 0 rgba(255,255,255,0.8)',
+        'soft': '0 2px 12px rgba(0,0,0,0.03)',
+        'float': '0 20px 48px rgba(0,0,0,0.08)',
+        'inner-light': 'inset 0 1px 0 rgba(255,255,255,0.5)',
       },
       animation: {
         'shimmer': 'shimmer 2s infinite linear',

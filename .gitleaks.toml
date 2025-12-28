@@ -1,0 +1,37 @@
+# Gitleaks configuration
+# See: https://github.com/gitleaks/gitleaks
+
+title = "nullspace gitleaks config"
+
+[extend]
+# Use the default gitleaks rules
+useDefault = true
+
+[allowlist]
+description = "Global allowlist"
+
+# Allow example/template files that contain placeholder secrets
+paths = [
+    '''\.example$''',
+    '''\.template$''',
+    '''configs/local/.*\.example''',
+    '''\.env\.example''',
+]
+
+# Allow specific test files that may contain mock keys
+regexes = [
+    '''PLACEHOLDER''',
+    '''YOUR_.*_HERE''',
+    '''xxx+''',
+    '''test_key''',
+    '''mock_''',
+]
+
+# Paths to completely ignore
+[allowlist.paths]
+    paths = [
+        '''node_modules''',
+        '''dist''',
+        '''target''',
+        '''\.git''',
+    ]

@@ -103,6 +103,20 @@ jobs:
       run: cd website && npm audit --omit=dev --audit-level=high
       continue-on-error: true
 
+  SecretScanning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Run Gitleaks
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITLEAKS_ENABLE_COMMENTS: false
+
   SAST:
     runs-on: ubuntu-latest
     timeout-minutes: 15
