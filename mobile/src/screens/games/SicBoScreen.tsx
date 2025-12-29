@@ -9,6 +9,7 @@ import Animated, {
   useAnimatedStyle,
   withSequence,
   withTiming,
+  withSpring,
   SlideInUp,
   SlideOutDown,
 } from 'react-native-reanimated';
@@ -17,11 +18,11 @@ import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
-import { COLORS, SPACING, TYPOGRAPHY, RADIUS } from '../../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SPRING } from '../../constants/theme';
 import { useGameStore } from '../../stores/gameStore';
 import { getDieFace } from '../../utils/dice';
 import type { ChipValue, TutorialStep, SicBoBetType } from '../../types';
-import type { SicBoMessage } from '../../types/protocol';
+import type { SicBoMessage } from '@nullspace/protocol/mobile';
 
 interface SicBoBet {
   type: SicBoBetType;
@@ -80,24 +81,18 @@ export function SicBoScreen() {
     if (!lastMessage) return;
 
     if (lastMessage.type === 'dice_roll') {
-      // Animate dice bouncing
+      // Animate dice bouncing - Toss up then land with physics
       dice1Bounce.value = withSequence(
-        withTiming(-20, { duration: 100 }),
-        withTiming(0, { duration: 100 }),
-        withTiming(-10, { duration: 80 }),
-        withTiming(0, { duration: 80 })
+        withTiming(-40, { duration: 150 }),
+        withSpring(0, SPRING.diceTumble)
       );
       dice2Bounce.value = withSequence(
-        withTiming(-25, { duration: 120 }),
-        withTiming(0, { duration: 100 }),
-        withTiming(-12, { duration: 80 }),
-        withTiming(0, { duration: 80 })
+        withTiming(-50, { duration: 150 }),
+        withSpring(0, SPRING.diceTumble)
       );
       dice3Bounce.value = withSequence(
-        withTiming(-22, { duration: 110 }),
-        withTiming(0, { duration: 100 }),
-        withTiming(-8, { duration: 80 }),
-        withTiming(0, { duration: 80 })
+        withTiming(-45, { duration: 150 }),
+        withSpring(0, SPRING.diceTumble)
       );
       haptics.diceRoll();
 

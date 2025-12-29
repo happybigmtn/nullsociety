@@ -9,6 +9,7 @@ import Animated, {
   useAnimatedStyle,
   withSequence,
   withTiming,
+  withSpring,
   SlideInUp,
   SlideOutDown,
 } from 'react-native-reanimated';
@@ -17,11 +18,11 @@ import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
-import { COLORS, SPACING, TYPOGRAPHY, RADIUS, GAME_COLORS, GAME_DETAIL_COLORS } from '../../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, GAME_COLORS, GAME_DETAIL_COLORS, SPRING } from '../../constants/theme';
 import { useGameStore } from '../../stores/gameStore';
 import { getDieFace } from '../../utils/dice';
 import type { ChipValue, TutorialStep, CrapsBetType } from '../../types';
-import type { CrapsMessage } from '../../types/protocol';
+import type { CrapsMessage } from '@nullspace/protocol/mobile';
 
 interface CrapsBet {
   type: CrapsBetType;
@@ -84,16 +85,17 @@ export function CrapsScreen() {
     if (!lastMessage) return;
 
     if (lastMessage.type === 'dice_roll') {
-      // Animate dice
+      // Animate dice - Reset then spin with physics settle
+      die1Rotation.value = 0;
       die1Rotation.value = withSequence(
-        withTiming(360, { duration: 200 }),
-        withTiming(720, { duration: 200 }),
-        withTiming(0, { duration: 100 })
+        withTiming(720, { duration: 300 }),
+        withSpring(1080, SPRING.diceTumble)
       );
+      
+      die2Rotation.value = 0;
       die2Rotation.value = withSequence(
-        withTiming(-360, { duration: 200 }),
-        withTiming(-720, { duration: 200 }),
-        withTiming(0, { duration: 100 })
+        withTiming(-720, { duration: 300 }),
+        withSpring(-1080, SPRING.diceTumble)
       );
       haptics.diceRoll();
 

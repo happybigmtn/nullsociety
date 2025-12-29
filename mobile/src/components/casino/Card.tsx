@@ -6,12 +6,12 @@ import { View, Text, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  withSpring,
   withTiming,
-  Easing,
   runOnJS,
 } from 'react-native-reanimated';
 import { haptics } from '../../services/haptics';
-import { COLORS, RADIUS, ANIMATION } from '../../constants/theme';
+import { COLORS, RADIUS, ANIMATION, SPRING } from '../../constants/theme';
 import type { Suit, Rank } from '../../types';
 
 interface CardProps {
@@ -96,12 +96,9 @@ export function Card({
   onFlipCompleteRef.current = onFlipComplete;
 
   useEffect(() => {
-    flip.value = withTiming(
+    flip.value = withSpring(
       faceUp ? 180 : 0,
-      {
-        duration: ANIMATION.normal,
-        easing: Easing.bezier(0.25, 0.1, 0.25, 1),
-      },
+      SPRING.cardFlip,
       (finished) => {
         'worklet';
         if (finished && faceUp) {

@@ -98,7 +98,9 @@ export const DiceRender: React.FC<{
   className?: string;
   style?: React.CSSProperties;
   rolling?: boolean;
-}> = ({ value, delayMs, className, style, rolling }) => {
+  rollRotation?: number; // Rotation based on horizontal movement
+  flatOnSettle?: boolean;
+}> = ({ value, delayMs, className, style, rolling, rollRotation, flatOnSettle }) => {
   return (
     <div
       style={{
@@ -107,17 +109,19 @@ export const DiceRender: React.FC<{
       }}
       className={className}
     >
-        <Pseudo3DDice 
-            value={value} 
-            size={56} 
+        <Pseudo3DDice
+            value={value}
+            size={56}
             rolling={rolling}
+            rollRotation={rollRotation}
+            flatOnSettle={flatOnSettle}
         />
     </div>
   );
 };
 
-type DicePose = { x: number; y: number; rot: number };
-type DiceVelocity = { vx: number; vy: number; vr: number; settleTicks: number };
+type DicePose = { x: number; y: number; rot: number; rollRotation: number };
+type DiceVelocity = { vx: number; vy: number; vr: number; settleTicks: number; cumulativeX: number };
 
 export const DiceThrow2D: React.FC<{
   values: number[];
@@ -131,6 +135,9 @@ export const DiceThrow2D: React.FC<{
   verticalBoost?: number;
   preventOverlap?: boolean;
   settleToRow?: boolean;
+  rightWallInset?: number;
+  flatOnSettle?: boolean;
+  onSettled?: () => void;
 }> = ({
   values,
   rollKey,
@@ -143,6 +150,9 @@ export const DiceThrow2D: React.FC<{
   verticalBoost = 10,
   preventOverlap = false,
   settleToRow = false,
+  rightWallInset = 0,
+  flatOnSettle = false,
+  onSettled,
 }) => {
   const valuesKey = useMemo(() => values.join(','), [values]);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -151,7 +161,8 @@ export const DiceThrow2D: React.FC<{
   const velocitiesRef = React.useRef<DiceVelocity[]>([]);
   const frameRef = React.useRef<number | null>(null);
   const lastTimeRef = React.useRef<number | null>(null);
-  
+  const startTimeRef = React.useRef<number | null>(null);
+
   // Track if we should be "rolling" (tumbling) vs "settled" (showing value)
   const [isSettled, setIsSettled] = useState(false);
 
@@ -165,22 +176,24 @@ export const DiceThrow2D: React.FC<{
       : false;
     const rect = containerRef.current.getBoundingClientRect();
     const diceSize = 56;
-    const boundsX = Math.max(0, rect.width - diceSize);
+    const clampedRightInset = Math.max(0, Math.min(rightWallInset, rect.width - diceSize));
+    const boundsX = Math.max(0, rect.width - diceSize - clampedRightInset);
     const boundsY = Math.max(0, rect.height - diceSize);
 
+    // Start position based on launch direction
     const baseX = launchDirection === 'right'
-      ? rect.width * 0.04
+      ? rect.width * 0.02 // Start from far left for rightward launch
       : launchDirection === 'left'
-        ? rect.width * 0.72
+        ? rect.width * 0.85 // Start from far right for leftward launch
         : rect.width * 0.15;
-    const baseY = rect.height * 0.1;
-    const spread = Math.max(diceSize + 12, diceSize * 0.95);
-    const diceHalf = diceSize / 2;
+    const baseY = rect.height * 0.3; // Start higher for more dramatic arc
+    const spread = Math.max(diceSize + 8, diceSize * 0.8);
 
     const initialPoses: DicePose[] = values.map((_, idx) => ({
       x: Math.min(boundsX, Math.max(0, baseX + idx * spread)),
-      y: Math.min(boundsY, Math.max(0, baseY + (idx % 2) * (diceSize * 0.15))),
-      rot: (Math.random() * 120) - 60,
+      y: Math.min(boundsY, Math.max(0, baseY + (idx % 2) * (diceSize * 0.12))),
+      rot: (Math.random() * 60) - 30,
+      rollRotation: 0, // Will be computed from cumulative X movement
     }));
 
     const initialVelocities: DiceVelocity[] = values.map((_, idx) => {
@@ -190,24 +203,28 @@ export const DiceThrow2D: React.FC<{
           : launchDirection === 'right'
             ? 1
             : (idx % 2 === 0 ? 1 : -1);
-      const horizontalJitter = (idx - (values.length - 1) / 2) * 1.6;
+      const horizontalJitter = (idx - (values.length - 1) / 2) * 2.5;
       return {
-        vx: ((Math.random() * 5 + horizontalBoost) + horizontalJitter) * directionSign,
-        vy: -(Math.random() * 4 + verticalBoost),
-        vr: (Math.random() * 10 + 12) * (idx % 2 === 0 ? 1 : -1),
+        vx: ((Math.random() * 8 + horizontalBoost) + horizontalJitter) * directionSign,
+        vy: -(Math.random() * 3 + verticalBoost * 0.6),
+        vr: (Math.random() * 15 + 18) * (idx % 2 === 0 ? 1 : -1),
         settleTicks: 0,
+        cumulativeX: 0, // Track total horizontal distance for rotation
       };
     });
 
     if (settleToRow) {
-      const gap = Math.max(10, diceSize * 0.2);
-      const rowWidth = values.length * diceSize + (values.length - 1) * gap;
-      const rowStart = Math.max(0, Math.min(boundsX - rowWidth, (boundsX - rowWidth) / 2));
-      const targetY = Math.min(boundsY, rect.height * 0.55);
+      const gap = diceSize * 0.25; // Consistent gap between dice
+      const totalWidth = values.length * diceSize + (values.length - 1) * gap;
+      const centerX = rect.width / 2;
+      const startX = centerX - totalWidth / 2;
+      // Center dice vertically, accounting for dice height
+      const targetY = Math.max(0, Math.min(boundsY, (rect.height - diceSize) / 2));
       settleTargetsRef.current = values.map((_, idx) => ({
-        x: Math.min(boundsX, Math.max(0, rowStart + idx * (diceSize + gap))),
-        y: Math.min(boundsY, Math.max(0, targetY)),
+        x: Math.max(0, Math.min(boundsX, startX + idx * (diceSize + gap))),
+        y: targetY,
         rot: 0,
+        rollRotation: 0, // Will be ignored - dice snap flat on settle
       }));
     } else {
       settleTargetsRef.current = [];
@@ -216,98 +233,141 @@ export const DiceThrow2D: React.FC<{
     setPoses(initialPoses);
     velocitiesRef.current = initialVelocities;
     lastTimeRef.current = null;
+    startTimeRef.current = null; // Will be set on first frame
 
     if (reducedMotion) {
         setIsSettled(true);
+        onSettled?.();
         return;
     }
 
-    const gravity = 0.55;
-    const restitution = 0.6;
-    const airDrag = 0.985;
-    const floorFriction = 0.85;
-    const settleThreshold = 0.25;
-    const settleFrames = 18;
-    const minSeparation = diceSize * 1.08;
+    const gravity = 0.4; // Low gravity for longer air time
+    const restitution = 0.85; // Very bouncy for dramatic wall hits
+    const airDrag = 0.99; // Minimal drag for fast travel
+    const floorFriction = 0.7;
+    const PHYSICS_PHASE_MS = 1800; // More time for physics (roll right, bounce, roll back)
+    const EASE_PHASE_MS = 350; // Quick translate to center
 
     const clampPose = (pose: DicePose) => ({
       x: Math.max(0, Math.min(boundsX, pose.x)),
       y: Math.max(0, Math.min(boundsY, pose.y)),
       rot: pose.rot,
+      rollRotation: pose.rollRotation,
     });
 
+    const TOTAL_DURATION_MS = PHYSICS_PHASE_MS + EASE_PHASE_MS;
+
+    // Smooth easing function (ease-out back for overshoot)
+    const easeOutBack = (x: number): number => {
+      const c1 = 1.70158;
+      const c3 = c1 + 1;
+      return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+    };
+
     const step = (time: number) => {
+      // Track animation start time
+      if (startTimeRef.current === null) {
+        startTimeRef.current = time;
+      }
+      const elapsed = time - startTimeRef.current;
+
       const lastTime = lastTimeRef.current ?? time;
       const dt = Math.min(32, time - lastTime);
       const dtScale = dt / 16.67;
       lastTimeRef.current = time;
 
+      // Phase 1: Pure physics (0 - PHYSICS_PHASE_MS)
+      // Phase 2: Smooth ease to target (PHYSICS_PHASE_MS - TOTAL_DURATION_MS)
+      // Phase 3: Settled (after TOTAL_DURATION_MS)
+
+      if (elapsed >= TOTAL_DURATION_MS) {
+        // Final snap and stop
+        if (settleToRow && settleTargetsRef.current.length > 0) {
+          setPoses(settleTargetsRef.current.map(clampPose));
+        }
+        setIsSettled(true);
+        onSettled?.();
+        return;
+      }
+
       setPoses((prev) => {
-        const next = prev.map((pose, i) => {
+        return prev.map((pose, i) => {
           const vel = velocitiesRef.current[i];
           if (!vel) return pose;
 
-          vel.vy += gravity * dtScale;
-          vel.vx *= Math.pow(airDrag, dtScale);
-          vel.vy *= Math.pow(airDrag, dtScale);
-          vel.vr *= Math.pow(airDrag, dtScale);
+          let x = pose.x;
+          let y = pose.y;
+          let rot = pose.rot;
 
-          let x = pose.x + vel.vx * dtScale;
-          let y = pose.y + vel.vy * dtScale;
-          let rot = pose.rot + vel.vr * dtScale;
+          // Dice circumference for realistic rotation
+          const circumference = diceSize * Math.PI;
+          let rollRotation = pose.rollRotation;
 
-          if (x <= 0) {
-            x = 0;
-            vel.vx = Math.abs(vel.vx) * restitution;
-            vel.vr *= 0.9;
-          } else if (x >= boundsX) {
-            x = boundsX;
-            vel.vx = -Math.abs(vel.vx) * restitution;
-            vel.vr *= 0.9;
-          }
+          if (elapsed < PHYSICS_PHASE_MS) {
+            // Phase 1: Pure physics simulation
+            vel.vy += gravity * dtScale;
+            vel.vx *= Math.pow(airDrag, dtScale);
+            vel.vy *= Math.pow(airDrag, dtScale);
+            vel.vr *= Math.pow(airDrag, dtScale);
 
-          if (y >= boundsY) {
-            y = boundsY;
-            vel.vy = -Math.abs(vel.vy) * restitution;
-            vel.vx *= floorFriction;
-            vel.vr *= 0.85;
-          } else if (y <= 0) {
-            y = 0;
-            vel.vy = Math.abs(vel.vy) * restitution;
-          }
+            const dx = vel.vx * dtScale;
+            x = pose.x + dx;
+            y = pose.y + vel.vy * dtScale;
+            rot = pose.rot + vel.vr * dtScale;
 
-          const speed = Math.abs(vel.vx) + Math.abs(vel.vy) + Math.abs(vel.vr);
-          if (speed < settleThreshold) {
-            vel.settleTicks += 1;
-          } else {
-            vel.settleTicks = 0;
-          }
+            // Track cumulative horizontal movement and convert to rotation
+            vel.cumulativeX += dx;
+            // Rotation = (distance / circumference) * 360 degrees
+            // Positive X movement = positive rotation (rolling right)
+            rollRotation = (vel.cumulativeX / circumference) * 360;
 
-          if (settleToRow && vel.settleTicks >= Math.floor(settleFrames / 2)) {
-            const target = settleTargetsRef.current[i];
-            if (target) {
-              x = x + (target.x - x) * (0.06 * dtScale);
-              y = y + (target.y - y) * (0.06 * dtScale);
-              rot = rot + (target.rot - rot) * (0.08 * dtScale);
+            // Wall bounces
+            if (x <= 0) {
+              x = 0;
+              vel.vx = Math.abs(vel.vx) * restitution;
+              vel.vr *= 0.9;
+            } else if (x >= boundsX) {
+              x = boundsX;
+              vel.vx = -Math.abs(vel.vx) * restitution;
+              vel.vr *= 0.9;
             }
+
+            // Floor/ceiling bounces
+            if (y >= boundsY) {
+              y = boundsY;
+              vel.vy = -Math.abs(vel.vy) * restitution;
+              vel.vx *= floorFriction;
+              vel.vr *= 0.85;
+            } else if (y <= 0) {
+              y = 0;
+              vel.vy = Math.abs(vel.vy) * restitution;
+            }
+          } else if (settleToRow && settleTargetsRef.current[i]) {
+            // Phase 2: Smooth ease to target position
+            const target = settleTargetsRef.current[i];
+            const easeElapsed = elapsed - PHYSICS_PHASE_MS;
+            const easeProgress = Math.min(1, easeElapsed / EASE_PHASE_MS);
+            const easedProgress = easeOutBack(easeProgress);
+
+            // Store start positions for easing (use current pose as start)
+            if (easeProgress < 0.02) {
+              // Just started easing - current position is our start
+              vel.vx = pose.x; // Repurpose velocity refs to store start positions
+              vel.vy = pose.y;
+              vel.vr = pose.rot;
+            }
+
+            // Interpolate from stored start to target
+            x = vel.vx + (target.x - vel.vx) * easedProgress;
+            y = vel.vy + (target.y - vel.vy) * easedProgress;
+            rot = vel.vr + (target.rot - vel.vr) * easedProgress;
           }
 
-          return { x, y, rot };
+          return { ...clampPose({ x, y, rot, rollRotation }), rollRotation };
         });
-
-        if (preventOverlap && next.length > 1) {
-            // Simple overlap resolution (omitted for brevity in this step, using simplified logic)
-        }
-
-        return next.map(clampPose);
       });
 
-      const allSettled = velocitiesRef.current.every((vel) => vel.settleTicks >= settleFrames);
-      if (allSettled) {
-          setIsSettled(true);
-      } else {
-        frameRef.current = requestAnimationFrame(step);
-      }
+      frameRef.current = requestAnimationFrame(step);
     };
 
     frameRef.current = requestAnimationFrame(step);
@@ -315,22 +375,25 @@ export const DiceThrow2D: React.FC<{
     return () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current);
     };
-  }, [rollKey, valuesKey, launchDirection, horizontalBoost, verticalBoost, preventOverlap, settleToRow]);
+  }, [rollKey, valuesKey, launchDirection, horizontalBoost, verticalBoost, preventOverlap, settleToRow, rightWallInset]);
 
   if (values.length === 0) return null;
 
   const maxWidthClass = maxWidthClassName ?? (values.length > 2 ? 'max-w-[420px]' : 'max-w-[360px]');
   const heightClass = heightClassName ?? 'h-[110px] sm:h-[120px]';
 
+  // Don't render dice until poses are initialized (prevents flash at top-left)
+  const posesReady = poses.length === values.length;
+
   return (
-    <div className={`flex flex-col gap-2 items-center ${className ?? ''}`}>
-      <span className="text-xs uppercase tracking-widest text-gray-500">{label}</span>
+    <div className={`flex flex-col items-center ${className ?? ''}`}>
+      {label && <span className="text-xs uppercase tracking-widest text-gray-500 mb-2">{label}</span>}
       <div
         ref={containerRef}
         className={`relative w-full ${maxWidthClass} ${heightClass} overflow-hidden`}
       >
-        {values.map((value, i) => {
-          const pose = poses[i] ?? { x: 0, y: 0, rot: 0 };
+        {posesReady && values.map((value, i) => {
+          const pose = poses[i];
           return (
             <DiceRender
               key={`${rollKey ?? 'roll'}-${i}`}
@@ -338,6 +401,8 @@ export const DiceThrow2D: React.FC<{
               className="absolute left-0 top-0 will-change-transform"
               style={{ transform: `translate3d(${pose.x}px, ${pose.y}px, 0)` }}
               rolling={!isSettled}
+              rollRotation={pose.rollRotation}
+              flatOnSettle={flatOnSettle}
             />
           );
         })}
