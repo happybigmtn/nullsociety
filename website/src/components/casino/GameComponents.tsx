@@ -4,11 +4,12 @@ import { Card } from '../../types';
 import { Pseudo3DCard } from './pseudo3d/Pseudo3DCard';
 import { Pseudo3DDice } from './pseudo3d/Pseudo3DDice';
 
-export const CardRender: React.FC<{ card: Card; small?: boolean; forcedColor?: string; dealDelayMs?: number }> = ({
+export const CardRender: React.FC<{ card: Card; small?: boolean; forcedColor?: string; dealDelayMs?: number; index?: number }> = ({
   card,
   small,
   forcedColor,
   dealDelayMs,
+  index = 0,
 }) => {
   // Defensive check for missing card data
   if (!card) {
@@ -51,6 +52,7 @@ export const CardRender: React.FC<{ card: Card; small?: boolean; forcedColor?: s
             suit={getSuitName(card.suit)}
             rank={card.rank}
             faceUp={!card.isHidden}
+            index={index}
             style={{ 
                 transform: `scale(${scale})`, 
                 transformOrigin: 'top left',
@@ -73,6 +75,7 @@ export const Hand: React.FC<{ cards: Card[]; title?: string; forcedColor?: strin
           card={c}
           forcedColor={forcedColor}
           dealDelayMs={i * 100} // Increased delay for wave effect
+          index={i}
         />
       ))}
       {cards.length === 0 && (
@@ -212,9 +215,11 @@ export const DiceThrow2D: React.FC<{
     const initialVelocities: DiceVelocity[] = values.map((_, idx) => {
       const directionSign = launchDirection === 'left' ? -1 : 1;
       const jitter = (idx - (values.length - 1) / 2) * 1.5;
+      const verticalImpulse = verticalBoost * (Math.random() * 0.6 + 0.4);
+      const verticalSign = Math.random() > 0.5 ? 1 : -1;
       return {
         vx: (horizontalBoost + 12 + Math.random() * 4 + jitter) * directionSign,
-        vy: (Math.random() - 0.5) * 2, // Minimal vertical movement
+        vy: verticalBoost > 0 ? verticalImpulse * verticalSign : (Math.random() - 0.5) * 2,
         vr: (Math.random() * 10 + 5) * (idx % 2 === 0 ? 1 : -1),
         settleTicks: 0,
         cumulativeX: 0,
@@ -273,7 +278,7 @@ export const DiceThrow2D: React.FC<{
       const circumference = diceSize * Math.PI;
 
       setPoses((prev) => {
-        return prev.map((pose, i) => {
+        const nextPoses = prev.map((pose, i) => {
           const vel = velocitiesRef.current[i];
           if (!vel) return pose;
 
@@ -281,10 +286,12 @@ export const DiceThrow2D: React.FC<{
           let x = pose.x;
           let y = pose.y;
           let rollRotation = pose.rollRotation;
+          let rot = pose.rot;
 
           // Apply rolling friction
           vel.vx *= Math.pow(rollingFriction, dtScale);
           vel.vy *= Math.pow(rollingFriction, dtScale);
+          vel.vr *= Math.pow(rollingFriction, dtScale);
 
           // Center attraction (increases as velocity decreases)
           if (target && settleToRow) {
@@ -303,7 +310,8 @@ export const DiceThrow2D: React.FC<{
 
           // Track cumulative horizontal movement for rotation
           vel.cumulativeX += moveX;
-          rollRotation = (vel.cumulativeX / circumference) * 360;
+          rot += vel.vr * dtScale;
+          rollRotation = rot + (vel.cumulativeX / circumference) * 360;
 
           // Wall bounces
           if (x <= 0) {
@@ -330,8 +338,34 @@ export const DiceThrow2D: React.FC<{
             allSettled = false;
           }
 
-          return { ...clampPose({ x, y, rot: 0, rollRotation }), rollRotation };
+          return { ...clampPose({ x, y, rot, rollRotation }), rollRotation };
         });
+
+        if (preventOverlap && nextPoses.length > 1) {
+          const minDist = diceSize * 0.85;
+          for (let i = 0; i < nextPoses.length; i += 1) {
+            for (let j = i + 1; j < nextPoses.length; j += 1) {
+              const dx = nextPoses[i].x - nextPoses[j].x;
+              const dy = nextPoses[i].y - nextPoses[j].y;
+              const dist = Math.hypot(dx, dy);
+              if (dist > 0 && dist < minDist) {
+                const push = (minDist - dist) / 2;
+                const nx = dx / dist;
+                const ny = dy / dist;
+                nextPoses[i].x += nx * push;
+                nextPoses[i].y += ny * push;
+                nextPoses[j].x -= nx * push;
+                nextPoses[j].y -= ny * push;
+                velocitiesRef.current[i].vx += nx * 0.4;
+                velocitiesRef.current[i].vy += ny * 0.4;
+                velocitiesRef.current[j].vx -= nx * 0.4;
+                velocitiesRef.current[j].vy -= ny * 0.4;
+              }
+            }
+          }
+        }
+
+        return nextPoses.map(clampPose);
       });
 
       // End animation when all dice settled or timeout

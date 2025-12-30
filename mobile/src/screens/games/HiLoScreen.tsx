@@ -11,7 +11,7 @@ import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection, useChipBetting } from '../../hooks';
-import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, SPRING } from '../../constants/theme';
 import type { ChipValue, TutorialStep, Suit, Rank } from '../../types';
 import type { HiLoMessage } from '@nullspace/protocol/mobile';
 
@@ -133,6 +133,16 @@ export function HiLoScreen() {
 
   useGameKeyboard(keyboardHandlers);
 
+  const cardEnterFade = FadeIn.springify()
+    .damping(SPRING.cardDeal.damping)
+    .stiffness(SPRING.cardDeal.stiffness)
+    .mass(SPRING.cardDeal.mass);
+
+  const cardEnterUp = SlideInUp.springify()
+    .damping(SPRING.cardDeal.damping)
+    .stiffness(SPRING.cardDeal.stiffness)
+    .mass(SPRING.cardDeal.mass);
+
   return (
     <>
       <GameLayout
@@ -146,7 +156,7 @@ export function HiLoScreen() {
           {/* Cards Display */}
           <View style={styles.cardsContainer}>
             {state.currentCard && (
-              <Animated.View entering={FadeIn.duration(300)}>
+              <Animated.View entering={cardEnterFade}>
                 <Card
                   suit={state.currentCard.suit}
                   rank={state.currentCard.rank}
@@ -156,7 +166,7 @@ export function HiLoScreen() {
               </Animated.View>
             )}
             {state.nextCard && (
-              <Animated.View entering={SlideInUp.duration(300)}>
+              <Animated.View entering={cardEnterUp}>
                 <Card
                   suit={state.nextCard.suit}
                   rank={state.nextCard.rank}

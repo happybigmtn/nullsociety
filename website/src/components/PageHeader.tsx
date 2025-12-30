@@ -1,4 +1,5 @@
 import React from 'react';
+import { ThemeToggle } from './ui/ThemeToggle';
 
 type PageHeaderProps = {
   title: string;
@@ -15,6 +16,12 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ title, status, leading, 
     ) : (
       status
     );
+  const rightNode = (
+    <div className="flex items-center gap-3 flex-wrap">
+      {right ? right : null}
+      <ThemeToggle />
+    </div>
+  );
   return (
     <header
       className={[
@@ -29,7 +36,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ title, status, leading, 
         <div className="text-lg font-bold tracking-widest">{title}</div>
         {statusNode}
       </div>
-      {right ? <div className="flex items-center gap-3 flex-wrap">{right}</div> : null}
+      {rightNode}
     </header>
   );
 };

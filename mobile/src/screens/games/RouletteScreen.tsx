@@ -3,13 +3,14 @@
  * 6 quick bets visible, drawer for advanced bets
  */
 import { View, Text, StyleSheet, Pressable, Modal } from 'react-native';
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   withRepeat,
   Easing,
+  cancelAnimation,
   SlideInUp,
   SlideOutDown,
 } from 'react-native-reanimated';
@@ -18,7 +19,7 @@ import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
-import { COLORS, SPACING, TYPOGRAPHY, RADIUS, GAME_COLORS, GAME_DETAIL_COLORS } from '../../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, GAME_COLORS, GAME_DETAIL_COLORS, SPRING } from '../../constants/theme';
 import { useGameStore } from '../../stores/gameStore';
 import type { ChipValue, TutorialStep, RouletteBetType } from '../../types';
 import type { RouletteMessage } from '@nullspace/protocol/mobile';
@@ -29,6 +30,16 @@ const SPLIT_V_TARGETS = Array.from({ length: 33 }, (_, i) => i + 1);
 const STREET_TARGETS = Array.from({ length: 12 }, (_, i) => 1 + i * 3);
 const CORNER_TARGETS = Array.from({ length: 32 }, (_, i) => i + 1).filter((num) => num % 3 !== 0);
 const SIX_LINE_TARGETS = Array.from({ length: 11 }, (_, i) => 1 + i * 3);
+const ROULETTE_NUMBERS = [
+  0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10,
+  5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26,
+];
+
+const getNumberAngle = (num: number) => {
+  const index = ROULETTE_NUMBERS.indexOf(num);
+  if (index < 0) return 0;
+  return (index * 360) / ROULETTE_NUMBERS.length;
+};
 
 interface RouletteBet {
   type: RouletteBetType;
@@ -77,6 +88,7 @@ export function RouletteScreen() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [insideMode, setInsideMode] = useState<InsideBetType>('SPLIT_H');
+  const spinSeedRef = useRef({ extraSpins: 4 });
 
   const insideTargets = useMemo(() => {
     switch (insideMode) {
@@ -99,6 +111,7 @@ export function RouletteScreen() {
     if (!lastMessage) return;
 
     if (lastMessage.type === 'spin_start') {
+      spinSeedRef.current = { extraSpins: 4 + Math.floor(Math.random() * 3) };
       wheelRotation.value = withRepeat(
         withTiming(360, { duration: 500, easing: Easing.linear }),
         -1,
@@ -107,7 +120,16 @@ export function RouletteScreen() {
     }
 
     if (lastMessage.type === 'game_result') {
-      wheelRotation.value = withTiming(0, { duration: 500 });
+      cancelAnimation(wheelRotation);
+      const result = lastMessage.result ?? 0;
+      const current = wheelRotation.value % 360;
+      const targetAngle = getNumberAngle(result);
+      const delta = (targetAngle - current + 360) % 360;
+      const targetRotation = wheelRotation.value + spinSeedRef.current.extraSpins * 360 + delta;
+      wheelRotation.value = withTiming(targetRotation, {
+        duration: 2200,
+        easing: Easing.out(Easing.cubic),
+      });
 
       const won = lastMessage.won ?? false;
       if (won) {
@@ -231,6 +253,16 @@ export function RouletteScreen() {
 
   useGameKeyboard(keyboardHandlers);
 
+  const drawerEnter = SlideInUp.springify()
+    .damping(SPRING.modal.damping)
+    .stiffness(SPRING.modal.stiffness)
+    .mass(SPRING.modal.mass);
+
+  const drawerExit = SlideOutDown.springify()
+    .damping(SPRING.modal.damping)
+    .stiffness(SPRING.modal.stiffness)
+    .mass(SPRING.modal.mass);
+
   return (
     <>
       <GameLayout
@@ -334,8 +366,8 @@ export function RouletteScreen() {
       <Modal visible={showAdvanced} transparent animationType="slide">
         <View style={styles.drawerOverlay}>
           <Animated.View
-            entering={SlideInUp.duration(300)}
-            exiting={SlideOutDown.duration(200)}
+            entering={drawerEnter}
+            exiting={drawerExit}
             style={styles.drawer}
           >
             <View style={styles.drawerHeader}>

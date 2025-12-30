@@ -11,7 +11,7 @@ import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection, useChipBetting } from '../../hooks';
-import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, SPRING } from '../../constants/theme';
 import type { ChipValue, TutorialStep, Card as CardType } from '../../types';
 import type { CasinoWarMessage } from '@nullspace/protocol/mobile';
 
@@ -178,6 +178,14 @@ export function CasinoWarScreen() {
   }), [state.phase, bet, isDisconnected, handleDeal, handleNewGame, handleWar, handleSurrender, clearBet, handleChipPlace]);
 
   useGameKeyboard(keyboardHandlers);
+  const cardEnterLeft = SlideInLeft.springify()
+    .damping(SPRING.cardDeal.damping)
+    .stiffness(SPRING.cardDeal.stiffness)
+    .mass(SPRING.cardDeal.mass);
+  const cardEnterRight = SlideInRight.springify()
+    .damping(SPRING.cardDeal.damping)
+    .stiffness(SPRING.cardDeal.stiffness)
+    .mass(SPRING.cardDeal.mass);
 
   return (
     <>
@@ -195,7 +203,7 @@ export function CasinoWarScreen() {
           <View style={styles.cardSide}>
             <Text style={styles.sideLabel}>Dealer</Text>
             {state.dealerCard ? (
-              <Animated.View entering={SlideInLeft.duration(300)}>
+              <Animated.View entering={cardEnterLeft}>
                 <Card
                   suit={state.dealerCard.suit}
                   rank={state.dealerCard.rank}
@@ -217,7 +225,7 @@ export function CasinoWarScreen() {
           <View style={styles.cardSide}>
             <Text style={styles.sideLabel}>You</Text>
             {state.playerCard ? (
-              <Animated.View entering={SlideInRight.duration(300)}>
+              <Animated.View entering={cardEnterRight}>
                 <Card
                   suit={state.playerCard.suit}
                   rank={state.playerCard.rank}

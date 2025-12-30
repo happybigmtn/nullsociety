@@ -2,7 +2,7 @@
  * GameLayout - Shared layout component for game screens
  * Provides consistent header, connection status, and content area
  */
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useState } from 'react';
 import { View, StyleSheet, SafeAreaView } from 'react-native';
 import { GameHeader } from './GameHeader';
 import { ConnectionStatusBanner } from '../ui/ConnectionStatusBanner';
@@ -35,6 +35,9 @@ export function GameLayout({
   connectionStatus,
   children,
 }: GameLayoutProps) {
+  const [sessionStartBalance] = useState(balance);
+  const sessionDelta = balance - sessionStartBalance;
+
   return (
     <SafeAreaView style={styles.container}>
       <View pointerEvents="none" style={styles.scanlineOverlay}>
@@ -53,6 +56,7 @@ export function GameLayout({
       <GameHeader
         title={title}
         balance={balance}
+        sessionDelta={sessionDelta}
         onHelp={onHelpPress}
         rightContent={headerRightContent}
       />

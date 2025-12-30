@@ -23,6 +23,7 @@ import { HamburgerMenu } from './components/casino/HamburgerMenu';
 import { ModeSelectView, type PlayMode } from './components/casino/ModeSelectView';
 import { RegistrationView } from './components/casino/RegistrationView';
 import { ActiveGame } from './components/casino/ActiveGame';
+import { RewardsDrawer } from './components/casino/RewardsDrawer';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { playSfx, setSfxEnabled } from './services/sfx';
 import { track } from './services/telemetry';
@@ -59,6 +60,7 @@ export default function CasinoApp() {
   const [leaderboardView, setLeaderboardView] = useState<'RANK' | 'PAYOUT'>('RANK');
   const [numberInputString, setNumberInputString] = useState("");
   const [focusMode, setFocusMode] = useState(false);
+  const [rewardsOpen, setRewardsOpen] = useState(false);
   const [touchMode, setTouchMode] = useState(() => {
     try {
       return localStorage.getItem('nullspace_touch_mode') === 'true';
@@ -430,7 +432,7 @@ export default function CasinoApp() {
 	  }
 
   return (
-    <div className="flex flex-col h-[100dvh] w-screen bg-titanium-50 text-titanium-900 font-sans overflow-hidden select-none" onKeyDown={(e) => {
+    <div className="flex flex-col h-[100dvh] w-screen bg-titanium-50 text-titanium-900 font-sans overflow-hidden select-none dark:bg-titanium-900 dark:text-titanium-100" onKeyDown={(e) => {
         if (e.key === 'Enter') {
             if (commandOpen) handleCommandEnter();
             if (customBetOpen) handleCustomBetEnter();
@@ -460,6 +462,9 @@ export default function CasinoApp() {
            reducedMotion={reducedMotion}
            onToggleReducedMotion={() => setReducedMotion((v) => !v)}
            playMode={playMode}
+           sessionActive={sessionStartMs > 0}
+           sessionDelta={netPnl}
+           sessionMinutes={sessionMinutes}
        >
            <div className="flex lg:hidden items-center gap-2">
                <MobileChipSelector 
@@ -472,6 +477,7 @@ export default function CasinoApp() {
                        playMode={playMode}
                        onSetPlayMode={setPlayMode}
                        onOpenSafety={() => openResponsiblePlay('settings')}
+                       onOpenRewards={() => setRewardsOpen(true)}
                        onToggleHelp={toggleHelp}
                        soundEnabled={soundEnabled}
                        onToggleSound={() => setSoundEnabled((v) => !v)}
@@ -484,20 +490,27 @@ export default function CasinoApp() {
            </div>
        </Header>
 
-       <div className="border-b border-titanium-200 bg-glass-light backdrop-blur-lg px-4 py-2.5 flex items-center gap-3">
+       <div className="border-b border-titanium-200 bg-glass-light backdrop-blur-lg px-4 py-2.5 flex items-center gap-3 dark:border-titanium-800 dark:bg-glass-dark">
            <button
                type="button"
                onClick={openCommandPalette}
-               className="h-10 px-4 rounded-full border border-titanium-200 bg-white text-titanium-800 text-[11px] font-bold tracking-widest uppercase hover:border-titanium-400 hover:shadow-sm transition-all flex items-center justify-center w-full lg:w-auto"
+               className="h-10 px-4 rounded-full border border-titanium-200 bg-white text-titanium-800 text-[11px] font-bold tracking-widest uppercase hover:border-titanium-400 hover:shadow-sm transition-all motion-interaction flex items-center justify-center w-full lg:w-auto dark:border-titanium-800 dark:bg-titanium-900/70 dark:text-titanium-100 dark:hover:border-titanium-600 dark:shadow-none"
            >
                Games
            </button>
            <button
                type="button"
                onClick={() => openResponsiblePlay('settings')}
-               className="hidden lg:flex h-10 px-4 rounded-full border border-titanium-200 bg-white text-titanium-800 text-[11px] font-bold tracking-widest uppercase hover:border-titanium-400 hover:shadow-sm transition-all items-center justify-center"
+               className="hidden lg:flex h-10 px-4 rounded-full border border-titanium-200 bg-white text-titanium-800 text-[11px] font-bold tracking-widest uppercase hover:border-titanium-400 hover:shadow-sm transition-all motion-interaction items-center justify-center dark:border-titanium-800 dark:bg-titanium-900/70 dark:text-titanium-100 dark:hover:border-titanium-600 dark:shadow-none"
            >
                Safety
+           </button>
+           <button
+               type="button"
+               onClick={() => setRewardsOpen(true)}
+               className="hidden lg:flex h-10 px-4 rounded-full border border-titanium-200 bg-white text-titanium-800 text-[11px] font-bold tracking-widest uppercase hover:border-titanium-400 hover:shadow-sm transition-all motion-interaction items-center justify-center dark:border-titanium-800 dark:bg-titanium-900/70 dark:text-titanium-100 dark:hover:border-titanium-600 dark:shadow-none"
+           >
+               Rewards
            </button>
            <div className="hidden lg:flex flex-1 min-w-0 justify-center">
                <PlaySwapStakeTabs />
@@ -546,15 +559,10 @@ export default function CasinoApp() {
                              Change
                          </button>
                          <button
-                             className={`text-[10px] font-bold border px-3 py-1.5 rounded-full uppercase tracking-widest transition-all ${
-                                 isFaucetClaiming
-                                     ? 'bg-titanium-100 border-titanium-100 text-titanium-300 cursor-not-allowed'
-                                     : 'bg-action-success text-white border-action-success shadow-sm hover:scale-105 active:scale-95'
-                             }`}
-                             onClick={actions.claimFaucet}
-                             disabled={isFaucetClaiming}
+                             className="text-[10px] font-bold border px-3 py-1.5 rounded-full uppercase tracking-widest transition-all bg-titanium-900 text-white border-titanium-900 shadow-sm hover:scale-105 active:scale-95"
+                             onClick={() => setRewardsOpen(true)}
                          >
-                             {isFaucetClaiming ? 'Claiming…' : 'Daily Faucet'}
+                             Rewards
                          </button>
                      </div>
                  </div>
@@ -623,6 +631,17 @@ export default function CasinoApp() {
            isOpen={customBetOpen}
            betString={customBetString}
            inputRef={customBetRef}
+       />
+
+       <RewardsDrawer
+           isOpen={rewardsOpen}
+           onClose={() => setRewardsOpen(false)}
+           playMode={playMode}
+           isFaucetClaiming={isFaucetClaiming}
+           onClaimFaucet={actions.claimFaucet}
+           faucetMessage={gameState.message}
+           stats={stats}
+           gameType={gameState.type}
        />
 
        <HelpOverlay

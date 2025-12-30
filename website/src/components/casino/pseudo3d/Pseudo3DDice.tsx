@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { useSpring, animated } from '@react-spring/web';
+import { springConfig } from '../../../utils/motion';
 
 interface Pseudo3DDiceProps {
   value: number;
@@ -22,19 +23,20 @@ export const Pseudo3DDice: React.FC<Pseudo3DDiceProps> = ({
 }) => {
   const prevRollingRef = useRef(false);
   const isMountedRef = useRef(false);
+  const diceConfig = springConfig('diceTumble');
 
   // Animation spring for rotation and scale during rolling
   const [{ rotation, scale, blur }, api] = useSpring(() => ({
     rotation: 0,
     scale: 1,
     blur: 0,
-    config: { mass: 1, tension: 200, friction: 20 },
+    config: diceConfig,
   }));
 
   // Dot visibility - hidden during roll, visible on settle
   const { dotOpacity } = useSpring({
     dotOpacity: rolling ? 0 : 1,
-    config: { tension: 300, friction: 20 },
+    config: springConfig('success'),
     delay: rolling ? 0 : 200,
   });
 
@@ -51,17 +53,18 @@ export const Pseudo3DDice: React.FC<Pseudo3DDiceProps> = ({
       });
     } else if (justStoppedRolling || !isMountedRef.current) {
       // Settling: snap to flat, show value
+      const rotationTarget = flatOnSettle ? 0 : rollRotation;
       api.start({
-        rotation: 0,
+        rotation: rotationTarget,
         scale: 1,
         blur: 0,
-        config: { mass: 1.2, tension: 180, friction: 18 },
+        config: diceConfig,
       });
     }
 
     prevRollingRef.current = rolling;
     isMountedRef.current = true;
-  }, [rolling, rollRotation, api]);
+  }, [rolling, rollRotation, flatOnSettle, api, diceConfig]);
 
   const faceStyle: React.CSSProperties = {
     width: size,

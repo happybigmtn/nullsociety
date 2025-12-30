@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useMemo } from 'react';
-import { useSpring, animated, config, to } from '@react-spring/web';
+import React, { useEffect, useRef } from 'react';
+import { animated, easings, to, useSpring } from '@react-spring/web';
+import { springConfig } from '../../../utils/motion';
 
 interface Pseudo3DWheelProps {
     lastNumber: number | null;
@@ -33,57 +34,80 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
     style,
     onSpinComplete
 }) => {
-    // Use refs to track state without causing re-renders
-    const totalRotationRef = useRef(0);
-    const spinIdRef = useRef(0);
+    const pendingSpinRef = useRef(false);
+    const lastNumberRef = useRef<number | null>(lastNumber);
+    const spinSeedRef = useRef({ extraSpins: 6, durationMs: 2800 });
 
-    // Calculate target rotation when lastNumber changes
-    // The wheel rotates so the winning number aligns with the pointer at top
-    const targetRotation = useMemo(() => {
-        if (lastNumber === null) return 0;
+    const [{ rotate }, api] = useSpring(() => ({ rotate: 0 }));
+    const [{ ballRotate, ballRadius }, ballApi] = useSpring(() => ({
+        ballRotate: 0,
+        ballRadius: 118,
+    }));
 
-        const numberAngle = getNumberAngle(lastNumber);
-        // Add extra spins for visual effect (only when starting a new spin)
-        const extraSpins = (6 + Math.floor(Math.random() * 4)) * 360;
+    useEffect(() => {
+        if (!isSpinning) return;
+        pendingSpinRef.current = true;
+        spinSeedRef.current = {
+            extraSpins: 6 + Math.floor(Math.random() * 4),
+            durationMs: 2600 + Math.floor(Math.random() * 600),
+        };
 
-        // Negative rotation to bring the number to the top (clockwise spin)
-        const newTarget = -(numberAngle + extraSpins);
+        api.start({
+            from: { rotate: rotate.get() },
+            to: { rotate: rotate.get() - 360 },
+            loop: true,
+            config: { duration: 900, easing: easings.linear },
+        });
+        ballApi.start({
+            from: { ballRotate: 0 },
+            to: { ballRotate: -360 },
+            loop: true,
+            config: { duration: 700, easing: easings.linear },
+        });
+        ballApi.start({ ballRadius: 135 });
+    }, [isSpinning, api, ballApi, rotate]);
 
-        // Store this as the new base rotation
-        totalRotationRef.current = newTarget;
-        spinIdRef.current += 1;
-
-        return newTarget;
-    }, [lastNumber]);
-
-    // Final resting position (normalized to show correct number at top)
-    const restingRotation = useMemo(() => {
-        if (lastNumber === null) return 0;
-        const numberAngle = getNumberAngle(lastNumber);
-        // Normalize to position the winning number at top
-        return -(numberAngle % 360);
-    }, [lastNumber]);
-
-    const { rotate } = useSpring({
-        rotate: isSpinning ? targetRotation : restingRotation,
-        config: isSpinning
-            ? { mass: 4, tension: 100, friction: 40 }
-            : { mass: 1, tension: 200, friction: 30 },
-        onRest: () => {
-            if (isSpinning && onSpinComplete) {
-                onSpinComplete();
-            }
+    useEffect(() => {
+        if (lastNumber === null) return;
+        if (lastNumberRef.current === null) {
+            lastNumberRef.current = lastNumber;
+            return;
         }
-    });
+        if (lastNumber === lastNumberRef.current) return;
+        lastNumberRef.current = lastNumber;
 
-    // Ball animation - lands at top (0 degrees) where the pointer is
-    const { ballRotate, ballRadius } = useSpring({
-        ballRotate: isSpinning ? 1440 + Math.random() * 720 : 0,
-        ballRadius: isSpinning ? 135 : 118,
-        config: isSpinning
-            ? { duration: 3500, easing: (t: number) => t * t * (3 - 2 * t) }
-            : { mass: 3, tension: 120, friction: 14 }
-    });
+        if (!pendingSpinRef.current) {
+            const restingRotation = -(getNumberAngle(lastNumber) % 360);
+            api.start({ to: { rotate: restingRotation }, config: springConfig('wheelSpin') });
+            ballApi.start({ to: { ballRotate: 0, ballRadius: 118 }, config: springConfig('wheelSpin') });
+            return;
+        }
+
+        const { extraSpins, durationMs } = spinSeedRef.current;
+        const numberAngle = getNumberAngle(lastNumber);
+        const targetRotation = -(numberAngle + extraSpins * 360);
+        const settleConfig = { duration: durationMs, easing: easings.easeOutCubic };
+
+        api.start({
+            to: { rotate: targetRotation },
+            config: settleConfig,
+            onRest: () => {
+                pendingSpinRef.current = false;
+                onSpinComplete?.();
+            },
+        });
+        ballApi.start({
+            to: { ballRotate: 0, ballRadius: 118 },
+            config: settleConfig,
+        });
+    }, [lastNumber, api, ballApi, onSpinComplete]);
+
+    useEffect(() => {
+        if (isSpinning || pendingSpinRef.current) return;
+        const restingRotation = lastNumber === null ? 0 : -(getNumberAngle(lastNumber) % 360);
+        api.start({ to: { rotate: restingRotation }, config: springConfig('wheelSpin') });
+        ballApi.start({ to: { ballRotate: 0, ballRadius: 118 }, config: springConfig('wheelSpin') });
+    }, [isSpinning, lastNumber, api, ballApi]);
 
     return (
         <div className={`relative aspect-square ${className}`} style={{ width: 320, height: 320, ...style }}>

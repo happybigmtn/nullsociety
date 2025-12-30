@@ -11,7 +11,7 @@ import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
-import { COLORS, SPACING, TYPOGRAPHY, RADIUS } from '../../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SPRING } from '../../constants/theme';
 import { useGameStore } from '../../stores/gameStore';
 import type { ChipValue, TutorialStep, ThreeCardPokerHand, Card as CardType } from '../../types';
 import type { ThreeCardPokerMessage } from '@nullspace/protocol/mobile';
@@ -241,6 +241,16 @@ export function ThreeCardPokerScreen() {
 
   useGameKeyboard(keyboardHandlers);
 
+  const cardEnterUp = SlideInUp.springify()
+    .damping(SPRING.cardDeal.damping)
+    .stiffness(SPRING.cardDeal.stiffness)
+    .mass(SPRING.cardDeal.mass);
+
+  const cardEnterFade = FadeIn.springify()
+    .damping(SPRING.cardDeal.damping)
+    .stiffness(SPRING.cardDeal.stiffness)
+    .mass(SPRING.cardDeal.mass);
+
   return (
     <>
       <GameLayout
@@ -259,7 +269,7 @@ export function ThreeCardPokerScreen() {
               state.dealerCards.map((card, i) => (
                 <Animated.View
                   key={i}
-                  entering={SlideInUp.delay(i * 100 + 300)}
+                  entering={cardEnterUp.delay(i * 100 + 300)}
                   style={[styles.cardWrapper, { marginLeft: i > 0 ? -20 : 0 }]}
                 >
                   <Card
@@ -305,7 +315,7 @@ export function ThreeCardPokerScreen() {
               state.playerCards.map((card, i) => (
                 <Animated.View
                   key={i}
-                  entering={FadeIn.delay(i * 100)}
+                  entering={cardEnterFade.delay(i * 100)}
                   style={[styles.cardWrapper, { marginLeft: i > 0 ? -20 : 0 }]}
                 >
                   <Card suit={card.suit} rank={card.rank} faceUp={true} />

@@ -4,14 +4,14 @@
  */
 import { View, Text, StyleSheet, Pressable, Modal } from 'react-native';
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import Animated, { FadeIn, SlideInUp } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { Card } from '../../components/casino';
 import { ChipSelector } from '../../components/casino';
 import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection, useChipBetting } from '../../hooks';
-import { COLORS, SPACING, TYPOGRAPHY, RADIUS } from '../../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SPRING } from '../../constants/theme';
 import type { ChipValue, TutorialStep, PokerHand, Card as CardType } from '../../types';
 import type { VideoPokerMessage } from '@nullspace/protocol/mobile';
 
@@ -203,6 +203,11 @@ export function VideoPokerScreen() {
 
   useGameKeyboard(keyboardHandlers);
 
+  const cardEnterFade = FadeIn.springify()
+    .damping(SPRING.cardDeal.damping)
+    .stiffness(SPRING.cardDeal.stiffness)
+    .mass(SPRING.cardDeal.mass);
+
   return (
     <>
       <GameLayout
@@ -231,7 +236,7 @@ export function VideoPokerScreen() {
                 disabled={state.phase !== 'initial'}
               >
                 <Animated.View
-                  entering={FadeIn.delay(i * 100)}
+                  entering={cardEnterFade.delay(i * 100)}
                   style={[
                     styles.cardWrapper,
                     state.held[i] && styles.cardHeld,

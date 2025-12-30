@@ -1,9 +1,10 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
 import { LeaderboardEntry, PlayerStats, GameType, CrapsEventLog, ResolvedBet } from '../../types';
 import { formatTime, HELP_CONTENT, buildHistoryEntry, formatSummaryLine, prependPnlLine, formatPnlLabel } from '../../utils/gameUtils';
 import { MobileDrawer } from './MobileDrawer';
 import { Label } from './ui/Label';
+import { EventChip } from './shared/EventChip';
+import { ThemeToggle } from '../ui/ThemeToggle';
 
 interface HeaderProps {
     phase: string;
@@ -21,6 +22,9 @@ interface HeaderProps {
     reducedMotion?: boolean;
     onToggleReducedMotion?: () => void;
     playMode?: 'CASH' | 'FREEROLL' | null;
+    sessionActive?: boolean;
+    sessionDelta?: number;
+    sessionMinutes?: number;
     children?: React.ReactNode;
 }
 
@@ -40,18 +44,30 @@ export const Header: React.FC<HeaderProps> = ({
     reducedMotion = false,
     onToggleReducedMotion,
     playMode,
+    sessionActive = false,
+    sessionDelta = 0,
+    sessionMinutes = 0,
     children,
-}) => (
-    <header className="h-14 border-b border-titanium-200 flex items-center justify-between px-6 z-10 bg-glass-light backdrop-blur-xl sticky top-0">
+}) => {
+    const sessionValue = formatPnlLabel(sessionDelta) || '$0';
+    const sessionTone =
+        sessionDelta > 0
+            ? 'text-action-success'
+            : sessionDelta < 0
+                ? 'text-action-destructive'
+                : 'text-titanium-400 dark:text-titanium-300';
+
+    return (
+    <header className="h-14 border-b border-titanium-200 flex items-center justify-between px-6 z-10 bg-glass-light backdrop-blur-xl sticky top-0 dark:border-titanium-800 dark:bg-glass-dark dark:text-titanium-100">
     <div className="flex items-center gap-8">
-        <span className="font-display font-extrabold tracking-tight text-titanium-900 text-xl">nullspace</span>
+        <span className="font-display font-extrabold tracking-tight text-titanium-900 dark:text-titanium-100 text-xl">nullspace</span>
         <div className="hidden lg:flex items-center gap-3">
             <button 
                 onClick={() => setFocusMode(!focusMode)}
-                className={`text-label font-bold px-4 py-1.5 rounded-full transition-all duration-200 border ${
+                className={`text-label font-bold px-4 py-1.5 rounded-full transition-all motion-interaction border ${
                     focusMode 
-                        ? 'bg-titanium-900 text-white border-titanium-900 shadow-sm' 
-                        : 'text-titanium-800 bg-white border-titanium-200 hover:border-titanium-400 shadow-soft'
+                        ? 'bg-titanium-900 text-white border-titanium-900 shadow-sm dark:bg-action-primary/20 dark:text-action-primary dark:border-action-primary dark:shadow-none' 
+                        : 'text-titanium-800 bg-white border-titanium-200 hover:border-titanium-400 shadow-soft dark:text-titanium-100 dark:bg-titanium-900/60 dark:border-titanium-800 dark:hover:border-titanium-600 dark:shadow-none'
                 }`}
             >
                 {focusMode ? 'Focus On' : 'Focus'}
@@ -60,26 +76,20 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                     type="button"
                     onClick={onToggleSound}
-                    className={`text-label font-bold px-4 py-1.5 rounded-full transition-all duration-200 border ${
+                    className={`text-label font-bold px-4 py-1.5 rounded-full transition-all motion-interaction border ${
                         soundEnabled 
-                            ? 'bg-white text-titanium-800 border-titanium-200 hover:border-titanium-400 shadow-soft' 
-                            : 'bg-titanium-100 text-titanium-400 border-titanium-100'
+                            ? 'bg-white text-titanium-800 border-titanium-200 hover:border-titanium-400 shadow-soft dark:bg-titanium-900/60 dark:text-titanium-100 dark:border-titanium-800 dark:hover:border-titanium-600 dark:shadow-none' 
+                            : 'bg-titanium-100 text-titanium-400 border-titanium-100 dark:bg-titanium-800/60 dark:text-titanium-400 dark:border-titanium-800'
                     }`}
                 >
                     {soundEnabled ? 'Sound' : 'Muted'}
                 </button>
             )}
-            <NavLink
-                to="/security"
-                className="text-label font-bold px-4 py-1.5 rounded-full transition-all duration-200 border text-titanium-800 bg-white border-titanium-200 hover:border-titanium-400 shadow-soft"
-            >
-                Security
-            </NavLink>
             {onToggleHelp && (
                 <button
                     type="button"
                     onClick={onToggleHelp}
-                    className="text-label font-bold px-4 py-1.5 rounded-full transition-all duration-200 border text-titanium-800 bg-white border-titanium-200 hover:border-titanium-400 shadow-soft"
+                    className="text-label font-bold px-4 py-1.5 rounded-full transition-all motion-interaction border text-titanium-800 bg-white border-titanium-200 hover:border-titanium-400 shadow-soft dark:text-titanium-100 dark:bg-titanium-900/60 dark:border-titanium-800 dark:hover:border-titanium-600 dark:shadow-none"
                 >
                     Help
                 </button>
@@ -88,11 +98,15 @@ export const Header: React.FC<HeaderProps> = ({
     </div>
     <div className="flex items-center gap-6">
             {showTimer && (
-                <div className="flex items-center gap-2 px-4 py-1.5 bg-titanium-100 rounded-full border border-titanium-200">
+                <div className="flex items-center gap-2 px-4 py-1.5 bg-titanium-100 rounded-full border border-titanium-200 dark:bg-titanium-900/60 dark:border-titanium-800">
                     <Label size="micro">Timer</Label>
-                    <span className={`font-mono font-bold tabular-nums text-sm ${tournamentTime < 60 ? 'text-action-destructive animate-pulse' : 'text-titanium-900'}`}>{formatTime(tournamentTime)}</span>
+                    <span className={`font-mono font-bold tabular-nums text-sm ${tournamentTime < 60 ? 'text-action-destructive animate-pulse' : 'text-titanium-900 dark:text-titanium-100'}`}>{formatTime(tournamentTime)}</span>
                 </div>
             )}
+
+            <div className="hidden lg:flex">
+                <EventChip />
+            </div>
             
             {playMode !== 'CASH' && (
                 <div className="hidden md:flex items-center gap-6">
@@ -100,7 +114,7 @@ export const Header: React.FC<HeaderProps> = ({
                         <Label size="micro">Shields</Label>
                         <div className="flex gap-1.5">
                             {[...Array(3)].map((_, i) => (
-                                <div key={i} className={`w-2 h-2 rounded-full transition-colors ${i < stats.shields ? 'bg-action-primary shadow-sm' : 'bg-titanium-200'}`} />
+                                <div key={i} className={`w-2 h-2 rounded-full transition-colors ${i < stats.shields ? 'bg-action-primary shadow-sm' : 'bg-titanium-200 dark:bg-titanium-800'}`} />
                             ))}
                         </div>
                     </div>
@@ -113,7 +127,7 @@ export const Header: React.FC<HeaderProps> = ({
                                     className={`w-1.5 h-full rounded-full transition-all duration-300 ${
                                         i < (stats.auraMeter ?? 0)
                                             ? 'bg-action-success'
-                                            : 'bg-titanium-200'
+                                            : 'bg-titanium-200 dark:bg-titanium-800'
                                     }`}
                                 />
                             ))}
@@ -123,17 +137,30 @@ export const Header: React.FC<HeaderProps> = ({
             )}
 
             <div className="flex items-center gap-3">
+                {sessionActive && (
+                    <div className="hidden md:flex flex-col items-end">
+                        <Label size="micro" className="mb-0.5">Session</Label>
+                        <span className={`text-sm font-bold tabular-nums leading-none ${sessionTone}`}>
+                            {sessionValue}
+                        </span>
+                        <span className="text-[9px] font-medium text-titanium-400 dark:text-titanium-400">
+                            {sessionMinutes > 0 ? `${sessionMinutes}m` : 'Live'}
+                        </span>
+                    </div>
+                )}
                 <div className="flex flex-col items-end">
                     <Label size="micro" className="mb-0.5">Balance</Label>
-                    <span className="text-titanium-900 font-bold text-lg tracking-tight tabular-nums leading-none font-display">
+                    <span className="text-titanium-900 dark:text-titanium-100 font-bold text-lg tracking-tight tabular-nums leading-none font-display">
                         ${stats.chips.toLocaleString()}
                     </span>
                 </div>
             </div>
+            <ThemeToggle className="hidden md:inline-flex" />
             {children}
     </div>
     </header>
-);
+    );
+};
 
 export const TournamentAlert: React.FC<{ tournamentTime: number }> = ({ tournamentTime }) => {
     if (tournamentTime === 60 || tournamentTime === 59 || tournamentTime === 58) {
@@ -327,7 +354,7 @@ export const Footer: React.FC<{ currentBet?: number }> = ({ currentBet }) => {
     const isCustom = currentBet && !bets.includes(currentBet);
 
     return (
-        <footer className="hidden lg:flex fixed bottom-0 left-0 right-0 lg:right-72 border-t border-titanium-200 bg-glass-light backdrop-blur-xl h-10 items-center justify-center gap-8 px-6 z-20">
+        <footer className="hidden lg:flex fixed bottom-0 left-0 right-0 lg:right-72 border-t border-titanium-200 bg-glass-light backdrop-blur-xl h-10 items-center justify-center gap-8 px-6 z-20 dark:border-titanium-800 dark:bg-glass-dark dark:text-titanium-100">
             <Label size="micro">Quick Bet Keys</Label>
             <div className="flex gap-6">
                 {bets.map((bet, i) => {

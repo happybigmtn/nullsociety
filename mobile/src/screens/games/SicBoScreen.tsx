@@ -76,6 +76,12 @@ export function SicBoScreen() {
   const dice1Bounce = useSharedValue(0);
   const dice2Bounce = useSharedValue(0);
   const dice3Bounce = useSharedValue(0);
+  const dice1OffsetX = useSharedValue(0);
+  const dice2OffsetX = useSharedValue(0);
+  const dice3OffsetX = useSharedValue(0);
+  const dice1Spin = useSharedValue(0);
+  const dice2Spin = useSharedValue(0);
+  const dice3Spin = useSharedValue(0);
 
   useEffect(() => {
     if (!lastMessage) return;
@@ -92,6 +98,32 @@ export function SicBoScreen() {
       );
       dice3Bounce.value = withSequence(
         withTiming(-45, { duration: 150 }),
+        withSpring(0, SPRING.diceTumble)
+      );
+
+      const scatter = () => (Math.random() * 2 - 1) * 14;
+      dice1OffsetX.value = withSequence(
+        withTiming(scatter(), { duration: 120 }),
+        withSpring(0, SPRING.diceTumble)
+      );
+      dice2OffsetX.value = withSequence(
+        withTiming(scatter(), { duration: 120 }),
+        withSpring(0, SPRING.diceTumble)
+      );
+      dice3OffsetX.value = withSequence(
+        withTiming(scatter(), { duration: 120 }),
+        withSpring(0, SPRING.diceTumble)
+      );
+      dice1Spin.value = withSequence(
+        withTiming(240, { duration: 180 }),
+        withSpring(0, SPRING.diceTumble)
+      );
+      dice2Spin.value = withSequence(
+        withTiming(-240, { duration: 180 }),
+        withSpring(0, SPRING.diceTumble)
+      );
+      dice3Spin.value = withSequence(
+        withTiming(180, { duration: 180 }),
         withSpring(0, SPRING.diceTumble)
       );
       haptics.diceRoll();
@@ -128,13 +160,25 @@ export function SicBoScreen() {
   }, [comboMode]);
 
   const dice1Style = useAnimatedStyle(() => ({
-    transform: [{ translateY: dice1Bounce.value }],
+    transform: [
+      { translateX: dice1OffsetX.value },
+      { translateY: dice1Bounce.value },
+      { rotate: `${dice1Spin.value}deg` },
+    ],
   }));
   const dice2Style = useAnimatedStyle(() => ({
-    transform: [{ translateY: dice2Bounce.value }],
+    transform: [
+      { translateX: dice2OffsetX.value },
+      { translateY: dice2Bounce.value },
+      { rotate: `${dice2Spin.value}deg` },
+    ],
   }));
   const dice3Style = useAnimatedStyle(() => ({
-    transform: [{ translateY: dice3Bounce.value }],
+    transform: [
+      { translateX: dice3OffsetX.value },
+      { translateY: dice3Bounce.value },
+      { rotate: `${dice3Spin.value}deg` },
+    ],
   }));
 
   const handleComboPick = useCallback((num: number) => {
@@ -280,6 +324,16 @@ export function SicBoScreen() {
 
   useGameKeyboard(keyboardHandlers);
 
+  const drawerEnter = SlideInUp.springify()
+    .damping(SPRING.modal.damping)
+    .stiffness(SPRING.modal.stiffness)
+    .mass(SPRING.modal.mass);
+
+  const drawerExit = SlideOutDown.springify()
+    .damping(SPRING.modal.damping)
+    .stiffness(SPRING.modal.stiffness)
+    .mass(SPRING.modal.mass);
+
   return (
     <>
       <GameLayout
@@ -420,8 +474,8 @@ export function SicBoScreen() {
       <Modal visible={showAdvanced} transparent animationType="slide">
         <View style={styles.drawerOverlay}>
           <Animated.View
-            entering={SlideInUp.duration(300)}
-            exiting={SlideOutDown.duration(200)}
+            entering={drawerEnter}
+            exiting={drawerExit}
             style={styles.drawer}
           >
             <View style={styles.drawerHeader}>

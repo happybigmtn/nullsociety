@@ -11,7 +11,7 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { haptics } from '../../services/haptics';
-import { COLORS, SPACING, ANIMATION, TYPOGRAPHY } from '../../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, SPRING } from '../../constants/theme';
 import { CHIP_VALUES } from '../../constants/theme';
 import type { ChipValue } from '../../types';
 
@@ -35,7 +35,7 @@ const Chip = React.memo(function Chip({ value, selected, onSelect, onDrop }: Chi
     .onBegin(() => {
       'worklet';
       isDragging.value = true;
-      scale.value = withSpring(1.2, ANIMATION.spring);
+      scale.value = withSpring(1.2, SPRING.chipStack);
       startPosition.value = { x: offset.value.x, y: offset.value.y };
       runOnJS(triggerHaptic)();
     })
@@ -49,7 +49,7 @@ const Chip = React.memo(function Chip({ value, selected, onSelect, onDrop }: Chi
     .onEnd((e) => {
       'worklet';
       isDragging.value = false;
-      scale.value = withSpring(1, ANIMATION.spring);
+      scale.value = withSpring(1, SPRING.chipStack);
 
       // Check if dropped in betting area (above starting position)
       if (offset.value.y < -100) {
@@ -62,8 +62,8 @@ const Chip = React.memo(function Chip({ value, selected, onSelect, onDrop }: Chi
 
       // Spring back to origin
       offset.value = {
-        x: withSpring(0, ANIMATION.spring),
-        y: withSpring(0, ANIMATION.spring),
+        x: withSpring(0, SPRING.chipToss),
+        y: withSpring(0, SPRING.chipToss),
       };
     });
 

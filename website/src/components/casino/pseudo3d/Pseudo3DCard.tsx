@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useSpring, animated } from '@react-spring/web';
+import { springConfig } from '../../../utils/motion';
 
 interface Pseudo3DCardProps {
   suit: 'hearts' | 'diamonds' | 'clubs' | 'spades' | string;
@@ -49,9 +50,8 @@ export const Pseudo3DCard: React.FC<Pseudo3DCardProps> = ({
   const { transform, opacity } = useSpring({
     opacity: 1,
     transform: `perspective(1200px) rotateY(${isFlipped ? 180 : 0}deg) translateY(0px)`,
-    from: { opacity: 0, transform: `perspective(1200px) rotateY(180deg) translateY(-100px)` },
-    // Overshoot config for "snap" feel
-    config: { mass: 1.2, tension: 280, friction: 22 },
+    from: { opacity: 0, transform: `perspective(1200px) rotateY(180deg) translateY(-40px)` },
+    config: springConfig('cardFlip'),
     delay: index * 80,
   });
 

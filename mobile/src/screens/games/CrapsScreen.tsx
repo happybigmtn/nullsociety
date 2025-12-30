@@ -80,6 +80,10 @@ export function CrapsScreen() {
 
   const die1Rotation = useSharedValue(0);
   const die2Rotation = useSharedValue(0);
+  const die1OffsetX = useSharedValue(0);
+  const die1OffsetY = useSharedValue(0);
+  const die2OffsetX = useSharedValue(0);
+  const die2OffsetY = useSharedValue(0);
 
   useEffect(() => {
     if (!lastMessage) return;
@@ -96,6 +100,25 @@ export function CrapsScreen() {
       die2Rotation.value = withSequence(
         withTiming(-720, { duration: 300 }),
         withSpring(-1080, SPRING.diceTumble)
+      );
+
+      const scatter = () => (Math.random() * 2 - 1) * 18;
+      const lift = () => -18 - Math.random() * 10;
+      die1OffsetX.value = withSequence(
+        withTiming(scatter(), { duration: 120 }),
+        withSpring(0, SPRING.diceTumble)
+      );
+      die1OffsetY.value = withSequence(
+        withTiming(lift(), { duration: 120 }),
+        withSpring(0, SPRING.diceTumble)
+      );
+      die2OffsetX.value = withSequence(
+        withTiming(scatter(), { duration: 120 }),
+        withSpring(0, SPRING.diceTumble)
+      );
+      die2OffsetY.value = withSequence(
+        withTiming(lift(), { duration: 120 }),
+        withSpring(0, SPRING.diceTumble)
       );
       haptics.diceRoll();
 
@@ -125,11 +148,19 @@ export function CrapsScreen() {
   }, [lastMessage]); // die1Rotation, die2Rotation are SharedValues (stable refs) - must not be in deps
 
   const die1Style = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${die1Rotation.value}deg` }],
+    transform: [
+      { translateX: die1OffsetX.value },
+      { translateY: die1OffsetY.value },
+      { rotate: `${die1Rotation.value}deg` },
+    ],
   }));
 
   const die2Style = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${die2Rotation.value}deg` }],
+    transform: [
+      { translateX: die2OffsetX.value },
+      { translateY: die2OffsetY.value },
+      { rotate: `${die2Rotation.value}deg` },
+    ],
   }));
 
   const addBet = useCallback((type: CrapsBetType, target?: number) => {
@@ -222,6 +253,16 @@ export function CrapsScreen() {
   }), [state.phase, state.bets.length, isDisconnected, handleRoll, handleNewGame, handleClearBets]);
 
   useGameKeyboard(keyboardHandlers);
+
+  const drawerEnter = SlideInUp.springify()
+    .damping(SPRING.modal.damping)
+    .stiffness(SPRING.modal.stiffness)
+    .mass(SPRING.modal.mass);
+
+  const drawerExit = SlideOutDown.springify()
+    .damping(SPRING.modal.damping)
+    .stiffness(SPRING.modal.stiffness)
+    .mass(SPRING.modal.mass);
 
   return (
     <>
@@ -362,8 +403,8 @@ export function CrapsScreen() {
       <Modal visible={showAdvanced} transparent animationType="slide">
         <View style={styles.drawerOverlay}>
           <Animated.View
-            entering={SlideInUp.duration(300)}
-            exiting={SlideOutDown.duration(200)}
+            entering={drawerEnter}
+            exiting={drawerExit}
             style={styles.drawer}
           >
             <View style={styles.drawerHeader}>

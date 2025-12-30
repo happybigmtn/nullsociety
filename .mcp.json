@@ -1,5 +1,8 @@
 {
   "mcpServers": {
+    "commonware": {
+      "url": "https://mcp.commonware.xyz"
+    },
     "convex": {
       "command": "npx",
       "args": ["-y", "convex@latest", "mcp", "start"],

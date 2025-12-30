@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { GameState, GameType, Card } from '../../types';
+import { GameState, GameType, Card, RouletteBet, SicBoBet, CrapsBet } from '../../types';
+import { calculateCrapsExposure, calculateRouletteExposure, calculateSicBoOutcomeExposure, ROULETTE_DOUBLE_ZERO } from '../../utils/gameUtils';
 import { BlackjackView } from './games/BlackjackView';
 import { CrapsView } from './games/CrapsView';
 import { BaccaratView } from './games/BaccaratView';
@@ -12,6 +13,8 @@ import { ThreeCardPokerView } from './games/ThreeCardPokerView';
 import { UltimateHoldemView } from './games/UltimateHoldemView';
 import { GenericGameView } from './games/GenericGameView';
 import { BigWinEffect } from './BigWinEffect';
+import { BetSlip } from './shared';
+import { Label } from './ui/Label';
 
 // Helper functions for formatting multipliers
 const cardRankName = (id: number): string => {
@@ -41,6 +44,67 @@ const formatMultiplier = (m: { id: number; multiplier: number; superType: string
     default:
       return `${m.id} x${m.multiplier}`;
   }
+};
+
+const sumBetAmounts = (bets: Array<{ amount?: number; oddsAmount?: number; localOddsAmount?: number }>) =>
+  bets.reduce((sum, bet) => sum + (bet.amount || 0) + (bet.oddsAmount || 0) + (bet.localOddsAmount || 0), 0);
+
+const ODDS_SUMMARY: Record<GameType, string> = {
+  [GameType.BLACKJACK]: '1:1–3:2',
+  [GameType.CRAPS]: '1:1–175:1',
+  [GameType.ROULETTE]: '1:1–35:1',
+  [GameType.SIC_BO]: '1:1–180:1',
+  [GameType.BACCARAT]: '0.95:1–25:1',
+  [GameType.HILO]: '1:1+',
+  [GameType.VIDEO_POKER]: '1:1–800:1',
+  [GameType.THREE_CARD]: '1:1–40:1+',
+  [GameType.ULTIMATE_HOLDEM]: '1:1–500:1',
+  [GameType.CASINO_WAR]: '1:1–10:1',
+  [GameType.NONE]: '—',
+};
+
+const SICBO_COMBOS: number[][] = (() => {
+  const combos: number[][] = [];
+  for (let d1 = 1; d1 <= 6; d1 += 1) {
+    for (let d2 = 1; d2 <= 6; d2 += 1) {
+      for (let d3 = 1; d3 <= 6; d3 += 1) {
+        combos.push([d1, d2, d3]);
+      }
+    }
+  }
+  return combos;
+})();
+
+const getRouletteMaxWin = (bets: RouletteBet[]) => {
+  if (!bets.length) return 0;
+  let max = -Infinity;
+  for (let outcome = 0; outcome <= ROULETTE_DOUBLE_ZERO; outcome += 1) {
+    max = Math.max(max, calculateRouletteExposure(outcome, bets));
+  }
+  return Math.max(0, max);
+};
+
+const getSicBoMaxWin = (bets: SicBoBet[]) => {
+  if (!bets.length) return 0;
+  let max = -Infinity;
+  for (const combo of SICBO_COMBOS) {
+    max = Math.max(max, calculateSicBoOutcomeExposure(combo, bets));
+  }
+  return Math.max(0, max);
+};
+
+const getCrapsMaxWin = (bets: CrapsBet[], point: number | null) => {
+  if (!bets.length) return 0;
+  let max = -Infinity;
+  for (let total = 2; total <= 12; total += 1) {
+    if ([4, 6, 8, 10].includes(total)) {
+      max = Math.max(max, calculateCrapsExposure(total, point, bets, true));
+      max = Math.max(max, calculateCrapsExposure(total, point, bets, false));
+    } else {
+      max = Math.max(max, calculateCrapsExposure(total, point, bets));
+    }
+  }
+  return Math.max(0, max);
 };
 
 // Staged reveal display component
@@ -181,14 +245,97 @@ export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberI
   };
 
   const displayWin = gameState.stage === 'RESULT' ? gameState.lastResult : 0;
+  const totalBet = React.useMemo(() => {
+    switch (gameState.type) {
+      case GameType.ROULETTE:
+        return sumBetAmounts(gameState.rouletteBets);
+      case GameType.SIC_BO:
+        return sumBetAmounts(gameState.sicBoBets);
+      case GameType.CRAPS:
+        return sumBetAmounts(gameState.crapsBets);
+      case GameType.BACCARAT:
+        return (gameState.bet || 0) + sumBetAmounts(gameState.baccaratBets);
+      case GameType.BLACKJACK:
+        return (gameState.bet || 0) + (gameState.blackjack21Plus3Bet || 0) + (gameState.insuranceBet || 0);
+      case GameType.THREE_CARD:
+        return (gameState.bet || 0)
+          + (gameState.threeCardPairPlusBet || 0)
+          + (gameState.threeCardSixCardBonusBet || 0)
+          + (gameState.threeCardProgressiveBet || 0);
+      case GameType.ULTIMATE_HOLDEM:
+        return (gameState.bet || 0) * 2
+          + (gameState.uthTripsBet || 0)
+          + (gameState.uthSixCardBonusBet || 0)
+          + (gameState.uthProgressiveBet || 0);
+      case GameType.CASINO_WAR:
+        return (gameState.bet || 0) + (gameState.casinoWarTieBet || 0);
+      case GameType.HILO:
+      case GameType.VIDEO_POKER:
+      case GameType.NONE:
+      default:
+        return gameState.bet || 0;
+    }
+  }, [gameState]);
+  const oddsLabel = ODDS_SUMMARY[gameState.type] ?? '—';
+  const maxWin = React.useMemo(() => {
+    switch (gameState.type) {
+      case GameType.ROULETTE:
+        return getRouletteMaxWin(gameState.rouletteBets);
+      case GameType.SIC_BO:
+        return getSicBoMaxWin(gameState.sicBoBets);
+      case GameType.CRAPS:
+        return getCrapsMaxWin(gameState.crapsBets, gameState.crapsPoint);
+      default:
+        return null;
+    }
+  }, [gameState]);
+
+  const firstHandKey = React.useMemo(() => {
+    if (gameState.type === GameType.NONE) return null;
+    return `ns_first_hand_${gameState.type.toLowerCase()}`;
+  }, [gameState.type]);
+
+  const [showFirstHand, setShowFirstHand] = useState(false);
+
+  useEffect(() => {
+    if (!firstHandKey || typeof window === 'undefined') return;
+    const seen = window.localStorage.getItem(firstHandKey);
+    if (!seen && gameState.stage === 'BETTING') setShowFirstHand(true);
+    else setShowFirstHand(false);
+  }, [firstHandKey, gameState.stage]);
+
+  useEffect(() => {
+    if (!showFirstHand || !firstHandKey || typeof window === 'undefined') return;
+    if (totalBet > 0 || gameState.stage !== 'BETTING') {
+      window.localStorage.setItem(firstHandKey, 'true');
+      setShowFirstHand(false);
+    }
+  }, [showFirstHand, firstHandKey, totalBet, gameState.stage]);
 
   return (
     <>
-         <div className="flex justify-center z-30 pointer-events-none select-none mb-6">
+         <div className="flex flex-col items-center gap-3 z-30 pointer-events-none select-none mb-6">
              <div className="px-4 py-1.5 rounded-full border border-titanium-200 bg-white/60 backdrop-blur-md shadow-soft text-[10px] font-bold tracking-widest uppercase text-titanium-400">
                  Status: <span className="text-titanium-900">{nextActionLabel()}</span>
              </div>
+             {gameState.type !== GameType.NONE ? (
+               <BetSlip totalBet={totalBet} oddsLabel={oddsLabel} maxWin={maxWin ?? undefined} />
+             ) : null}
          </div>
+
+         {showFirstHand && (
+            <div className="flex justify-center mb-4">
+              <div className="max-w-md rounded-3xl border border-titanium-200 bg-white/80 px-5 py-4 text-center shadow-soft backdrop-blur-md motion-state dark:border-titanium-800 dark:bg-titanium-900/70">
+                <Label size="micro" variant="primary" className="mb-2 block">First hand</Label>
+                <div className="text-sm font-semibold text-titanium-900 dark:text-titanium-100">
+                  Pick a chip, place your bet, then confirm the play.
+                </div>
+                <div className="mt-2 text-[10px] font-bold uppercase tracking-widest text-titanium-400">
+                  Provably fair • On-chain settlement
+                </div>
+              </div>
+            </div>
+         )}
 
          {gameState.superMode?.isActive && (
              <SuperModeDisplay

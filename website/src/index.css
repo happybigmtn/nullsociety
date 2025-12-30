@@ -15,6 +15,10 @@
     --text-6xl: 2.5rem;
     --text-7xl: 3rem;
     --bottom-nav-h: 56px;
+    --motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --motion-micro: 180ms;
+    --motion-state: 300ms;
+    --motion-reveal: 600ms;
   }
 }
 
@@ -24,6 +28,11 @@ body {
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.dark body {
+  background-color: #111111; /* terminal-dark */
+  color: #f2f2f7; /* titanium-100 */
 }
 
 /* Font Loading Protection */
@@ -71,6 +80,13 @@ body.fonts-loaded {
   background: #8e8e93;
 }
 
+.dark ::-webkit-scrollbar-thumb {
+  background: #3a3a3c;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #636366;
+}
+
 @media (max-width: 639px) {
   .pb-bottom-nav {
     padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom));
@@ -113,7 +129,15 @@ body.fonts-loaded {
 
 /* Transitions */
 .transition-all-snappy {
-  transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: all var(--motion-state) var(--motion-ease);
+}
+
+.motion-interaction {
+  transition: all var(--motion-micro) var(--motion-ease);
+}
+
+.motion-state {
+  transition: all var(--motion-state) var(--motion-ease);
 }
 
 /* Animations */
@@ -123,7 +147,7 @@ body.fonts-loaded {
 }
 
 .animate-scale-in {
-  animation: scaleIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: scaleIn var(--motion-reveal) var(--motion-ease) both;
 }
 
 @keyframes slideIn {
@@ -132,7 +156,7 @@ body.fonts-loaded {
 }
 
 .animate-slideIn {
-  animation: slideIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: slideIn var(--motion-state) var(--motion-ease);
 }
 
 /* Confetti Burst (CSS Only) */

@@ -202,7 +202,7 @@ export const AuthStatusPill: React.FC<AuthStatusPillProps> = ({ publicKeyHex, cl
     typeof window !== 'undefined' ? authLinks.signOut(window.location.href) : authLinks.signOut();
 
   const pillClass = [
-    'flex flex-wrap items-center gap-3 rounded-full border border-titanium-200 bg-white shadow-soft px-4 py-1.5 text-[10px] font-bold tracking-widest uppercase',
+    'flex flex-wrap items-center gap-3 rounded-full border border-titanium-200 bg-white shadow-soft px-4 py-1.5 text-[10px] font-bold tracking-widest uppercase dark:border-titanium-800 dark:bg-titanium-900/70 dark:text-titanium-100',
     className ?? '',
   ]
     .join(' ')
@@ -214,7 +214,7 @@ export const AuthStatusPill: React.FC<AuthStatusPillProps> = ({ publicKeyHex, cl
       {loading ? (
         <span className="text-titanium-300">Checking…</span>
       ) : session ? (
-        <span className="text-titanium-900 max-w-[140px] truncate" title={displayName}>
+        <span className="text-titanium-900 dark:text-titanium-100 max-w-[140px] truncate" title={displayName}>
           {displayLabel}
         </span>
       ) : (
@@ -226,8 +226,8 @@ export const AuthStatusPill: React.FC<AuthStatusPillProps> = ({ publicKeyHex, cl
               disabled={signInBusy}
               className={`px-3 py-1 rounded-full transition-all duration-200 ${
                 signInBusy
-                  ? 'bg-titanium-100 text-titanium-300'
-                  : 'bg-action-primary text-white shadow-sm hover:scale-105 active:scale-95'
+                  ? 'bg-titanium-100 text-titanium-300 dark:bg-titanium-800 dark:text-titanium-400'
+                  : 'bg-action-primary text-white shadow-sm hover:scale-105 active:scale-95 dark:bg-action-primary/20 dark:text-action-primary dark:shadow-none'
               }`}
             >
               {signInBusy ? 'Signing…' : 'Sign in'}
@@ -244,10 +244,10 @@ export const AuthStatusPill: React.FC<AuthStatusPillProps> = ({ publicKeyHex, cl
 
       {session ? (
         <>
-          <div className="h-3 w-px bg-titanium-200" />
+          <div className="h-3 w-px bg-titanium-200 dark:bg-titanium-800" />
           {!activeEntitlement && stripeTiers.length > 1 ? (
             <select
-              className="bg-white border border-titanium-200 rounded-lg px-2 py-0.5 text-[10px] font-bold text-titanium-800 outline-none"
+              className="bg-white border border-titanium-200 rounded-lg px-2 py-0.5 text-[10px] font-bold text-titanium-800 outline-none dark:bg-titanium-900 dark:border-titanium-800 dark:text-titanium-100"
               value={selectedTier}
               onChange={(event) => setSelectedTier(event.target.value)}
             >
@@ -265,12 +265,12 @@ export const AuthStatusPill: React.FC<AuthStatusPillProps> = ({ publicKeyHex, cl
               billingBusy ||
               (!activeEntitlement && !fallbackPriceId && stripeTiers.length === 0)
             }
-            className="px-3 py-1 rounded-full bg-titanium-100 text-titanium-800 border border-titanium-200 hover:border-titanium-400 transition-all"
+            className="px-3 py-1 rounded-full bg-titanium-100 text-titanium-800 border border-titanium-200 hover:border-titanium-400 transition-all dark:bg-titanium-800 dark:text-titanium-100 dark:border-titanium-800 dark:hover:border-titanium-500"
           >
             {activeEntitlement ? 'Account' : 'Join'}
           </button>
-          <div className="h-3 w-px bg-titanium-200" />
-          <a href={signOutUrl} className="text-titanium-400 hover:text-titanium-900 transition-colors">
+          <div className="h-3 w-px bg-titanium-200 dark:bg-titanium-800" />
+          <a href={signOutUrl} className="text-titanium-400 hover:text-titanium-900 transition-colors dark:text-titanium-400 dark:hover:text-titanium-100">
             Exit
           </a>
         </>

@@ -53,7 +53,7 @@ export const WalletPill: React.FC<WalletPillProps> = ({ rng, vusdt, credits, cre
   return (
     <div
       className={[
-        'flex flex-wrap items-center gap-3 rounded-full border border-titanium-200 bg-white shadow-soft px-4 py-1.5',
+        'flex flex-wrap items-center gap-3 rounded-full border border-titanium-200 bg-white shadow-soft px-4 py-1.5 dark:border-titanium-800 dark:bg-titanium-900/70 dark:text-titanium-100',
         className ?? '',
       ]
         .join(' ')
@@ -69,27 +69,27 @@ export const WalletPill: React.FC<WalletPillProps> = ({ rng, vusdt, credits, cre
             <span className={`text-[10px] font-bold uppercase ${vault.className}`}>{vault.label}</span>
           </Link>
 
-          <div className="h-3 w-px bg-titanium-200" />
+          <div className="h-3 w-px bg-titanium-200 dark:bg-titanium-800" />
         </>
       )}
 
       <div className="flex items-center gap-4 text-[10px] tracking-widest uppercase font-bold text-titanium-400 whitespace-nowrap">
         <span>
-          RNG <span className="text-titanium-900">{formatInteger(rng)}</span>
+          RNG <span className="text-titanium-900 dark:text-titanium-100">{formatInteger(rng)}</span>
         </span>
         <span>
-          vUSDT <span className="text-titanium-900">{formatInteger(vusdt)}</span>
+          vUSDT <span className="text-titanium-900 dark:text-titanium-100">{formatInteger(vusdt)}</span>
         </span>
         {credits !== undefined || creditsLocked !== undefined ? (
           <span>
-            Credits <span className="text-titanium-900">{formatInteger(credits)}</span>
+            Credits <span className="text-titanium-900 dark:text-titanium-100">{formatInteger(credits)}</span>
           </span>
         ) : null}
       </div>
 
       {effectivePubkey ? (
         <>
-          <div className="h-3 w-px bg-titanium-200" />
+          <div className="h-3 w-px bg-titanium-200 dark:bg-titanium-800" />
           <Link
             to={`/explorer/account/${effectivePubkey}`}
             className="text-[10px] font-bold tracking-widest uppercase text-action-primary hover:opacity-70 transition-opacity"

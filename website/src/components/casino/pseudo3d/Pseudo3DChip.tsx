@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useSpring, animated } from '@react-spring/web';
+import { springConfig } from '../../../utils/motion';
 
 interface Pseudo3DChipProps {
   value: number;
@@ -29,6 +30,18 @@ export const Pseudo3DChip: React.FC<Pseudo3DChipProps> = ({
 }) => {
   const config = chipColors[value] || chipColors[1];
   const size = 48;
+  const [{ scale }, api] = useSpring(() => ({
+    scale: 1,
+    config: springConfig('chipStack'),
+  }));
+
+  useEffect(() => {
+    api.start({
+      from: { scale: 0.96 },
+      to: { scale: 1 },
+      reset: true,
+    });
+  }, [count, api]);
 
   const renderStack = () => {
     const chips = [];
@@ -79,7 +92,9 @@ export const Pseudo3DChip: React.FC<Pseudo3DChipProps> = ({
         tabIndex={onClick ? 0 : -1}
         role={onClick ? "button" : undefined}
     >
-        {renderStack()}
+        <animated.div style={{ transform: scale.to((s) => `scale(${s})`) }}>
+            {renderStack()}
+        </animated.div>
         
         {count > 1 && (
             <div className="absolute -top-3 -right-3 bg-titanium-900 text-white text-[9px] font-black px-2 py-0.5 rounded-full z-50 shadow-sm border border-white/20 tabular-nums">

@@ -33,7 +33,7 @@ export const GameControlBar: React.FC<GameControlBarProps> = ({
 }) => {
     const [menuOpen, setMenuOpen] = useState(false);
 
-    const baseContainer = "fixed bottom-8 left-1/2 -translate-x-1/2 h-16 bg-white/80 backdrop-blur-2xl rounded-full border border-titanium-200 shadow-float flex items-center justify-between px-2 z-50 min-w-[320px] max-w-[95vw] transition-all duration-500 animate-scale-in";
+    const baseContainer = "fixed bottom-8 left-1/2 -translate-x-1/2 h-16 bg-white/80 backdrop-blur-2xl rounded-full border border-titanium-200 shadow-float flex items-center justify-between px-2 z-50 min-w-[320px] max-w-[95vw] transition-all motion-state animate-scale-in";
 
     if (!primaryAction && secondaryActions.length === 0 && children) {
         return (
@@ -60,7 +60,7 @@ export const GameControlBar: React.FC<GameControlBarProps> = ({
                             type="button"
                             onClick={primaryAction.onClick}
                             disabled={primaryAction.disabled}
-                            className={`w-20 h-20 rounded-full shadow-float flex items-center justify-center text-white font-bold tracking-[0.1em] text-xs transition-all duration-300 transform
+                            className={`w-20 h-20 rounded-full shadow-float flex items-center justify-center text-white font-bold tracking-[0.1em] text-xs transition-all motion-interaction transform
                             ${primaryAction.disabled 
                                 ? 'bg-titanium-200 text-titanium-400 cursor-not-allowed grayscale' 
                                 : 'bg-titanium-900 hover:scale-110 active:scale-90 hover:shadow-2xl'
@@ -78,7 +78,7 @@ export const GameControlBar: React.FC<GameControlBarProps> = ({
                     {children && <div className="hidden sm:flex">{children}</div>}
                     <button 
                         onClick={() => setMenuOpen(true)}
-                        className="p-3 rounded-full hover:bg-titanium-100 active:scale-95 transition-all group"
+                        className="p-3 rounded-full hover:bg-titanium-100 active:scale-95 transition-all motion-interaction group"
                     >
                         <Grid className="text-titanium-400 group-hover:text-titanium-900 w-5 h-5" strokeWidth={2.5} />
                     </button>
@@ -87,13 +87,13 @@ export const GameControlBar: React.FC<GameControlBarProps> = ({
 
             {/* Bottom Sheet / Menu Overlay */}
             <div 
-                className={`fixed inset-0 z-[60] bg-titanium-900/20 backdrop-blur-sm transition-opacity duration-500 ${
+                className={`fixed inset-0 z-[60] bg-titanium-900/20 backdrop-blur-sm transition-opacity motion-state ${
                     menuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
                 }`}
                 onClick={() => setMenuOpen(false)}
             >
                 <div 
-                    className={`absolute bottom-0 left-0 right-0 bg-white rounded-t-[40px] p-8 pb-12 shadow-float border-t border-titanium-200 transition-transform duration-500 cubic-bezier(0.2, 0.8, 0.2, 1) ${
+                    className={`absolute bottom-0 left-0 right-0 bg-white rounded-t-[40px] p-8 pb-12 shadow-float border-t border-titanium-200 transition-transform motion-state ${
                         menuOpen ? 'translate-y-0' : 'translate-y-full'
                     }`}
                     onClick={(e) => e.stopPropagation()}
@@ -130,7 +130,7 @@ export const GameControlBar: React.FC<GameControlBarProps> = ({
                                         action.onClick?.();
                                     }}
                                     disabled={action.disabled}
-                                    className={`h-16 rounded-[24px] flex flex-col items-center justify-center gap-1 transition-all duration-300 shadow-soft border ${
+                                    className={`h-16 rounded-[24px] flex flex-col items-center justify-center gap-1 transition-all motion-interaction shadow-soft border ${
                                         action.active
                                             ? 'bg-titanium-900 text-white border-titanium-900 shadow-lg'
                                             : 'bg-white text-titanium-800 border-titanium-200 hover:border-titanium-400'

@@ -135,6 +135,11 @@ export const STORAGE_KEYS = {
   // Cache
   CACHED_BALANCE: 'cache.balance',
   LAST_SYNC: 'cache.last_sync',
+
+  // Rewards
+  REWARDS_LAST_CLAIM: 'rewards.last_claim',
+  REWARDS_STREAK: 'rewards.streak',
+  REWARDS_CLUB_JOINED: 'rewards.club_joined',
 } as const;
 
 /**

@@ -5,13 +5,13 @@
 import { View, Text, StyleSheet } from 'react-native';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import Animated, { SlideInRight } from 'react-native-reanimated';
-import { Card, HiddenCard } from '../../components/casino';
+import { Card } from '../../components/casino';
 import { ChipSelector } from '../../components/casino';
 import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection, useChipBetting } from '../../hooks';
-import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, SPRING } from '../../constants/theme';
 import type { ChipValue, TutorialStep, Card as CardType } from '../../types';
 import type { BlackjackMessage } from '@nullspace/protocol/mobile';
 
@@ -190,6 +190,10 @@ export function BlackjackScreen() {
   }), [state.phase, bet, state.canDouble, state.canSplit, isDisconnected, handleHit, handleStand, handleDouble, handleSplit, handleDeal, handleNewGame, clearBet, handleChipPlace]);
 
   useGameKeyboard(keyboardHandlers);
+  const cardEnter = SlideInRight.springify()
+    .damping(SPRING.cardDeal.damping)
+    .stiffness(SPRING.cardDeal.stiffness)
+    .mass(SPRING.cardDeal.mass);
 
   return (
     <>
@@ -210,14 +214,14 @@ export function BlackjackScreen() {
               {state.dealerCards.map((card, i) => (
                 <Animated.View
                   key={i}
-                  entering={SlideInRight.delay(i * 100)}
+                  entering={cardEnter.delay(i * 100)}
                   style={[styles.cardWrapper, { marginLeft: i > 0 ? -40 : 0 }]}
                 >
-                  {i === 1 && state.dealerHidden ? (
-                    <HiddenCard />
-                  ) : (
-                    <Card suit={card.suit} rank={card.rank} faceUp={true} />
-                  )}
+                  <Card
+                    suit={card.suit}
+                    rank={card.rank}
+                    faceUp={!(i === 1 && state.dealerHidden)}
+                  />
                 </Animated.View>
               ))}
             </View>
@@ -245,7 +249,7 @@ export function BlackjackScreen() {
               {state.playerCards.map((card, i) => (
                 <Animated.View
                   key={i}
-                  entering={SlideInRight.delay(i * 100)}
+                  entering={cardEnter.delay(i * 100)}
                   style={[styles.cardWrapper, { marginLeft: i > 0 ? -40 : 0 }]}
                 >
                   <Card suit={card.suit} rank={card.rank} faceUp={true} />

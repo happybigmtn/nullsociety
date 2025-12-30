@@ -4,17 +4,20 @@
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { HelpButton } from '../ui/HelpButton';
+import { EventBadge } from './EventBadge';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS } from '../../constants/theme';
 
 interface GameHeaderProps {
   title: string;
   balance: number;
+  sessionDelta?: number;
   onHelp?: () => void;
   rightContent?: React.ReactNode;
 }
 
-export function GameHeader({ title, balance, onHelp, rightContent }: GameHeaderProps) {
+export function GameHeader({ title, balance, sessionDelta = 0, onHelp, rightContent }: GameHeaderProps) {
   const navigation = useNavigation();
+  const sessionLabel = sessionDelta === 0 ? '$0' : `${sessionDelta > 0 ? '+' : ''}$${Math.abs(sessionDelta).toLocaleString()}`;
 
   return (
     <View style={styles.header}>
@@ -25,10 +28,14 @@ export function GameHeader({ title, balance, onHelp, rightContent }: GameHeaderP
         <View style={styles.balanceContainer}>
           <Text style={styles.balanceLabel}>Balance</Text>
           <Text style={styles.balance}>${balance.toLocaleString()}</Text>
+          <Text style={[styles.sessionDelta, sessionDelta > 0 ? styles.sessionPositive : sessionDelta < 0 ? styles.sessionNegative : styles.sessionNeutral]}>
+            Session {sessionLabel}
+          </Text>
         </View>
       </View>
       <Text style={styles.title}>{title}</Text>
       <View style={styles.rightSection}>
+        <EventBadge />
         {rightContent}
         {onHelp && <HelpButton onPress={onHelp} />}
       </View>
@@ -75,6 +82,20 @@ const styles = StyleSheet.create({
   balance: {
     color: COLORS.primary,
     ...TYPOGRAPHY.h2,
+  },
+  sessionDelta: {
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  sessionPositive: {
+    color: COLORS.success,
+  },
+  sessionNegative: {
+    color: COLORS.destructive,
+  },
+  sessionNeutral: {
+    color: COLORS.textMuted,
   },
   title: {
     color: COLORS.textPrimary,

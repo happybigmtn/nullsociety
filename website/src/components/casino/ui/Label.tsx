@@ -14,8 +14,8 @@ export const Label: React.FC<LabelProps> = ({
   size = 'normal'
 }) => {
   const variantClasses = {
-    primary: 'text-titanium-500', // Improved contrast (WCAG AA)
-    secondary: 'text-titanium-400',
+    primary: 'text-titanium-500 dark:text-titanium-300', // Improved contrast (WCAG AA)
+    secondary: 'text-titanium-400 dark:text-titanium-400',
     success: 'text-action-success',
     destructive: 'text-action-destructive',
     gold: 'text-action-primary',

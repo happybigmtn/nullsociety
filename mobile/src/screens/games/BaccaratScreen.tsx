@@ -11,7 +11,7 @@ import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
-import { COLORS, SPACING, TYPOGRAPHY, RADIUS } from '../../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SPRING } from '../../constants/theme';
 import { useGameStore } from '../../stores/gameStore';
 import type { ChipValue, TutorialStep, BaccaratBetType, Card as CardType } from '../../types';
 import type { BaccaratMessage } from '@nullspace/protocol/mobile';
@@ -243,6 +243,14 @@ export function BaccaratScreen() {
   }), [state.phase, totalBet, isDisconnected, handleMainSelect, handleDeal, handleNewGame, handleClearBets]);
 
   useGameKeyboard(keyboardHandlers);
+  const cardEnterDown = SlideInDown.springify()
+    .damping(SPRING.cardDeal.damping)
+    .stiffness(SPRING.cardDeal.stiffness)
+    .mass(SPRING.cardDeal.mass);
+  const cardEnterUp = SlideInUp.springify()
+    .damping(SPRING.cardDeal.damping)
+    .stiffness(SPRING.cardDeal.stiffness)
+    .mass(SPRING.cardDeal.mass);
 
   return (
     <>
@@ -266,7 +274,7 @@ export function BaccaratScreen() {
               {state.bankerCards.map((card, i) => (
                 <Animated.View
                   key={i}
-                  entering={SlideInDown.delay(i * 150 + 300)}
+                  entering={cardEnterDown.delay(i * 150 + 300)}
                   style={[styles.cardWrapper, { marginLeft: i > 0 ? -30 : 0 }]}
                 >
                   <Card suit={card.suit} rank={card.rank} faceUp={true} />
@@ -302,7 +310,7 @@ export function BaccaratScreen() {
               {state.playerCards.map((card, i) => (
                 <Animated.View
                   key={i}
-                  entering={SlideInUp.delay(i * 150)}
+                  entering={cardEnterUp.delay(i * 150)}
                   style={[styles.cardWrapper, { marginLeft: i > 0 ? -30 : 0 }]}
                 >
                   <Card suit={card.suit} rank={card.rank} faceUp={true} />
