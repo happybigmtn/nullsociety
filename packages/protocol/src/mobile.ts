@@ -298,7 +298,7 @@ export const BlackjackSplitRequestSchema = z.object({
 
 // --- Roulette Outbound ---
 export const RouletteBetSchema = z.object({
-  type: z.string(),
+  type: z.union([z.string(), z.number().int().min(0).max(255)]),
   amount: z.number().positive(),
   target: z.number().int().min(0).max(37).optional(),
   number: z.number().int().min(0).max(37).optional(),
@@ -338,6 +338,7 @@ export const HiLoBetRequestSchema = z.object({
 
 export const HiLoDealRequestSchema = z.object({
   type: z.literal('hilo_deal'),
+  amount: z.number().positive(),
 });
 
 // --- Baccarat Outbound ---
@@ -400,7 +401,7 @@ export const VideoPokerLegacyHoldRequestSchema = z.object({
 
 // --- Sic Bo Outbound ---
 export const SicBoBetSchema = z.object({
-  type: z.string(),
+  type: z.union([z.string(), z.number().int().min(0).max(255)]),
   amount: z.number().positive(),
   target: z.number().int().min(0).max(255).optional(),
   number: z.number().int().min(0).max(255).optional(),

@@ -20,10 +20,16 @@ import type { Session, SessionCreateOptions } from '../types/session.js';
 import type { GameType } from '@nullspace/types';
 
 const DEFAULT_INITIAL_BALANCE = 10000n;  // 10,000 test chips
+const readEnvLimit = (key: string, fallback: number): number => {
+  const raw = process.env[key];
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 const SESSION_CREATE_LIMIT = {
-  points: 10,
-  durationMs: 60 * 60 * 1000,
-  blockMs: 60 * 60 * 1000,
+  points: readEnvLimit('GATEWAY_SESSION_RATE_LIMIT_POINTS', 10),
+  durationMs: readEnvLimit('GATEWAY_SESSION_RATE_LIMIT_WINDOW_MS', 60 * 60 * 1000),
+  blockMs: readEnvLimit('GATEWAY_SESSION_RATE_LIMIT_BLOCK_MS', 60 * 60 * 1000),
 };
 
 export class SessionManager {

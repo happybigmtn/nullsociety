@@ -34,7 +34,7 @@ curl -s http://localhost:8080/healthz
 ```bash
 cd gateway
 npm install
-BACKEND_URL=http://localhost:8080 GATEWAY_PORT=9010 npm run dev
+GATEWAY_DATA_DIR=./.gateway-data BACKEND_URL=http://localhost:8080 GATEWAY_PORT=9010 npm run dev
 ```
 
 ### 3. Start Web App

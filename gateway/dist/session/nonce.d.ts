@@ -1,8 +1,17 @@
+type NonceManagerOptions = {
+    dataDir?: string;
+    legacyPath?: string;
+};
 export declare class NonceManager {
     private nonces;
     private pending;
+    private locks;
     private persistPath;
-    constructor(persistPath?: string);
+    private dataDir;
+    private legacyPath;
+    constructor(options?: NonceManagerOptions);
+    private ensureDataDir;
+    private migrateLegacyFile;
     /**
      * Get current nonce and increment for next use
      * Marks nonce as pending until confirmed
@@ -12,6 +21,14 @@ export declare class NonceManager {
      * Get current nonce without incrementing
      */
     getCurrentNonce(publicKeyHex: string): bigint;
+    /**
+     * Set current nonce explicitly (e.g., after sync or successful submission)
+     */
+    setCurrentNonce(publicKeyHex: string, nonce: bigint): void;
+    /**
+     * Serialize nonce usage per public key to avoid concurrent nonce races
+     */
+    withLock<T>(publicKeyHex: string, fn: (nonce: bigint) => Promise<T>): Promise<T>;
     /**
      * Mark nonce as confirmed (received in block)
      */
@@ -58,4 +75,5 @@ export declare class NonceManager {
         totalPending: number;
     };
 }
+export {};
 //# sourceMappingURL=nonce.d.ts.map

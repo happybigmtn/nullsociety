@@ -218,6 +218,9 @@ importers:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@types/node@22.7.5)(jsdom@26.1.0)(lightningcss@1.30.2)(terser@5.44.1)
 
   packages/design-tokens:
     devDependencies:
@@ -227,6 +230,9 @@ importers:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@types/node@22.7.5)(jsdom@26.1.0)(lightningcss@1.30.2)(terser@5.44.1)
 
   packages/game-state:
     dependencies:
@@ -240,6 +246,9 @@ importers:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@types/node@22.7.5)(jsdom@26.1.0)(lightningcss@1.30.2)(terser@5.44.1)
 
   packages/protocol:
     dependencies:
@@ -273,6 +282,9 @@ importers:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@types/node@22.7.5)(jsdom@26.1.0)(lightningcss@1.30.2)(terser@5.44.1)
 
   services/auth:
     dependencies:

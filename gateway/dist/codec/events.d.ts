@@ -4,9 +4,8 @@
  * The backend sends binary-encoded Update messages via WebSocket.
  * This module decodes them and extracts casino game events.
  *
- * TODO: Consider using @nullspace/protocol decode functions for card/game result decoding
- * The protocol package has decodeCard, decodeCards, decodeGameResult, decodeBlackjackState
- * However, the gateway-specific Update/FilteredEvents parsing is unique to this module.
+ * Note: @nullspace/protocol decode helpers are used by clients for state rendering, but
+ * the gateway Update/FilteredEvents parsing is unique to this module.
  */
 /**
  * Event tags matching Rust nullspace_types::execution::tags::event
@@ -30,6 +29,11 @@ export interface CasinoGameEvent {
     moveNumber?: number;
     newState?: Uint8Array;
     logs?: string[];
+    balanceSnapshot?: {
+        chips: bigint;
+        vusdt: bigint;
+        rng: bigint;
+    };
     payout?: bigint;
     finalChips?: bigint;
     wasShielded?: boolean;

@@ -9,6 +9,7 @@ coverage
 # Production
 build
 target
+*.tsbuildinfo
 
 # Misc
 .DS_Store
@@ -41,6 +42,7 @@ nohup.out
 *.pid
 data/
 website/dist/
+website/qa-artifacts/
 load-test-*/
 services/auth/dist/
 

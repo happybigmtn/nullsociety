@@ -2,16 +2,57 @@
  * Nonce management with recovery mechanism
  * Per-player nonce tracking to prevent replay attacks
  */
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { join, resolve } from 'path';
+
+type NonceManagerOptions = {
+  dataDir?: string;
+  legacyPath?: string;
+};
+
+const DEFAULT_DATA_DIR = '.gateway-data';
+const DEFAULT_NONCE_FILE = 'nonces.json';
+const LEGACY_NONCE_FILE = '.gateway-nonces.json';
 
 export class NonceManager {
   private nonces: Map<string, bigint> = new Map();
   private pending: Map<string, Set<bigint>> = new Map();
   private locks: Map<string, Promise<void>> = new Map();
   private persistPath: string;
+  private dataDir: string;
+  private legacyPath: string;
 
-  constructor(persistPath: string = '.gateway-nonces.json') {
-    this.persistPath = persistPath;
+  constructor(options: NonceManagerOptions = {}) {
+    this.dataDir = resolve(options.dataDir ?? process.env.GATEWAY_DATA_DIR ?? DEFAULT_DATA_DIR);
+    this.persistPath = join(this.dataDir, DEFAULT_NONCE_FILE);
+    this.legacyPath = resolve(options.legacyPath ?? LEGACY_NONCE_FILE);
+    this.ensureDataDir();
+    this.migrateLegacyFile();
+  }
+
+  private ensureDataDir(): void {
+    try {
+      if (!existsSync(this.dataDir)) {
+        mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
+      }
+      chmodSync(this.dataDir, 0o700);
+    } catch (err) {
+      console.error('Failed to prepare nonce data directory:', err);
+    }
+  }
+
+  private migrateLegacyFile(): void {
+    if (!existsSync(this.legacyPath) || existsSync(this.persistPath)) {
+      return;
+    }
+    try {
+      const legacyData = readFileSync(this.legacyPath, 'utf8');
+      writeFileSync(this.persistPath, legacyData, { mode: 0o600 });
+      chmodSync(this.persistPath, 0o600);
+      unlinkSync(this.legacyPath);
+    } catch (err) {
+      console.warn('Failed to migrate legacy nonce file:', err);
+    }
   }
 
   /**
@@ -160,11 +201,13 @@ export class NonceManager {
    */
   persist(): void {
     try {
+      this.ensureDataDir();
       const data: Record<string, string> = {};
       for (const [k, v] of this.nonces.entries()) {
         data[k] = v.toString();
       }
-      writeFileSync(this.persistPath, JSON.stringify(data, null, 2));
+      writeFileSync(this.persistPath, JSON.stringify(data, null, 2), { mode: 0o600 });
+      chmodSync(this.persistPath, 0o600);
     } catch (err) {
       console.error('Failed to persist nonces:', err);
     }

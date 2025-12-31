@@ -4,6 +4,7 @@
  * Bridges mobile JSON protocol to Rust backend binary protocol.
  * Enables full-stack testing with real on-chain game execution.
  */
+import './telemetry.js';
 import { WebSocketServer } from 'ws';
 import { createHandlerRegistry } from './handlers/index.js';
 import { SessionManager, NonceManager, ConnectionLimiter } from './session/index.js';
@@ -16,6 +17,9 @@ const PORT = parseInt(process.env.GATEWAY_PORT || '9010', 10);
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
 const MAX_CONNECTIONS_PER_IP = parseInt(process.env.MAX_CONNECTIONS_PER_IP || '5', 10);
 const MAX_TOTAL_SESSIONS = parseInt(process.env.MAX_TOTAL_SESSIONS || '1000', 10);
+const DEFAULT_FAUCET_AMOUNT = 1000n;
+const FAUCET_COOLDOWN_MS = 60_000;
+const BALANCE_REFRESH_MS = parseInt(process.env.BALANCE_REFRESH_MS || '60000', 10);
 // Core services
 const nonceManager = new NonceManager();
 const submitClient = new SubmitClient(BACKEND_URL);
@@ -121,16 +125,42 @@ async function handleMessage(ws, rawData) {
     if (msgType === 'get_balance') {
         const session = sessionManager.getSession(ws);
         if (session) {
+            await sessionManager.refreshBalance(session);
             send(ws, {
                 type: 'balance',
                 registered: session.registered,
                 hasBalance: session.hasBalance,
                 publicKey: session.publicKeyHex,
+                balance: session.balance.toString(),
             });
         }
         else {
             sendError(ws, ErrorCodes.SESSION_EXPIRED, 'No active session');
         }
+        return;
+    }
+    if (msgType === 'faucet_claim') {
+        const session = sessionManager.getSession(ws);
+        if (!session) {
+            sendError(ws, ErrorCodes.SESSION_EXPIRED, 'No active session');
+            return;
+        }
+        const amountRaw = typeof msg.amount === 'number' ? msg.amount : null;
+        const amount = amountRaw && amountRaw > 0 ? BigInt(Math.floor(amountRaw)) : DEFAULT_FAUCET_AMOUNT;
+        const result = await sessionManager.requestFaucet(session, amount, FAUCET_COOLDOWN_MS);
+        if (!result.success) {
+            sendError(ws, ErrorCodes.INVALID_MESSAGE, result.error ?? 'Faucet claim failed');
+            return;
+        }
+        await sessionManager.refreshBalance(session);
+        send(ws, {
+            type: 'balance',
+            registered: session.registered,
+            hasBalance: session.hasBalance,
+            publicKey: session.publicKeyHex,
+            balance: session.balance.toString(),
+            message: 'FAUCET_CLAIMED',
+        });
         return;
     }
     const validation = OutboundMessageSchema.safeParse(msg);
@@ -198,7 +228,8 @@ wss.on('connection', async (ws, req) => {
     connectionLimiter.registerConnection(clientIp, connectionId);
     try {
         // Create session with auto-registration
-        const session = await sessionManager.createSession(ws);
+        const session = await sessionManager.createSession(ws, {}, clientIp);
+        sessionManager.startBalanceRefresh(session, BALANCE_REFRESH_MS);
         // Send session ready message
         send(ws, {
             type: 'session_ready',

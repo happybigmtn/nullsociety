@@ -283,6 +283,16 @@ fn read_secret_file(path: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
+fn require_arg_or_env(value: Option<String>, env_key: &str) -> Result<String> {
+    if let Some(value) = value {
+        return Ok(value);
+    }
+    if let Ok(value) = env::var(env_key) {
+        return Ok(value);
+    }
+    Err(anyhow!("Missing {env_key} (flag or env var)"))
+}
+
 fn require_arg_or_env_or_file(
     value: Option<String>,
     file: Option<String>,

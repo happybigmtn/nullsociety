@@ -36,8 +36,12 @@ export interface Session {
     connectedAt: number;
     /** Last activity timestamp */
     lastActivityAt: number;
+    /** Last faucet claim timestamp (ms) */
+    lastFaucetAt?: number;
     /** WebSocket client for backend updates (optional, created after registration) */
     updatesClient?: UpdatesClient;
+    /** Periodic balance refresh interval (optional) */
+    balanceRefreshIntervalId?: ReturnType<typeof setInterval>;
 }
 /**
  * Session creation options

@@ -4,9 +4,8 @@
  * The backend sends binary-encoded Update messages via WebSocket.
  * This module decodes them and extracts casino game events.
  *
- * TODO: Consider using @nullspace/protocol decode functions for card/game result decoding
- * The protocol package has decodeCard, decodeCards, decodeGameResult, decodeBlackjackState
- * However, the gateway-specific Update/FilteredEvents parsing is unique to this module.
+ * Note: @nullspace/protocol decode helpers are used by clients for state rendering, but
+ * the gateway Update/FilteredEvents parsing is unique to this module.
  */
 /**
  * Event tags matching Rust nullspace_types::execution::tags::event
@@ -167,10 +166,12 @@ class BinaryReader {
         }
         return null;
     }
-    // Skip PlayerBalanceSnapshot (we don't need to parse it fully)
-    skipPlayerBalanceSnapshot() {
-        // PlayerBalanceSnapshot { chips: u64, vusdt: u64, rng: u64 }
-        this.offset += 24; // 3 * 8 bytes
+    readPlayerBalanceSnapshot() {
+        return {
+            chips: this.readU64BE(),
+            vusdt: this.readU64BE(),
+            rng: this.readU64BE(),
+        };
     }
     skip(bytes) {
         this.offset += bytes;
@@ -204,13 +205,14 @@ function parseCasinoGameMoved(reader) {
     const moveNumber = reader.readU32BE();
     const newState = reader.readVec();
     const logs = reader.readStringVec();
-    reader.skipPlayerBalanceSnapshot();
+    const balanceSnapshot = reader.readPlayerBalanceSnapshot();
     return {
         type: 'moved',
         sessionId,
         moveNumber,
         newState,
         logs,
+        balanceSnapshot,
     };
 }
 /**
@@ -226,7 +228,7 @@ function parseCasinoGameCompleted(reader) {
     const wasShielded = reader.readBool();
     const wasDoubled = reader.readBool();
     const logs = reader.readStringVec();
-    reader.skipPlayerBalanceSnapshot();
+    const balanceSnapshot = reader.readPlayerBalanceSnapshot();
     return {
         type: 'completed',
         sessionId,
@@ -237,6 +239,7 @@ function parseCasinoGameCompleted(reader) {
         wasShielded,
         wasDoubled,
         logs,
+        balanceSnapshot,
     };
 }
 /**
@@ -462,16 +465,50 @@ export function parseCasinoEvent(data) {
  * Parse JSON game log from logs array
  */
 export function parseGameLog(log) {
+    const VIDEO_POKER_HAND_NAMES = {
+        0: 'HIGH_CARD',
+        1: 'JACKS_OR_BETTER',
+        2: 'TWO_PAIR',
+        3: 'THREE_OF_A_KIND',
+        4: 'STRAIGHT',
+        5: 'FLUSH',
+        6: 'FULL_HOUSE',
+        7: 'FOUR_OF_A_KIND',
+        8: 'STRAIGHT_FLUSH',
+        9: 'ROYAL_FLUSH',
+    };
+    const normalizeVideoPokerLog = (data) => {
+        const hasHand = Object.prototype.hasOwnProperty.call(data, 'hand')
+            || Object.prototype.hasOwnProperty.call(data, 'handId');
+        const hasMultiplier = Object.prototype.hasOwnProperty.call(data, 'multiplier');
+        if (!hasHand || !hasMultiplier)
+            return data;
+        const handRaw = data.hand;
+        const handIdRaw = data.handId;
+        const handFromId = typeof handIdRaw === 'number' && Number.isFinite(handIdRaw) ? handIdRaw
+            : typeof handRaw === 'number' && Number.isFinite(handRaw) ? handRaw
+                : null;
+        if (handFromId !== null) {
+            data.handId = handFromId;
+            if (typeof data.hand !== 'string') {
+                data.hand = VIDEO_POKER_HAND_NAMES[handFromId] ?? data.hand;
+            }
+        }
+        return data;
+    };
     try {
-        return JSON.parse(log);
+        const parsed = JSON.parse(log);
+        return normalizeVideoPokerLog(parsed);
     }
     catch {
         // Some games use non-JSON format (e.g., Video Poker uses "RESULT:hand:multiplier")
         if (log.startsWith('RESULT:')) {
             const parts = log.split(':');
+            const handId = Number(parts[1]);
             return {
                 type: 'RESULT',
-                hand: parseInt(parts[1], 10),
+                handId,
+                hand: VIDEO_POKER_HAND_NAMES[handId] ?? 'UNKNOWN',
                 multiplier: parseInt(parts[2], 10),
             };
         }

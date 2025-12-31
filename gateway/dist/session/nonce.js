@@ -2,13 +2,49 @@
  * Nonce management with recovery mechanism
  * Per-player nonce tracking to prevent replay attacks
  */
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { join, resolve } from 'path';
+const DEFAULT_DATA_DIR = '.gateway-data';
+const DEFAULT_NONCE_FILE = 'nonces.json';
+const LEGACY_NONCE_FILE = '.gateway-nonces.json';
 export class NonceManager {
     nonces = new Map();
     pending = new Map();
+    locks = new Map();
     persistPath;
-    constructor(persistPath = '.gateway-nonces.json') {
-        this.persistPath = persistPath;
+    dataDir;
+    legacyPath;
+    constructor(options = {}) {
+        this.dataDir = resolve(options.dataDir ?? process.env.GATEWAY_DATA_DIR ?? DEFAULT_DATA_DIR);
+        this.persistPath = join(this.dataDir, DEFAULT_NONCE_FILE);
+        this.legacyPath = resolve(options.legacyPath ?? LEGACY_NONCE_FILE);
+        this.ensureDataDir();
+        this.migrateLegacyFile();
+    }
+    ensureDataDir() {
+        try {
+            if (!existsSync(this.dataDir)) {
+                mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
+            }
+            chmodSync(this.dataDir, 0o700);
+        }
+        catch (err) {
+            console.error('Failed to prepare nonce data directory:', err);
+        }
+    }
+    migrateLegacyFile() {
+        if (!existsSync(this.legacyPath) || existsSync(this.persistPath)) {
+            return;
+        }
+        try {
+            const legacyData = readFileSync(this.legacyPath, 'utf8');
+            writeFileSync(this.persistPath, legacyData, { mode: 0o600 });
+            chmodSync(this.persistPath, 0o600);
+            unlinkSync(this.legacyPath);
+        }
+        catch (err) {
+            console.warn('Failed to migrate legacy nonce file:', err);
+        }
     }
     /**
      * Get current nonce and increment for next use
@@ -29,6 +65,33 @@ export class NonceManager {
      */
     getCurrentNonce(publicKeyHex) {
         return this.nonces.get(publicKeyHex) ?? 0n;
+    }
+    /**
+     * Set current nonce explicitly (e.g., after sync or successful submission)
+     */
+    setCurrentNonce(publicKeyHex, nonce) {
+        this.nonces.set(publicKeyHex, nonce);
+    }
+    /**
+     * Serialize nonce usage per public key to avoid concurrent nonce races
+     */
+    async withLock(publicKeyHex, fn) {
+        const pendingLock = this.locks.get(publicKeyHex);
+        if (pendingLock) {
+            await pendingLock;
+        }
+        let releaseLock;
+        const lockPromise = new Promise((resolve) => {
+            releaseLock = resolve;
+        });
+        this.locks.set(publicKeyHex, lockPromise);
+        try {
+            return await fn(this.getCurrentNonce(publicKeyHex));
+        }
+        finally {
+            this.locks.delete(publicKeyHex);
+            releaseLock();
+        }
     }
     /**
      * Mark nonce as confirmed (received in block)
@@ -111,11 +174,13 @@ export class NonceManager {
      */
     persist() {
         try {
+            this.ensureDataDir();
             const data = {};
             for (const [k, v] of this.nonces.entries()) {
                 data[k] = v.toString();
             }
-            writeFileSync(this.persistPath, JSON.stringify(data, null, 2));
+            writeFileSync(this.persistPath, JSON.stringify(data, null, 2), { mode: 0o600 });
+            chmodSync(this.persistPath, 0o600);
         }
         catch (err) {
             console.error('Failed to persist nonces:', err);

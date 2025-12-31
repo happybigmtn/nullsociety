@@ -9,11 +9,14 @@ export declare class SessionManager {
     private nonceManager;
     private submitClient;
     private backendUrl;
+    private sessionCreateAttempts;
     constructor(submitClient: SubmitClient, backendUrl: string, nonceManager?: NonceManager);
+    private generatePrivateKey;
+    private enforceSessionRateLimit;
     /**
      * Create a new session and register player on-chain
      */
-    createSession(ws: WebSocket, options?: SessionCreateOptions): Promise<Session>;
+    createSession(ws: WebSocket, options?: SessionCreateOptions, clientIp?: string): Promise<Session>;
     /**
      * Register player on-chain and connect to updates stream.
      * Note: Players receive INITIAL_CHIPS (1,000) on registration automatically.
@@ -31,6 +34,18 @@ export declare class SessionManager {
      * Deposit chips (CasinoDeposit)
      */
     private depositChips;
+    /**
+     * Refresh balance from backend account state (best-effort).
+     */
+    refreshBalance(session: Session): Promise<bigint | null>;
+    startBalanceRefresh(session: Session, intervalMs: number): void;
+    /**
+     * Request faucet chips (rate-limited client side).
+     */
+    requestFaucet(session: Session, amount: bigint, cooldownMs: number): Promise<{
+        success: boolean;
+        error?: string;
+    }>;
     /**
      * Get session by WebSocket
      */

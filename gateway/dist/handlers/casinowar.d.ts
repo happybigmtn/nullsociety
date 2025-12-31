@@ -1,8 +1,7 @@
 /**
  * Casino War game handler
  *
- * TODO: Import CasinoWarMove from @nullspace/constants when complete
- * The shared package has PlaceBet=0, Deal=1, GoToWar=2, Surrender=3
+ * Uses shared CasinoWarMove constants to align with execution enum values.
  */
 import { GameHandler, type HandlerContext, type HandleResult } from './base.js';
 export declare class CasinoWarHandler extends GameHandler {

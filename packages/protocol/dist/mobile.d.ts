@@ -842,19 +842,19 @@ export declare const BlackjackSplitRequestSchema: z.ZodObject<{
     type: "blackjack_split";
 }>;
 export declare const RouletteBetSchema: z.ZodObject<{
-    type: z.ZodString;
+    type: z.ZodUnion<[z.ZodString, z.ZodNumber]>;
     amount: z.ZodNumber;
     target: z.ZodOptional<z.ZodNumber>;
     number: z.ZodOptional<z.ZodNumber>;
     value: z.ZodOptional<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
-    type: string;
+    type: string | number;
     amount: number;
     number?: number | undefined;
     value?: number | undefined;
     target?: number | undefined;
 }, {
-    type: string;
+    type: string | number;
     amount: number;
     number?: number | undefined;
     value?: number | undefined;
@@ -863,19 +863,19 @@ export declare const RouletteBetSchema: z.ZodObject<{
 export declare const RouletteSpinRequestSchema: z.ZodObject<{
     type: z.ZodLiteral<"roulette_spin">;
     bets: z.ZodArray<z.ZodObject<{
-        type: z.ZodString;
+        type: z.ZodUnion<[z.ZodString, z.ZodNumber]>;
         amount: z.ZodNumber;
         target: z.ZodOptional<z.ZodNumber>;
         number: z.ZodOptional<z.ZodNumber>;
         value: z.ZodOptional<z.ZodNumber>;
     }, "strip", z.ZodTypeAny, {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
         target?: number | undefined;
     }, {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -884,7 +884,7 @@ export declare const RouletteSpinRequestSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     type: "roulette_spin";
     bets: {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -893,7 +893,7 @@ export declare const RouletteSpinRequestSchema: z.ZodObject<{
 }, {
     type: "roulette_spin";
     bets: {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -974,10 +974,13 @@ export declare const HiLoBetRequestSchema: z.ZodObject<{
 }>;
 export declare const HiLoDealRequestSchema: z.ZodObject<{
     type: z.ZodLiteral<"hilo_deal">;
+    amount: z.ZodNumber;
 }, "strip", z.ZodTypeAny, {
     type: "hilo_deal";
+    amount: number;
 }, {
     type: "hilo_deal";
+    amount: number;
 }>;
 export declare const BaccaratBetSchema: z.ZodObject<{
     type: z.ZodEnum<["PLAYER", "BANKER", "TIE", "P_PAIR", "B_PAIR", "LUCKY6", "P_DRAGON", "B_DRAGON", "PANDA8", "P_PERFECT_PAIR", "B_PERFECT_PAIR"]>;
@@ -1111,19 +1114,19 @@ export declare const VideoPokerLegacyHoldRequestSchema: z.ZodObject<{
     holds: boolean[];
 }>;
 export declare const SicBoBetSchema: z.ZodObject<{
-    type: z.ZodString;
+    type: z.ZodUnion<[z.ZodString, z.ZodNumber]>;
     amount: z.ZodNumber;
     target: z.ZodOptional<z.ZodNumber>;
     number: z.ZodOptional<z.ZodNumber>;
     value: z.ZodOptional<z.ZodNumber>;
 }, "strip", z.ZodTypeAny, {
-    type: string;
+    type: string | number;
     amount: number;
     number?: number | undefined;
     value?: number | undefined;
     target?: number | undefined;
 }, {
-    type: string;
+    type: string | number;
     amount: number;
     number?: number | undefined;
     value?: number | undefined;
@@ -1132,19 +1135,19 @@ export declare const SicBoBetSchema: z.ZodObject<{
 export declare const SicBoRollRequestSchema: z.ZodObject<{
     type: z.ZodLiteral<"sic_bo_roll">;
     bets: z.ZodArray<z.ZodObject<{
-        type: z.ZodString;
+        type: z.ZodUnion<[z.ZodString, z.ZodNumber]>;
         amount: z.ZodNumber;
         target: z.ZodOptional<z.ZodNumber>;
         number: z.ZodOptional<z.ZodNumber>;
         value: z.ZodOptional<z.ZodNumber>;
     }, "strip", z.ZodTypeAny, {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
         target?: number | undefined;
     }, {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -1153,7 +1156,7 @@ export declare const SicBoRollRequestSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     type: "sic_bo_roll";
     bets: {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -1162,7 +1165,7 @@ export declare const SicBoRollRequestSchema: z.ZodObject<{
 }, {
     type: "sic_bo_roll";
     bets: {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -1171,19 +1174,19 @@ export declare const SicBoRollRequestSchema: z.ZodObject<{
 }>;
 export declare const SicBoLegacyRollRequestSchema: z.ZodObject<{
     bets: z.ZodArray<z.ZodObject<{
-        type: z.ZodString;
+        type: z.ZodUnion<[z.ZodString, z.ZodNumber]>;
         amount: z.ZodNumber;
         target: z.ZodOptional<z.ZodNumber>;
         number: z.ZodOptional<z.ZodNumber>;
         value: z.ZodOptional<z.ZodNumber>;
     }, "strip", z.ZodTypeAny, {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
         target?: number | undefined;
     }, {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -1194,7 +1197,7 @@ export declare const SicBoLegacyRollRequestSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     type: "sicbo_roll";
     bets: {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -1203,7 +1206,7 @@ export declare const SicBoLegacyRollRequestSchema: z.ZodObject<{
 }, {
     type: "sicbo_roll";
     bets: {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -1435,19 +1438,19 @@ export declare const OutboundMessageSchema: z.ZodDiscriminatedUnion<"type", [z.Z
 }>, z.ZodObject<{
     type: z.ZodLiteral<"roulette_spin">;
     bets: z.ZodArray<z.ZodObject<{
-        type: z.ZodString;
+        type: z.ZodUnion<[z.ZodString, z.ZodNumber]>;
         amount: z.ZodNumber;
         target: z.ZodOptional<z.ZodNumber>;
         number: z.ZodOptional<z.ZodNumber>;
         value: z.ZodOptional<z.ZodNumber>;
     }, "strip", z.ZodTypeAny, {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
         target?: number | undefined;
     }, {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -1456,7 +1459,7 @@ export declare const OutboundMessageSchema: z.ZodDiscriminatedUnion<"type", [z.Z
 }, "strip", z.ZodTypeAny, {
     type: "roulette_spin";
     bets: {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -1465,7 +1468,7 @@ export declare const OutboundMessageSchema: z.ZodDiscriminatedUnion<"type", [z.Z
 }, {
     type: "roulette_spin";
     bets: {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -1529,10 +1532,13 @@ export declare const OutboundMessageSchema: z.ZodDiscriminatedUnion<"type", [z.Z
     choice: "higher" | "lower";
 }>, z.ZodObject<{
     type: z.ZodLiteral<"hilo_deal">;
+    amount: z.ZodNumber;
 }, "strip", z.ZodTypeAny, {
     type: "hilo_deal";
+    amount: number;
 }, {
     type: "hilo_deal";
+    amount: number;
 }>, z.ZodObject<{
     type: z.ZodLiteral<"baccarat_deal">;
     bets: z.ZodArray<z.ZodObject<{
@@ -1646,19 +1652,19 @@ export declare const OutboundMessageSchema: z.ZodDiscriminatedUnion<"type", [z.Z
 }>, z.ZodObject<{
     type: z.ZodLiteral<"sic_bo_roll">;
     bets: z.ZodArray<z.ZodObject<{
-        type: z.ZodString;
+        type: z.ZodUnion<[z.ZodString, z.ZodNumber]>;
         amount: z.ZodNumber;
         target: z.ZodOptional<z.ZodNumber>;
         number: z.ZodOptional<z.ZodNumber>;
         value: z.ZodOptional<z.ZodNumber>;
     }, "strip", z.ZodTypeAny, {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
         target?: number | undefined;
     }, {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -1667,7 +1673,7 @@ export declare const OutboundMessageSchema: z.ZodDiscriminatedUnion<"type", [z.Z
 }, "strip", z.ZodTypeAny, {
     type: "sic_bo_roll";
     bets: {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -1676,7 +1682,7 @@ export declare const OutboundMessageSchema: z.ZodDiscriminatedUnion<"type", [z.Z
 }, {
     type: "sic_bo_roll";
     bets: {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -1684,19 +1690,19 @@ export declare const OutboundMessageSchema: z.ZodDiscriminatedUnion<"type", [z.Z
     }[];
 }>, z.ZodObject<{
     bets: z.ZodArray<z.ZodObject<{
-        type: z.ZodString;
+        type: z.ZodUnion<[z.ZodString, z.ZodNumber]>;
         amount: z.ZodNumber;
         target: z.ZodOptional<z.ZodNumber>;
         number: z.ZodOptional<z.ZodNumber>;
         value: z.ZodOptional<z.ZodNumber>;
     }, "strip", z.ZodTypeAny, {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
         target?: number | undefined;
     }, {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -1707,7 +1713,7 @@ export declare const OutboundMessageSchema: z.ZodDiscriminatedUnion<"type", [z.Z
 }, "strip", z.ZodTypeAny, {
     type: "sicbo_roll";
     bets: {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;
@@ -1716,7 +1722,7 @@ export declare const OutboundMessageSchema: z.ZodDiscriminatedUnion<"type", [z.Z
 }, {
     type: "sicbo_roll";
     bets: {
-        type: string;
+        type: string | number;
         amount: number;
         number?: number | undefined;
         value?: number | undefined;

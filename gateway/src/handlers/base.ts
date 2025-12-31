@@ -15,7 +15,11 @@ import type { NonceManager } from '../session/nonce.js';
 import { ErrorCodes, createError, type ErrorResponse } from '../types/errors.js';
 
 /** Timeout for waiting for game events (ms) */
-const GAME_EVENT_TIMEOUT = 30000;
+const GAME_EVENT_TIMEOUT = (() => {
+  const raw = process.env.GATEWAY_EVENT_TIMEOUT_MS;
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 30000;
+})();
 
 /**
  * Result of handling a message

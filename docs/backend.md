@@ -13,6 +13,7 @@ This document summarizes backend design expectations for the testnet build: erro
 - Simulator rate limits and body size caps are set via config/CLI and env overrides:
   - `RATE_LIMIT_HTTP_PER_SEC`, `RATE_LIMIT_HTTP_BURST`, `RATE_LIMIT_SUBMIT_PER_MIN`, `RATE_LIMIT_SUBMIT_BURST`
   - `ALLOW_HTTP_NO_ORIGIN=1` and `ALLOW_WS_NO_ORIGIN=1` for CLI health checks (no Origin header).
+- Gateway nonce persistence uses `GATEWAY_DATA_DIR` (default: `./.gateway-data`) and writes `nonces.json` with owner-only permissions.
 
 ## Service overview
 - `nullspace-simulator`: HTTP API, WebSocket updates, explorer indexing/persistence, Prometheus metrics.

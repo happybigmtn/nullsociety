@@ -1,10 +1,3 @@
-/**
- * Binary instruction encoders matching Rust types/src/execution.rs
- * All multi-byte integers are Big Endian
- *
- * Note: This module encodes higher-level casino instructions (CasinoStartGame, CasinoGameMove).
- * Game-specific payloads should defer to @nullspace/protocol where possible.
- */
 import { GameType, PlayerAction } from './constants.js';
 import { type BlackjackMoveAction } from '@nullspace/protocol/encode';
 /**

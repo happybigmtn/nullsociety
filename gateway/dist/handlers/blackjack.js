@@ -58,10 +58,21 @@ export class BlackjackHandler extends GameHandler {
     }
     async handleDeal(ctx, msg) {
         const amount = msg.amount;
+        const sideBet21Plus3 = typeof msg.sideBet21Plus3 === 'number'
+            ? msg.sideBet21Plus3
+            : typeof msg.sideBet21p3 === 'number'
+                ? msg.sideBet21p3
+                : 0;
         if (typeof amount !== 'number' || amount <= 0) {
             return {
                 success: false,
                 error: createError(ErrorCodes.INVALID_BET, 'Invalid bet amount'),
+            };
+        }
+        if (typeof sideBet21Plus3 !== 'number' || sideBet21Plus3 < 0) {
+            return {
+                success: false,
+                error: createError(ErrorCodes.INVALID_BET, 'Invalid 21+3 bet amount'),
             };
         }
         const gameSessionId = generateSessionId(ctx.session.publicKey, ctx.session.gameSessionCounter++);
@@ -70,8 +81,13 @@ export class BlackjackHandler extends GameHandler {
         if (!startResult.success) {
             return startResult;
         }
-        // Step 2: Send Deal move to actually deal cards
-        const dealPayload = new Uint8Array([BlackjackMove.Deal]);
+        // Step 2: Send Deal move to actually deal cards (atomic deal when side bet is set)
+        let dealPayload = new Uint8Array([BlackjackMove.Deal]);
+        if (sideBet21Plus3 > 0) {
+            dealPayload = new Uint8Array(9);
+            dealPayload[0] = 7; // atomic deal opcode (shares value with Surrender)
+            new DataView(dealPayload.buffer).setBigUint64(1, BigInt(sideBet21Plus3), false);
+        }
         const dealResult = await this.makeMove(ctx, dealPayload);
         if (!dealResult.success) {
             return dealResult;
