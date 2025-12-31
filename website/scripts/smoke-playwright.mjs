@@ -20,6 +20,7 @@ const SIMULATOR_BIN =
 const EXECUTOR_BIN =
   process.env.SMOKE_EXECUTOR_BIN || path.join(REPO_DIR, 'target', 'release', 'dev-executor');
 const ONCHAIN = /^(1|true)$/i.test(process.env.SMOKE_ONCHAIN || '');
+const SKIP_BACKEND = /^(1|true)$/i.test(process.env.SMOKE_SKIP_BACKEND || '');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -121,16 +122,21 @@ function startVite(extraEnv) {
 
 async function run() {
   const envFile = path.join(WEBSITE_DIR, '.env');
+  const envLocalFile = path.join(WEBSITE_DIR, '.env.local');
   const envFromFile = readDotEnv(envFile);
-  const identityHex = process.env.VITE_IDENTITY || envFromFile.VITE_IDENTITY;
+  const envFromLocal = readDotEnv(envLocalFile);
+  const identityHex =
+    process.env.VITE_IDENTITY || envFromLocal.VITE_IDENTITY || envFromFile.VITE_IDENTITY;
 
   let backend = null;
   if (ONCHAIN) {
     if (!identityHex) {
-      throw new Error(`Missing VITE_IDENTITY (set env or add ${envFile})`);
+      throw new Error(`Missing VITE_IDENTITY (set env or add ${envFile} / ${envLocalFile})`);
     }
-    backend = startBackend(identityHex);
-    await waitForSimulatorReady(SIMULATOR_URL);
+    if (!SKIP_BACKEND) {
+      backend = startBackend(identityHex);
+    }
+    await waitForSimulatorReady(SIMULATOR_URL, 60_000);
   }
 
   const server = startVite(ONCHAIN ? { VITE_URL: SIMULATOR_URL, VITE_IDENTITY: identityHex } : {});
@@ -146,6 +152,15 @@ async function run() {
     try {
       const page = await browser.newPage({ baseURL: BASE_URL });
       page.setDefaultTimeout(25_000);
+      page.on('console', (msg) => {
+        const type = msg.type();
+        if (type === 'warning' || type === 'error') {
+          console.warn(`[browser:${type}]`, msg.text());
+        }
+      });
+      page.on('pageerror', (error) => {
+        console.warn('[browser:pageerror]', error?.message ?? error);
+      });
 
       await page.addInitScript(
         ({ vaultEnabled }) => {
@@ -247,10 +262,14 @@ async function run() {
           await page.keyboard.press('Escape');
         }
 
-        await page
+        const networkBadge = page.getByText(/localnet|testnet/i).first();
+        await networkBadge.waitFor({ timeout: 60_000 });
+        const offlineBadge = page
           .getByText(/localnet\s*·\s*offline|testnet\s*·\s*offline/i)
-          .first()
-          .waitFor({ state: 'hidden', timeout: 60_000 });
+          .first();
+        if (await offlineBadge.isVisible().catch(() => false)) {
+          await offlineBadge.waitFor({ state: 'hidden', timeout: 60_000 });
+        }
       }
 
       const gamesButton = page.getByRole('button', { name: /^games$/i });
@@ -259,11 +278,25 @@ async function run() {
       await page.getByPlaceholder(/search nullspace|type command/i).fill('blackjack');
       await page.getByText(/^blackjack$/i).first().waitFor({ timeout: 10000 });
       await page.getByText(/^blackjack$/i).first().click();
-      await page
-        .locator('#casino-main h2')
-        .filter({ hasText: /place bets|place your bet/i })
-        .first()
-        .waitFor({ timeout: 60_000 });
+      const casinoHeadlines = async () =>
+        (await page.locator('#casino-main h2').allTextContents())
+          .map((text) => text.trim())
+          .filter(Boolean);
+
+      try {
+        await page
+          .locator('#casino-main h2')
+          .filter({ hasText: /place bets|place your bet/i })
+          .first()
+          .waitFor({ timeout: 60_000 });
+      } catch (error) {
+        console.warn('[smoke] casino headlines after blackjack:', await casinoHeadlines());
+        const snapshot = await page.locator('#casino-main').innerText().catch(() => '');
+        if (snapshot) {
+          console.warn('[smoke] casino main text:', snapshot.slice(0, 300));
+        }
+        throw error;
+      }
       await dismissOverlays();
 
         if (await openSafety()) {

@@ -136,10 +136,14 @@ done
 
 # Start simulator/indexer (use binary directly for speed)
 echo -e "${GREEN}Starting simulator (indexer mode)...${NC}"
-./target/release/nullspace-simulator \
-    --host 0.0.0.0 \
-    --port 8080 \
-    --identity "$IDENTITY" &
+SIMULATOR_ARGS=(--host 0.0.0.0 --port 8080 --identity "$IDENTITY")
+if [ -n "${SIMULATOR_WS_MAX_CONNECTIONS:-}" ]; then
+    SIMULATOR_ARGS+=(--ws-max-connections "$SIMULATOR_WS_MAX_CONNECTIONS")
+fi
+if [ -n "${SIMULATOR_WS_MAX_CONNECTIONS_PER_IP:-}" ]; then
+    SIMULATOR_ARGS+=(--ws-max-connections-per-ip "$SIMULATOR_WS_MAX_CONNECTIONS_PER_IP")
+fi
+./target/release/nullspace-simulator "${SIMULATOR_ARGS[@]}" &
 PIDS+=($!)
 
 # Wait for simulator to be ready
