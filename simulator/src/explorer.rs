@@ -25,7 +25,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::Simulator;
+use crate::{ExplorerMetrics, Simulator};
 
 const EXPLORER_CACHE_CONTROL: &str = "public, max-age=2, stale-while-revalidate=10";
 
@@ -243,7 +243,12 @@ fn enforce_game_events_retention(
     }
 }
 
-fn record_event(explorer: &mut ExplorerState, event: &Event, height: u64) {
+fn record_event(
+    explorer: &mut ExplorerState,
+    event: &Event,
+    height: u64,
+    metrics: &ExplorerMetrics,
+) {
     let event_name = match event {
         Event::CasinoPlayerRegistered { .. } => "CasinoPlayerRegistered",
         Event::CasinoDeposited { .. } => "CasinoDeposited",
@@ -286,8 +291,8 @@ fn record_event(explorer: &mut ExplorerState, event: &Event, height: u64) {
         Event::RewardsClaimed { .. } => "RewardsClaimed",
     };
 
-        let max_account_entries = explorer.max_account_entries;
-        let max_game_events_per_account = explorer.max_game_events_per_account;
+    let max_account_entries = explorer.max_account_entries;
+    let max_game_events_per_account = explorer.max_game_events_per_account;
     let mut touch_account = |pk: &PublicKey| {
         {
             let activity = explorer
@@ -307,8 +312,13 @@ fn record_event(explorer: &mut ExplorerState, event: &Event, height: u64) {
     match event {
         Event::CasinoPlayerRegistered { player, .. } => touch_account(player),
         Event::CasinoDeposited { player, .. } => touch_account(player),
-        Event::CasinoGameStarted { player, .. } => touch_account(player),
-        Event::CasinoGameMoved { .. } => {} // broadcasted; not account-specific
+        Event::CasinoGameStarted { player, .. } => {
+            metrics.inc_casino_started();
+            touch_account(player);
+        }
+        Event::CasinoGameMoved { .. } => {
+            metrics.inc_casino_moved();
+        } // broadcasted; not account-specific
         Event::CasinoGameCompleted {
             session_id,
             player,
@@ -320,6 +330,7 @@ fn record_event(explorer: &mut ExplorerState, event: &Event, height: u64) {
             logs,
             ..
         } => {
+            metrics.inc_casino_completed();
             touch_account(player);
             // Index the game event with its logs
             let indexed_event = IndexedGameEvent {
@@ -342,13 +353,21 @@ fn record_event(explorer: &mut ExplorerState, event: &Event, height: u64) {
             }
             explorer.touch_game_events_lru(player);
         }
-        Event::CasinoLeaderboardUpdated { .. } => {}
-        Event::CasinoError { player, .. } => touch_account(player),
+        Event::CasinoLeaderboardUpdated { .. } => {
+            metrics.inc_casino_leaderboard_update();
+        }
+        Event::CasinoError { player, .. } => {
+            metrics.inc_casino_error();
+            touch_account(player);
+        }
         Event::PlayerModifierToggled { player, .. } => touch_account(player),
-        Event::TournamentStarted { .. } => {}
+        Event::TournamentStarted { .. } => {
+            metrics.inc_tournament_started();
+        }
         Event::PlayerJoined { player, .. } => touch_account(player),
         Event::TournamentPhaseChanged { .. } => {}
         Event::TournamentEnded { rankings, .. } => {
+            metrics.inc_tournament_ended();
             for (pk, _) in rankings {
                 touch_account(pk);
             }
@@ -534,6 +553,7 @@ pub(crate) fn apply_block_indexing(
     progress: &Progress,
     ops: &[Keyless<Output>],
     indexed_at_ms: u64,
+    metrics: &ExplorerMetrics,
 ) -> bool {
     if explorer.indexed_blocks.contains_key(&progress.height) {
         return false;
@@ -585,7 +605,7 @@ pub(crate) fn apply_block_indexing(
                 explorer.touch_account_lru(&tx.public);
             }
             Keyless::Append(Output::Event(evt)) => {
-                record_event(explorer, evt, progress.height);
+                record_event(explorer, evt, progress.height, metrics);
             }
             _ => {}
         }
@@ -632,7 +652,13 @@ impl Simulator {
         let indexed_at_ms = Self::now_ms();
         let applied = {
             let mut explorer = self.explorer.write().await;
-            apply_block_indexing(&mut explorer, progress, ops, indexed_at_ms)
+            apply_block_indexing(
+                &mut explorer,
+                progress,
+                ops,
+                indexed_at_ms,
+                self.explorer_metrics.as_ref(),
+            )
         };
 
         if applied {

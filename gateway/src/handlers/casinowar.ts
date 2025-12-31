@@ -1,18 +1,13 @@
 /**
  * Casino War game handler
  *
- * TODO: Import CasinoWarMove from @nullspace/constants when complete
- * The shared package has PlaceBet=0, Deal=1, GoToWar=2, Surrender=3
+ * Uses shared CasinoWarMove constants to align with execution enum values.
  */
 import { GameHandler, type HandlerContext, type HandleResult } from './base.js';
 import { GameType } from '../codec/index.js';
 import { generateSessionId } from '../codec/transactions.js';
 import { ErrorCodes, createError } from '../types/errors.js';
-// Import shared CasinoWarMove from @nullspace/constants
 import { CasinoWarMove as SharedCasinoWarMove } from '@nullspace/constants';
-
-// Local CasinoWarMove aligns with shared package
-// TODO: Replace magic numbers with SharedCasinoWarMove once verified
 
 export class CasinoWarHandler extends GameHandler {
   constructor() {
@@ -65,13 +60,12 @@ export class CasinoWarHandler extends GameHandler {
 
   private async handleWar(ctx: HandlerContext): Promise<HandleResult> {
     // Go to war action
-    const payload = new Uint8Array([1]);
+    const payload = new Uint8Array([SharedCasinoWarMove.War]);
     return this.makeMove(ctx, payload);
   }
 
   private async handleSurrender(ctx: HandlerContext): Promise<HandleResult> {
-    // Surrender action (Move::Surrender = 2 in casino_war.rs)
-    const payload = new Uint8Array([2]);
+    const payload = new Uint8Array([SharedCasinoWarMove.Surrender]);
     return this.makeMove(ctx, payload);
   }
 }

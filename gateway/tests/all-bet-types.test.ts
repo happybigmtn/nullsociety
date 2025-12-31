@@ -1,10 +1,13 @@
 /**
- * Comprehensive Bet Type Testing
- * Tests ALL bet types and bonus bets for each game
+ * Comprehensive bet type testing for gateway integration.
+ * Tests ALL bet types and bonus bets for each game.
  */
 import WebSocket from 'ws';
+import { describe, it, expect } from 'vitest';
 
-const GATEWAY_URL = 'ws://localhost:9010';
+const GATEWAY_PORT = process.env.TEST_GATEWAY_PORT || '9010';
+const GATEWAY_URL = `ws://localhost:${GATEWAY_PORT}`;
+const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
 
 interface TestResult {
   game: string;
@@ -465,7 +468,7 @@ async function runOtherGamesTests(): Promise<TestResult[]> {
   return results;
 }
 
-async function runAllTests() {
+async function runAllTests(): Promise<TestResult[]> {
   console.log('╔════════════════════════════════════════════════════════════╗');
   console.log('║       COMPREHENSIVE BET TYPE TESTING                       ║');
   console.log('╠════════════════════════════════════════════════════════════╣');
@@ -496,7 +499,17 @@ async function runAllTests() {
     }
   }
 
-  process.exit(failed > 0 ? 1 : 0);
+  return allResults;
 }
 
-runAllTests();
+describe.skipIf(!INTEGRATION_ENABLED)('Gateway bet type coverage', () => {
+  it(
+    'executes all bet types against a live gateway',
+    async () => {
+      const results = await runAllTests();
+      const failed = results.filter((result) => result.status === 'failed');
+      expect(failed).toEqual([]);
+    },
+    180_000
+  );
+});

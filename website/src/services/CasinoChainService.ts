@@ -6,6 +6,7 @@
 import { GameType, CasinoGameStartedEvent, CasinoGameMovedEvent, CasinoGameCompletedEvent, PlayerBalanceSnapshot } from '@nullspace/types/casino';
 import { CasinoClient } from '../api/client.js';
 import { snakeToCamel } from '../utils/caseNormalizer';
+import { logDebug } from '../utils/logger';
 
 // Type for CasinoClient with nonceManager methods (for runtime type assertions)
 interface NonceManagerResult {
@@ -288,7 +289,7 @@ export class CasinoChainService {
       const normalized = snakeToCamel(event) as any;
 
       // DEBUG: Log raw event from chain
-      console.log('[CasinoChainService] Raw CasinoGameStarted event:', {
+      logDebug('[CasinoChainService] Raw CasinoGameStarted event:', {
         rawSessionId: normalized.sessionId,
         rawSessionIdType: typeof normalized.sessionId,
         rawGameType: normalized.gameType,
@@ -305,7 +306,7 @@ export class CasinoChainService {
           bet: BigInt(normalized.bet),
           initialState: this.hexToBytes(normalized.initialState),
         };
-        console.log('[CasinoChainService] Parsed CasinoGameStarted:', {
+        logDebug('[CasinoChainService] Parsed CasinoGameStarted:', {
           sessionId: parsed.sessionId.toString(),
           sessionIdType: typeof parsed.sessionId,
           gameType: parsed.gameType,
@@ -324,7 +325,7 @@ export class CasinoChainService {
       const normalized = snakeToCamel(event) as any;
 
       // DEBUG: Log raw event from chain
-      console.log('[CasinoChainService] Raw CasinoGameMoved event:', {
+      logDebug('[CasinoChainService] Raw CasinoGameMoved event:', {
         rawSessionId: normalized.sessionId,
         rawSessionIdType: typeof normalized.sessionId,
         rawMoveNumber: normalized.moveNumber,
@@ -338,7 +339,7 @@ export class CasinoChainService {
           newState: this.hexToBytes(normalized.newState),
           playerBalances: parsePlayerBalances(normalized.playerBalances),
         };
-        console.log('[CasinoChainService] Parsed CasinoGameMoved:', {
+        logDebug('[CasinoChainService] Parsed CasinoGameMoved:', {
           sessionId: parsed.sessionId.toString(),
           sessionIdType: typeof parsed.sessionId,
           moveNumber: parsed.moveNumber,
@@ -356,7 +357,7 @@ export class CasinoChainService {
       const normalized = snakeToCamel(event) as any;
 
       // DEBUG: Log raw event from chain
-      console.log('[CasinoChainService] Raw CasinoGameCompleted event:', {
+      logDebug('[CasinoChainService] Raw CasinoGameCompleted event:', {
         rawSessionId: normalized.sessionId,
         rawSessionIdType: typeof normalized.sessionId,
         rawPayout: normalized.payout,
@@ -376,7 +377,7 @@ export class CasinoChainService {
           wasDoubled: normalized.wasDoubled,
           playerBalances: parsePlayerBalances(normalized.playerBalances),
         };
-        console.log('[CasinoChainService] Parsed sessionId:', parsed.sessionId.toString(), 'type:', typeof parsed.sessionId);
+        logDebug('[CasinoChainService] Parsed sessionId:', parsed.sessionId.toString(), 'type:', typeof parsed.sessionId);
         this.gameCompletedHandlers.forEach(h => h(parsed));
       } catch (error) {
         console.error('[CasinoChainService] Failed to parse CasinoGameCompleted:', error);
@@ -385,7 +386,7 @@ export class CasinoChainService {
 
     this.client.onEvent('CasinoLeaderboardUpdated', (event: any) => {
       const normalized = snakeToCamel(event) as any;
-      console.log('[CasinoChainService] CasinoLeaderboardUpdated event:', normalized);
+      logDebug('[CasinoChainService] CasinoLeaderboardUpdated event:', normalized);
       try {
         if (normalized.leaderboard) {
           this.leaderboardUpdatedHandlers.forEach(h => h(normalized.leaderboard));
@@ -439,7 +440,7 @@ export class CasinoChainService {
    */
   generateNextSessionId(): bigint {
     const sessionId = sessionIdCounter++;
-    console.log('[CasinoChainService] generateNextSessionId:', sessionId.toString());
+    logDebug('[CasinoChainService] generateNextSessionId:', sessionId.toString());
     return sessionId;
   }
 
@@ -450,7 +451,7 @@ export class CasinoChainService {
    * @returns Object with session ID and transaction hash
    */
   async startGameWithSessionId(gameType: GameType, bet: bigint, sessionId: bigint): Promise<{ sessionId: bigint; txHash?: string }> {
-    console.log('[CasinoChainService] startGameWithSessionId:', sessionId.toString(), 'type:', typeof sessionId);
+    logDebug('[CasinoChainService] startGameWithSessionId:', sessionId.toString(), 'type:', typeof sessionId);
 
     // Use the NonceManager to submit the transaction
     const result = await this.client.nonceManager.submitCasinoStartGame(gameType, bet, sessionId);

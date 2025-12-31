@@ -13,7 +13,7 @@ use commonware_runtime::{
     deterministic::{self, Runner},
     Clock, Metrics, Runner as _, Spawner,
 };
-use commonware_utils::{quorum, NZUsize};
+use commonware_utils::{quorum, NZU64, NZUsize};
 use engine::{Config, Engine};
 use governor::Quota;
 use indexer::Mock;
@@ -21,7 +21,7 @@ use nullspace_types::execution::{Instruction, Transaction};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::{
     collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
-    num::{NonZeroU32, NonZeroUsize},
+    num::{NonZeroU32, NonZeroU64, NonZeroUsize},
     time::Duration,
 };
 use tracing::info;
@@ -35,6 +35,24 @@ const BUFFER_POOL_PAGE_SIZE: NonZeroUsize = NZUsize!(4_096);
 
 /// The buffer pool capacity.
 const BUFFER_POOL_CAPACITY: NonZeroUsize = NZUsize!(1024 * 1024);
+
+const PRUNABLE_ITEMS_PER_SECTION: NonZeroU64 = NZU64!(4_096);
+const IMMUTABLE_ITEMS_PER_SECTION: NonZeroU64 = NZU64!(262_144);
+const FREEZER_TABLE_RESIZE_FREQUENCY: u8 = 4;
+const FREEZER_TABLE_RESIZE_CHUNK_SIZE: u32 = 2u32.pow(16);
+const FREEZER_JOURNAL_TARGET_SIZE: u64 = 1024 * 1024 * 1024;
+const FREEZER_JOURNAL_COMPRESSION: Option<u8> = Some(3);
+const MMR_ITEMS_PER_BLOB: NonZeroU64 = NZU64!(128_000);
+const LOG_ITEMS_PER_SECTION: NonZeroU64 = NZU64!(64_000);
+const LOCATIONS_ITEMS_PER_BLOB: NonZeroU64 = NZU64!(128_000);
+const CERTIFICATES_ITEMS_PER_BLOB: NonZeroU64 = NZU64!(128_000);
+const CACHE_ITEMS_PER_BLOB: NonZeroU64 = NZU64!(256);
+const REPLAY_BUFFER: NonZeroUsize = NZUsize!(8 * 1024 * 1024);
+const WRITE_BUFFER: NonZeroUsize = NZUsize!(1024 * 1024);
+const MAX_REPAIR: u64 = 20;
+const PRUNE_INTERVAL: u64 = 10_000;
+const ANCESTRY_CACHE_ENTRIES: usize = 64;
+const PROOF_QUEUE_SIZE: usize = 64;
 
 #[test]
 fn config_redacted_debug_does_not_leak_secrets() {
@@ -78,6 +96,23 @@ fn config_redacted_debug_does_not_leak_secrets() {
         finalized_freezer_table_initial_size: 2u32.pow(21),
         buffer_pool_page_size: 4_096,
         buffer_pool_capacity: 32_768,
+        prunable_items_per_section: 4_096,
+        immutable_items_per_section: 262_144,
+        freezer_table_resize_frequency: 4,
+        freezer_table_resize_chunk_size: 2u32.pow(16),
+        freezer_journal_target_size: 1024 * 1024 * 1024,
+        freezer_journal_compression: Some(3),
+        mmr_items_per_blob: 128_000,
+        log_items_per_section: 64_000,
+        locations_items_per_blob: 128_000,
+        certificates_items_per_blob: 128_000,
+        cache_items_per_blob: 256,
+        replay_buffer_bytes: 8 * 1024 * 1024,
+        write_buffer_bytes: 1024 * 1024,
+        max_repair: 20,
+        prune_interval: 10_000,
+        ancestry_cache_entries: 64,
+        proof_queue_size: 64,
         pending_rate_per_second: 128,
         recovered_rate_per_second: 128,
         resolver_rate_per_second: 128,
@@ -243,6 +278,20 @@ fn all_online(n: u32, seed: u64, link: Link, required: u64) -> String {
                     finalized_freezer_table_initial_size: FREEZER_TABLE_INITIAL_SIZE,
                     buffer_pool_page_size: BUFFER_POOL_PAGE_SIZE,
                     buffer_pool_capacity: BUFFER_POOL_CAPACITY,
+                    prunable_items_per_section: PRUNABLE_ITEMS_PER_SECTION,
+                    immutable_items_per_section: IMMUTABLE_ITEMS_PER_SECTION,
+                    freezer_table_resize_frequency: FREEZER_TABLE_RESIZE_FREQUENCY,
+                    freezer_table_resize_chunk_size: FREEZER_TABLE_RESIZE_CHUNK_SIZE,
+                    freezer_journal_target_size: FREEZER_JOURNAL_TARGET_SIZE,
+                    freezer_journal_compression: FREEZER_JOURNAL_COMPRESSION,
+                    mmr_items_per_blob: MMR_ITEMS_PER_BLOB,
+                    log_items_per_section: LOG_ITEMS_PER_SECTION,
+                    locations_items_per_blob: LOCATIONS_ITEMS_PER_BLOB,
+                    certificates_items_per_blob: CERTIFICATES_ITEMS_PER_BLOB,
+                    cache_items_per_blob: CACHE_ITEMS_PER_BLOB,
+                    replay_buffer: REPLAY_BUFFER,
+                    write_buffer: WRITE_BUFFER,
+                    max_repair: MAX_REPAIR,
                 },
                 consensus: engine::ConsensusConfig {
                     mailbox_size: 1024,
@@ -269,6 +318,9 @@ fn all_online(n: u32, seed: u64, link: Link, required: u64) -> String {
                     mempool_stream_buffer_size: 4_096,
                     nonce_cache_capacity: 100_000,
                     nonce_cache_ttl: Duration::from_secs(600),
+                    prune_interval: PRUNE_INTERVAL,
+                    ancestry_cache_entries: ANCESTRY_CACHE_ENTRIES,
+                    proof_queue_size: PROOF_QUEUE_SIZE,
                 },
             };
             let engine = Engine::new(context.with_label(&uid), config).await;
@@ -491,6 +543,20 @@ fn test_backfill() {
                     finalized_freezer_table_initial_size: FREEZER_TABLE_INITIAL_SIZE,
                     buffer_pool_page_size: BUFFER_POOL_PAGE_SIZE,
                     buffer_pool_capacity: BUFFER_POOL_CAPACITY,
+                    prunable_items_per_section: PRUNABLE_ITEMS_PER_SECTION,
+                    immutable_items_per_section: IMMUTABLE_ITEMS_PER_SECTION,
+                    freezer_table_resize_frequency: FREEZER_TABLE_RESIZE_FREQUENCY,
+                    freezer_table_resize_chunk_size: FREEZER_TABLE_RESIZE_CHUNK_SIZE,
+                    freezer_journal_target_size: FREEZER_JOURNAL_TARGET_SIZE,
+                    freezer_journal_compression: FREEZER_JOURNAL_COMPRESSION,
+                    mmr_items_per_blob: MMR_ITEMS_PER_BLOB,
+                    log_items_per_section: LOG_ITEMS_PER_SECTION,
+                    locations_items_per_blob: LOCATIONS_ITEMS_PER_BLOB,
+                    certificates_items_per_blob: CERTIFICATES_ITEMS_PER_BLOB,
+                    cache_items_per_blob: CACHE_ITEMS_PER_BLOB,
+                    replay_buffer: REPLAY_BUFFER,
+                    write_buffer: WRITE_BUFFER,
+                    max_repair: MAX_REPAIR,
                 },
                 consensus: engine::ConsensusConfig {
                     mailbox_size: 1024,
@@ -517,6 +583,9 @@ fn test_backfill() {
                     mempool_stream_buffer_size: 4_096,
                     nonce_cache_capacity: 100_000,
                     nonce_cache_ttl: Duration::from_secs(600),
+                    prune_interval: PRUNE_INTERVAL,
+                    ancestry_cache_entries: ANCESTRY_CACHE_ENTRIES,
+                    proof_queue_size: PROOF_QUEUE_SIZE,
                 },
             };
             let engine = Engine::new(context.with_label(&uid), config).await;
@@ -613,6 +682,20 @@ fn test_backfill() {
                 finalized_freezer_table_initial_size: FREEZER_TABLE_INITIAL_SIZE,
                 buffer_pool_page_size: BUFFER_POOL_PAGE_SIZE,
                 buffer_pool_capacity: BUFFER_POOL_CAPACITY,
+                prunable_items_per_section: PRUNABLE_ITEMS_PER_SECTION,
+                immutable_items_per_section: IMMUTABLE_ITEMS_PER_SECTION,
+                freezer_table_resize_frequency: FREEZER_TABLE_RESIZE_FREQUENCY,
+                freezer_table_resize_chunk_size: FREEZER_TABLE_RESIZE_CHUNK_SIZE,
+                freezer_journal_target_size: FREEZER_JOURNAL_TARGET_SIZE,
+                freezer_journal_compression: FREEZER_JOURNAL_COMPRESSION,
+                mmr_items_per_blob: MMR_ITEMS_PER_BLOB,
+                log_items_per_section: LOG_ITEMS_PER_SECTION,
+                locations_items_per_blob: LOCATIONS_ITEMS_PER_BLOB,
+                certificates_items_per_blob: CERTIFICATES_ITEMS_PER_BLOB,
+                cache_items_per_blob: CACHE_ITEMS_PER_BLOB,
+                replay_buffer: REPLAY_BUFFER,
+                write_buffer: WRITE_BUFFER,
+                max_repair: MAX_REPAIR,
             },
             consensus: engine::ConsensusConfig {
                 mailbox_size: 1024,
@@ -639,6 +722,9 @@ fn test_backfill() {
                 mempool_stream_buffer_size: 4_096,
                 nonce_cache_capacity: 100_000,
                 nonce_cache_ttl: Duration::from_secs(600),
+                prune_interval: PRUNE_INTERVAL,
+                ancestry_cache_entries: ANCESTRY_CACHE_ENTRIES,
+                proof_queue_size: PROOF_QUEUE_SIZE,
             },
         };
         let engine = Engine::new(context.with_label(&uid), config).await;
@@ -780,6 +866,20 @@ fn test_unclean_shutdown() {
                         finalized_freezer_table_initial_size: FREEZER_TABLE_INITIAL_SIZE,
                         buffer_pool_page_size: BUFFER_POOL_PAGE_SIZE,
                         buffer_pool_capacity: BUFFER_POOL_CAPACITY,
+                        prunable_items_per_section: PRUNABLE_ITEMS_PER_SECTION,
+                        immutable_items_per_section: IMMUTABLE_ITEMS_PER_SECTION,
+                        freezer_table_resize_frequency: FREEZER_TABLE_RESIZE_FREQUENCY,
+                        freezer_table_resize_chunk_size: FREEZER_TABLE_RESIZE_CHUNK_SIZE,
+                        freezer_journal_target_size: FREEZER_JOURNAL_TARGET_SIZE,
+                        freezer_journal_compression: FREEZER_JOURNAL_COMPRESSION,
+                        mmr_items_per_blob: MMR_ITEMS_PER_BLOB,
+                        log_items_per_section: LOG_ITEMS_PER_SECTION,
+                        locations_items_per_blob: LOCATIONS_ITEMS_PER_BLOB,
+                        certificates_items_per_blob: CERTIFICATES_ITEMS_PER_BLOB,
+                        cache_items_per_blob: CACHE_ITEMS_PER_BLOB,
+                        replay_buffer: REPLAY_BUFFER,
+                        write_buffer: WRITE_BUFFER,
+                        max_repair: MAX_REPAIR,
                     },
                     consensus: engine::ConsensusConfig {
                         mailbox_size: 1024,
@@ -806,6 +906,9 @@ fn test_unclean_shutdown() {
                         mempool_stream_buffer_size: 4_096,
                         nonce_cache_capacity: 100_000,
                         nonce_cache_ttl: Duration::from_secs(600),
+                        prune_interval: PRUNE_INTERVAL,
+                        ancestry_cache_entries: ANCESTRY_CACHE_ENTRIES,
+                        proof_queue_size: PROOF_QUEUE_SIZE,
                     },
                 };
                 let engine = Engine::new(context.with_label(&uid), config).await;
@@ -1017,6 +1120,20 @@ fn test_execution(seed: u64, link: Link) -> String {
                     finalized_freezer_table_initial_size: FREEZER_TABLE_INITIAL_SIZE,
                     buffer_pool_page_size: BUFFER_POOL_PAGE_SIZE,
                     buffer_pool_capacity: BUFFER_POOL_CAPACITY,
+                    prunable_items_per_section: PRUNABLE_ITEMS_PER_SECTION,
+                    immutable_items_per_section: IMMUTABLE_ITEMS_PER_SECTION,
+                    freezer_table_resize_frequency: FREEZER_TABLE_RESIZE_FREQUENCY,
+                    freezer_table_resize_chunk_size: FREEZER_TABLE_RESIZE_CHUNK_SIZE,
+                    freezer_journal_target_size: FREEZER_JOURNAL_TARGET_SIZE,
+                    freezer_journal_compression: FREEZER_JOURNAL_COMPRESSION,
+                    mmr_items_per_blob: MMR_ITEMS_PER_BLOB,
+                    log_items_per_section: LOG_ITEMS_PER_SECTION,
+                    locations_items_per_blob: LOCATIONS_ITEMS_PER_BLOB,
+                    certificates_items_per_blob: CERTIFICATES_ITEMS_PER_BLOB,
+                    cache_items_per_blob: CACHE_ITEMS_PER_BLOB,
+                    replay_buffer: REPLAY_BUFFER,
+                    write_buffer: WRITE_BUFFER,
+                    max_repair: MAX_REPAIR,
                 },
                 consensus: engine::ConsensusConfig {
                     mailbox_size: 1024,
@@ -1043,6 +1160,9 @@ fn test_execution(seed: u64, link: Link) -> String {
                     mempool_stream_buffer_size: 4_096,
                     nonce_cache_capacity: 100_000,
                     nonce_cache_ttl: Duration::from_secs(600),
+                    prune_interval: PRUNE_INTERVAL,
+                    ancestry_cache_entries: ANCESTRY_CACHE_ENTRIES,
+                    proof_queue_size: PROOF_QUEUE_SIZE,
                 },
             };
             let engine = Engine::new(context.with_label(&uid), config).await;

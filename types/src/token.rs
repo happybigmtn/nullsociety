@@ -4,7 +4,8 @@
 
 use bytes::{Buf, BufMut};
 use commonware_codec::{EncodeSize, FixedSize, Read, ReadExt, Write};
-use commonware_cryptography::ed25519::PublicKey;
+use commonware_cryptography::ed25519::{PrivateKey, PublicKey};
+use commonware_cryptography::{PrivateKeyExt, Signer};
 use commonware_utils::{from_hex, hex};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -108,7 +109,8 @@ impl Default for TokenMetadata {
         ];
 
         let mut reader = &bytes[..];
-        let authority = PublicKey::read(&mut reader).expect("valid public key");
+        let authority = PublicKey::read(&mut reader)
+            .unwrap_or_else(|_| PrivateKey::from_seed(0).public_key());
 
         Self {
             name: "Unknown".to_string(),

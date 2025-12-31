@@ -45,6 +45,7 @@
 use super::super_mode::apply_super_multiplier_cards;
 use super::{cards, CasinoGame, GameError, GameResult, GameRng};
 use nullspace_types::casino::{GameSession, UTH_PROGRESSIVE_BASE_JACKPOT};
+use std::fmt::Write;
 
 const STATE_VERSION: u8 = 3;
 const CARD_UNKNOWN: u8 = 0xFF;
@@ -195,6 +196,9 @@ fn parse_state(state: &[u8]) -> Option<UthState> {
     if state.len() < STATE_LEN_BASE || state[0] != STATE_VERSION {
         return None;
     }
+    if state.len() != STATE_LEN_BASE && state.len() != STATE_LEN_WITH_RULES {
+        return None;
+    }
 
     let stage = Stage::try_from(state[1]).ok()?;
     let player = [state[2], state[3]];
@@ -202,6 +206,18 @@ fn parse_state(state: &[u8]) -> Option<UthState> {
     let dealer = [state[9], state[10]];
     let play_mult = state[11];
     let bonus = [state[12], state[13], state[14], state[15]];
+    if play_mult > 4 {
+        return None;
+    }
+    if player
+        .iter()
+        .chain(community.iter())
+        .chain(dealer.iter())
+        .chain(bonus.iter())
+        .any(|&card| card >= 52 && card != CARD_UNKNOWN)
+    {
+        return None;
+    }
     let trips_bet = u64::from_be_bytes(state[16..24].try_into().ok()?);
     let six_card_bonus_bet = u64::from_be_bytes(state[24..32].try_into().ok()?);
     let progressive_bet = u64::from_be_bytes(state[32..40].try_into().ok()?);
@@ -559,6 +575,24 @@ fn uth_progressive_return(hole: &[u8; 2], flop: &[u8; 3], progressive_bet: u64) 
     }
 }
 
+fn format_card_list(cards: &[u8]) -> String {
+    let mut out = String::new();
+    for (idx, card) in cards.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        let _ = write!(out, "{}", card);
+    }
+    out
+}
+
+fn push_resolved_entry(out: &mut String, label: &str, pnl: i64) {
+    if !out.is_empty() {
+        out.push(',');
+    }
+    let _ = write!(out, r#"{{"label":"{}","pnl":{}}}"#, label, pnl);
+}
+
 fn resolve_showdown(
     session: &mut GameSession,
     state: &mut UthState,
@@ -620,24 +654,24 @@ fn resolve_showdown(
         || (player_hand.0 == dealer_hand.0 && player_hand.1 > dealer_hand.1);
     let tie = player_hand.0 == dealer_hand.0 && player_hand.1 == dealer_hand.1;
 
-    let mut total_return: u64 = 0;
+    let mut progressive_return: u64 = 0;
+    let mut trips_return: u64 = 0;
+    let mut six_card_return: u64 = 0;
+    let mut ante_return: u64 = 0;
+    let mut blind_return: u64 = 0;
+    let mut play_return: u64 = 0;
 
     // Progressive side bet (independent of dealer; based on hole + flop only).
     if progressive_bet > 0 {
         let flop = [state.community[0], state.community[1], state.community[2]];
-        total_return = total_return.saturating_add(uth_progressive_return(
-            &state.player,
-            &flop,
-            progressive_bet,
-        ));
+        progressive_return = uth_progressive_return(&state.player, &flop, progressive_bet);
     }
 
     // Trips side bet (independent of dealer).
     if trips_bet > 0 {
         let mult = trips_multiplier(player_hand.0);
         if mult > 0 {
-            total_return =
-                total_return.saturating_add(trips_bet.saturating_mul(mult.saturating_add(1)));
+            trips_return = trips_bet.saturating_mul(mult.saturating_add(1));
         }
     }
 
@@ -654,55 +688,76 @@ fn resolve_showdown(
         let rank = evaluate_best_6_card_bonus(&cards);
         let mult = six_card_bonus_multiplier(rank);
         if mult > 0 {
-            total_return = total_return
-                .saturating_add(six_card_bonus_bet.saturating_mul(mult.saturating_add(1)));
+            six_card_return = six_card_bonus_bet.saturating_mul(mult.saturating_add(1));
         }
     }
 
     // Main bets.
     if state.play_mult == 0 {
-        // Fold: lose Ante and Blind; only Trips can return.
+        // Fold: lose Ante and Blind; only side bets can return.
     } else if tie {
         // All main bets push on tie.
-        total_return = total_return
-            .saturating_add(ante)
-            .saturating_add(blind)
-            .saturating_add(play_bet);
+        ante_return = ante;
+        blind_return = blind;
+        play_return = play_bet;
     } else if player_wins {
         // Play always pays 1:1 when player wins.
-        total_return = total_return.saturating_add(play_bet.saturating_mul(2));
+        play_return = play_bet.saturating_mul(2);
 
         // Ante: pushes if dealer doesn't qualify, otherwise pays 1:1.
         if dealer_qualifies {
-            total_return = total_return.saturating_add(ante.saturating_mul(2));
+            ante_return = ante.saturating_mul(2);
         } else {
-            total_return = total_return.saturating_add(ante);
+            ante_return = ante;
         }
 
         // Blind: pays bonus on straight+; otherwise pushes (on a win).
         let blind_bonus = blind_bonus_winnings(ante, player_hand.0);
-        total_return = total_return.saturating_add(blind.saturating_add(blind_bonus));
+        blind_return = blind.saturating_add(blind_bonus);
     } else {
         // Player loses.
         // Ante pushes if dealer doesn't qualify; otherwise it loses.
         if !dealer_qualifies {
-            total_return = total_return.saturating_add(ante);
+            ante_return = ante;
         }
         // Blind and Play lose.
     }
 
-    // Apply super mode multiplier (if any) to the full credited return.
-    if session.super_mode.is_active && total_return > 0 {
-        total_return = apply_super_multiplier_cards(
-            &player_cards,
-            &session.super_mode.multipliers,
-            total_return,
-        );
+    // Apply super mode multiplier (if any) to each credited return.
+    if session.super_mode.is_active {
+        let apply_super = |amount: u64| {
+            if amount > 0 {
+                apply_super_multiplier_cards(
+                    &player_cards,
+                    &session.super_mode.multipliers,
+                    amount,
+                )
+            } else {
+                0
+            }
+        };
+        progressive_return = apply_super(progressive_return);
+        trips_return = apply_super(trips_return);
+        six_card_return = apply_super(six_card_return);
+        ante_return = apply_super(ante_return);
+        blind_return = apply_super(blind_return);
+        play_return = apply_super(play_return);
     }
+
+    let total_return = progressive_return
+        .saturating_add(trips_return)
+        .saturating_add(six_card_return)
+        .saturating_add(ante_return)
+        .saturating_add(blind_return)
+        .saturating_add(play_return);
 
     state.stage = Stage::Showdown;
     session.is_complete = true;
 
+    let clamp_i64 = |value: i128| -> i64 {
+        value
+            .clamp(i64::MIN as i128, i64::MAX as i128) as i64
+    };
     // Generate logs for frontend display
     let hand_rank_str = |rank: HandRank| -> &'static str {
         match rank {
@@ -718,6 +773,9 @@ fn resolve_showdown(
             HandRank::RoyalFlush => "ROYAL_FLUSH",
         }
     };
+    let format_rank = |rank: HandRank| -> String {
+        hand_rank_str(rank).replace('_', " ")
+    };
 
     let outcome = if state.play_mult == 0 {
         "FOLD"
@@ -729,12 +787,60 @@ fn resolve_showdown(
         "LOSS"
     };
 
-    let player_cards_str = state.player.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(",");
-    let dealer_cards_str = state.dealer.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(",");
-    let community_cards_str = state.community.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(",");
+    let player_cards_str = format_card_list(&state.player);
+    let dealer_cards_str = format_card_list(&state.dealer);
+    let community_cards_str = format_card_list(&state.community);
+
+    let mut resolved_entries = String::new();
+    let mut resolved_sum: i128 = 0;
+    let ante_pnl = clamp_i64(i128::from(ante_return) - i128::from(ante));
+    push_resolved_entry(&mut resolved_entries, "ANTE", ante_pnl);
+    resolved_sum = resolved_sum.saturating_add(i128::from(ante_pnl));
+    let blind_pnl = clamp_i64(i128::from(blind_return) - i128::from(blind));
+    push_resolved_entry(&mut resolved_entries, "BLIND", blind_pnl);
+    resolved_sum = resolved_sum.saturating_add(i128::from(blind_pnl));
+    if play_bet > 0 || outcome == "FOLD" {
+        let play_pnl = clamp_i64(i128::from(play_return) - i128::from(play_bet));
+        push_resolved_entry(&mut resolved_entries, "PLAY", play_pnl);
+        resolved_sum = resolved_sum.saturating_add(i128::from(play_pnl));
+    }
+    if trips_bet > 0 {
+        let pnl = clamp_i64(i128::from(trips_return) - i128::from(trips_bet));
+        push_resolved_entry(&mut resolved_entries, "TRIPS", pnl);
+        resolved_sum = resolved_sum.saturating_add(i128::from(pnl));
+    }
+    if six_card_bonus_bet > 0 {
+        let pnl = clamp_i64(i128::from(six_card_return) - i128::from(six_card_bonus_bet));
+        push_resolved_entry(&mut resolved_entries, "SIX CARD", pnl);
+        resolved_sum = resolved_sum.saturating_add(i128::from(pnl));
+    }
+    if progressive_bet > 0 {
+        let pnl = clamp_i64(i128::from(progressive_return) - i128::from(progressive_bet));
+        push_resolved_entry(&mut resolved_entries, "PROGRESSIVE", pnl);
+        resolved_sum = resolved_sum.saturating_add(i128::from(pnl));
+    }
+    let net_pnl = clamp_i64(i128::from(total_return) - i128::from(total_wagered));
+    let diff = i128::from(net_pnl).saturating_sub(resolved_sum);
+    if diff != 0 {
+        push_resolved_entry(&mut resolved_entries, "ADJUSTMENT", clamp_i64(diff));
+    }
+    let mut summary = format!(
+        "P: {}, D: {}",
+        format_rank(player_hand.0),
+        format_rank(dealer_hand.0)
+    );
+    if !dealer_qualifies {
+        summary.push_str(" (NO QUALIFY)");
+    }
+    if outcome == "FOLD" {
+        summary.push_str(" (FOLD)");
+    }
 
     let logs = vec![format!(
-        r#"{{"player":{{"cards":[{}],"rank":"{}"}},"dealer":{{"cards":[{}],"rank":"{}","qualifies":{}}},"community":[{}],"outcome":"{}","anteBet":{},"blindBet":{},"playBet":{},"playMultiplier":{},"tripsBet":{},"sixCardBet":{},"progressiveBet":{},"totalWagered":{},"totalReturn":{}}}"#,
+        r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"player":{{"cards":[{}],"rank":"{}"}},"dealer":{{"cards":[{}],"rank":"{}","qualifies":{}}},"community":[{}],"outcome":"{}","anteBet":{},"blindBet":{},"playBet":{},"playMultiplier":{},"tripsBet":{},"sixCardBet":{},"progressiveBet":{},"anteReturn":{},"blindReturn":{},"playReturn":{},"tripsReturn":{},"sixCardReturn":{},"progressiveReturn":{},"totalWagered":{},"totalReturn":{}}}"#,
+        summary,
+        net_pnl,
+        resolved_entries,
         player_cards_str,
         hand_rank_str(player_hand.0),
         dealer_cards_str,
@@ -749,6 +855,12 @@ fn resolve_showdown(
         trips_bet,
         six_card_bonus_bet,
         progressive_bet,
+        ante_return,
+        blind_return,
+        play_return,
+        trips_return,
+        six_card_return,
+        progressive_return,
         total_wagered,
         total_return
     )];
@@ -1055,10 +1167,12 @@ impl CasinoGame for UltimateHoldem {
 }
 
 #[cfg(test)]
+#[allow(unused_must_use)]
 mod tests {
     use super::*;
     use crate::mocks::{create_account_keypair, create_network_keypair, create_seed};
     use nullspace_types::casino::GameType;
+    use rand::{rngs::StdRng, Rng, SeedableRng};
 
     fn create_test_seed() -> nullspace_types::Seed {
         let (network_secret, _) = create_network_keypair();
@@ -1114,6 +1228,101 @@ mod tests {
         let state = parse_state(&session.state_blob).expect("Failed to parse state");
         assert_eq!(state.stage, Stage::Betting);
         assert_eq!(state.player, [CARD_UNKNOWN; 2]);
+    }
+
+    #[test]
+    fn test_state_blob_fuzz_does_not_panic() {
+        let mut rng = StdRng::seed_from_u64(0x5eed_7715);
+        for _ in 0..1_000 {
+            let len = rng.gen_range(0..=192);
+            let mut blob = vec![0u8; len];
+            rng.fill(&mut blob[..]);
+            let _ = parse_state(&blob);
+        }
+    }
+
+    #[test]
+    fn test_dealer_non_qualify_player_win_pushes_ante() {
+        let mut session = create_test_session(100);
+        let mut state = UthState {
+            stage: Stage::AwaitingReveal,
+            player: [0, 13], // A♠, A♥
+            community: [40, 32, 47, 17, 2], // 2♣, 7♦, 9♣, 5♥, 3♠
+            dealer: [12, 24], // K♠, Q♥
+            play_mult: 2,
+            trips_bet: 0,
+            bonus: [CARD_UNKNOWN; 4],
+            six_card_bonus_bet: 0,
+            progressive_bet: 0,
+            rules: UthRules {
+                dealer_qualification: DealerQualification::PairPlus,
+                allow_preflop_3x: true,
+                allow_preflop_4x: true,
+            },
+        };
+
+        let result = resolve_showdown(&mut session, &mut state).expect("resolve showdown");
+        assert!(matches!(result, GameResult::Win(600, _)));
+        assert!(session.is_complete);
+        assert_eq!(state.stage, Stage::Showdown);
+    }
+
+    #[test]
+    fn test_dealer_non_qualify_player_loss_pushes_ante() {
+        let mut session = create_test_session(100);
+        let mut state = UthState {
+            stage: Stage::AwaitingReveal,
+            player: [46, 15], // 8♣, 3♥
+            community: [1, 30, 21, 42, 45], // 2♠, 5♦, 9♥, 4♣, 7♣
+            dealer: [12, 35], // K♠, 10♦
+            play_mult: 2,
+            trips_bet: 0,
+            bonus: [CARD_UNKNOWN; 4],
+            six_card_bonus_bet: 0,
+            progressive_bet: 0,
+            rules: UthRules {
+                dealer_qualification: DealerQualification::PairPlus,
+                allow_preflop_3x: true,
+                allow_preflop_4x: true,
+            },
+        };
+
+        let result = resolve_showdown(&mut session, &mut state).expect("resolve showdown");
+        assert!(matches!(result, GameResult::Win(100, _)));
+        assert!(session.is_complete);
+        assert_eq!(state.stage, Stage::Showdown);
+    }
+
+    #[test]
+    fn test_blind_bonus_winnings_table() {
+        let ante = 100;
+        assert_eq!(blind_bonus_winnings(ante, HandRank::RoyalFlush), 50_000);
+        assert_eq!(blind_bonus_winnings(ante, HandRank::StraightFlush), 5_000);
+        assert_eq!(blind_bonus_winnings(ante, HandRank::FourOfAKind), 1_000);
+        assert_eq!(blind_bonus_winnings(ante, HandRank::FullHouse), 300);
+        assert_eq!(blind_bonus_winnings(ante, HandRank::Flush), 150);
+        assert_eq!(blind_bonus_winnings(ante, HandRank::Straight), 100);
+        assert_eq!(blind_bonus_winnings(ante, HandRank::Pair), 0);
+    }
+
+    #[test]
+    fn test_trips_multiplier_table() {
+        assert_eq!(trips_multiplier(HandRank::RoyalFlush), 50);
+        assert_eq!(trips_multiplier(HandRank::Straight), 4);
+        assert_eq!(trips_multiplier(HandRank::ThreeOfAKind), 3);
+        assert_eq!(trips_multiplier(HandRank::Pair), 0);
+    }
+
+    #[test]
+    fn test_six_card_bonus_multiplier_table() {
+        assert_eq!(six_card_bonus_multiplier(HandRank::RoyalFlush), 1000);
+        assert_eq!(six_card_bonus_multiplier(HandRank::StraightFlush), 200);
+        assert_eq!(six_card_bonus_multiplier(HandRank::FourOfAKind), 100);
+        assert_eq!(six_card_bonus_multiplier(HandRank::FullHouse), 20);
+        assert_eq!(six_card_bonus_multiplier(HandRank::Flush), 15);
+        assert_eq!(six_card_bonus_multiplier(HandRank::Straight), 10);
+        assert_eq!(six_card_bonus_multiplier(HandRank::ThreeOfAKind), 7);
+        assert_eq!(six_card_bonus_multiplier(HandRank::Pair), 0);
     }
 
     #[test]

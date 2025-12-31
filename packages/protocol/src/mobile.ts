@@ -29,9 +29,11 @@ export const StateUpdateMessageSchema = BaseMessageSchema.extend({
 export const GameResultMessageSchema = BaseMessageSchema.extend({
   type: z.literal('game_result'),
   won: z.boolean(),
-  payout: z.number(),
+  payout: z.union([z.number(), z.string()]),
   message: z.string().optional(),
-});
+  finalChips: z.union([z.number(), z.string()]).optional(),
+  balance: z.union([z.number(), z.string()]).optional(),
+}).passthrough();
 
 // Error message
 export const ErrorMessageSchema = BaseMessageSchema.extend({
@@ -40,8 +42,55 @@ export const ErrorMessageSchema = BaseMessageSchema.extend({
   message: z.string(),
 });
 
+export const SessionReadyMessageSchema = BaseMessageSchema.extend({
+  type: z.literal('session_ready'),
+  sessionId: z.string(),
+  publicKey: z.string(),
+  registered: z.boolean(),
+  hasBalance: z.boolean(),
+  balance: z.union([z.number(), z.string()]).optional(),
+}).passthrough();
+
+export const BalanceMessageSchema = BaseMessageSchema.extend({
+  type: z.literal('balance'),
+  registered: z.boolean(),
+  hasBalance: z.boolean(),
+  publicKey: z.string(),
+  balance: z.union([z.number(), z.string()]).optional(),
+  message: z.string().optional(),
+}).passthrough();
+
+export const GameStartedMessageSchema = BaseMessageSchema.extend({
+  type: z.literal('game_started'),
+  gameType: z.number().optional(),
+  sessionId: z.string(),
+  bet: z.union([z.number(), z.string()]).optional(),
+  state: z.array(z.number()).optional(),
+  initialState: z.unknown().optional(),
+  balance: z.union([z.number(), z.string()]).optional(),
+}).passthrough();
+
+export const GameMoveMessageSchema = BaseMessageSchema.extend({
+  type: z.literal('game_move'),
+  sessionId: z.string(),
+  moveNumber: z.number().optional(),
+  gameType: z.number().optional(),
+  state: z.array(z.number()).optional(),
+  balance: z.union([z.number(), z.string()]).optional(),
+}).passthrough();
+
+export const MoveAcceptedMessageSchema = BaseMessageSchema.extend({
+  type: z.literal('move_accepted'),
+  sessionId: z.string(),
+}).passthrough();
+
 // Generic game message union (base types)
 export const GameMessageSchema = z.discriminatedUnion('type', [
+  SessionReadyMessageSchema,
+  BalanceMessageSchema,
+  GameStartedMessageSchema,
+  GameMoveMessageSchema,
+  MoveAcceptedMessageSchema,
   StateUpdateMessageSchema,
   GameResultMessageSchema,
   ErrorMessageSchema,
@@ -202,6 +251,11 @@ export const UltimateTXMessageSchema = BaseMessageSchema.extend({
 });
 
 export type GameMessage = z.infer<typeof GameMessageSchema>;
+export type SessionReadyMessage = z.infer<typeof SessionReadyMessageSchema>;
+export type BalanceMessage = z.infer<typeof BalanceMessageSchema>;
+export type GameStartedMessage = z.infer<typeof GameStartedMessageSchema>;
+export type GameMoveMessage = z.infer<typeof GameMoveMessageSchema>;
+export type MoveAcceptedMessage = z.infer<typeof MoveAcceptedMessageSchema>;
 export type BlackjackMessage = z.infer<typeof BlackjackMessageSchema>;
 export type RouletteMessage = z.infer<typeof RouletteMessageSchema>;
 export type HiLoMessage = z.infer<typeof HiLoMessageSchema>;
@@ -423,6 +477,12 @@ export const UltimateTXLegacyFoldRequestSchema = UltimateTXFoldRequestSchema.ext
   type: z.literal('ultimateholdem_fold'),
 });
 
+// --- System Outbound ---
+export const FaucetClaimRequestSchema = z.object({
+  type: z.literal('faucet_claim'),
+  amount: z.number().positive().optional(),
+});
+
 // --- Outbound Message Union ---
 export const OutboundMessageSchema = z.discriminatedUnion('type', [
   // Blackjack
@@ -472,6 +532,7 @@ export const OutboundMessageSchema = z.discriminatedUnion('type', [
   UltimateTXLegacyBetRequestSchema,
   UltimateTXLegacyCheckRequestSchema,
   UltimateTXLegacyFoldRequestSchema,
+  FaucetClaimRequestSchema,
 ]);
 
 // Outbound type exports
@@ -504,6 +565,7 @@ export type UltimateTXDealRequest = z.infer<typeof UltimateTXDealRequestSchema>;
 export type UltimateTXBetRequest = z.infer<typeof UltimateTXBetRequestSchema>;
 export type UltimateTXCheckRequest = z.infer<typeof UltimateTXCheckRequestSchema>;
 export type UltimateTXFoldRequest = z.infer<typeof UltimateTXFoldRequestSchema>;
+export type FaucetClaimRequest = z.infer<typeof FaucetClaimRequestSchema>;
 export type OutboundMessage = z.infer<typeof OutboundMessageSchema>;
 
 /**

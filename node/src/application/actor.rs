@@ -54,13 +54,6 @@ const LATENCY: [f64; 20] = [
     0.100, 0.200, 0.500, 1.0, 2.0, 5.0, 10.0,
 ];
 
-/// Attempt to prune the state every 10000 blocks (randomly).
-const PRUNE_INTERVAL: u64 = 10_000;
-
-/// Upper bound on cached ancestry results.
-const ANCESTRY_CACHE_ENTRIES: usize = 64;
-const PROOF_QUEUE_SIZE: usize = 64;
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct AncestryCacheKey {
     start: Digest,
@@ -173,12 +166,6 @@ impl NonceCache {
         }
     }
 
-    fn is_expired(&self, entry: &NonceCacheEntry, now: SystemTime) -> bool {
-        match now.duration_since(entry.last_seen) {
-            Ok(elapsed) => elapsed > self.ttl,
-            Err(_) => false,
-        }
-    }
 }
 
 struct ProofJob<R: Clock> {
@@ -302,6 +289,9 @@ pub struct Actor<R: Rng + CryptoRng + Spawner + Metrics + Clock + Storage, I: In
     mempool_stream_buffer_size: usize,
     nonce_cache_capacity: usize,
     nonce_cache_ttl: Duration,
+    prune_interval: u64,
+    ancestry_cache_entries: usize,
+    proof_queue_size: usize,
 }
 
 impl<R: Rng + CryptoRng + Spawner + Metrics + Clock + Storage, I: Indexer> Actor<R, I> {
@@ -340,6 +330,9 @@ impl<R: Rng + CryptoRng + Spawner + Metrics + Clock + Storage, I: Indexer> Actor
                 mempool_stream_buffer_size: config.mempool_stream_buffer_size,
                 nonce_cache_capacity: config.nonce_cache_capacity,
                 nonce_cache_ttl: config.nonce_cache_ttl,
+                prune_interval: config.prune_interval,
+                ancestry_cache_entries: config.ancestry_cache_entries,
+                proof_queue_size: config.proof_queue_size,
             },
             view_supervisor,
             epoch_supervisor,
@@ -579,7 +572,9 @@ impl<R: Rng + CryptoRng + Spawner + Metrics + Clock + Storage, I: Indexer> Actor
         let built: Option<(View, Block)> = None;
         let built = Arc::new(Mutex::new(built));
 
-        let ancestry_cache = Arc::new(Mutex::new(AncestryCache::new(ANCESTRY_CACHE_ENTRIES)));
+        let ancestry_cache = Arc::new(Mutex::new(AncestryCache::new(
+            self.ancestry_cache_entries,
+        )));
 
         // Initialize mempool
         let mut mempool = Mempool::new_with_limits(
@@ -590,16 +585,17 @@ impl<R: Rng + CryptoRng + Spawner + Metrics + Clock + Storage, I: Indexer> Actor
         let mut next_nonce_cache =
             NonceCache::new(self.nonce_cache_capacity, self.nonce_cache_ttl);
 
-        let (mut proof_tx, mut proof_rx) = mpsc::channel(PROOF_QUEUE_SIZE);
+        let (mut proof_tx, mut proof_rx) = mpsc::channel(self.proof_queue_size);
         let (proof_err_tx, mut proof_err_rx) = oneshot::channel::<()>();
         let proof_state = state.clone();
         let proof_events = events.clone();
         let mut proof_aggregator = aggregator.clone();
         let proof_prune_latency = prune_latency.clone();
         let proof_storage_prune_errors = storage_prune_errors.clone();
+        let prune_interval = self.prune_interval;
         let _proof_handle = self.context.with_label("proofs").spawn({
             move |mut context| async move {
-                let mut next_prune = context.gen_range(1..=PRUNE_INTERVAL);
+                let mut next_prune = context.gen_range(1..=prune_interval);
                 while let Some(job) = proof_rx.next().await {
                     let ProofJob {
                         view,
@@ -698,7 +694,7 @@ impl<R: Rng + CryptoRng + Spawner + Metrics + Clock + Storage, I: Indexer> Actor
                             warn!(?err, height, "failed to prune storage");
                         }
                         drop(timer);
-                        next_prune = context.gen_range(1..=PRUNE_INTERVAL);
+                        next_prune = context.gen_range(1..=prune_interval);
                     }
                 }
             }

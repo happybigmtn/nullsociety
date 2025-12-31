@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import RetroBox from './RetroBox';
 import RetroText from './RetroText';
 import { generateTrainerName } from '../utils/trainerUtils';
+import { logDebug } from '../utils/logger.js';
 
 const EventExplorer = ({ client, onBack }) => {
   const [events, setEvents] = useState([]);
@@ -16,7 +17,7 @@ const EventExplorer = ({ client, onBack }) => {
     // Switch to 'all' filter when entering explorer
     const switchToAllEvents = async () => {
       try {
-        console.log('Switching to all events stream for EventExplorer');
+        logDebug('Switching to all events stream for EventExplorer');
         await client.switchUpdates(null); // null = all events
       } catch (error) {
         console.error('Failed to switch to all events:', error);
@@ -29,7 +30,7 @@ const EventExplorer = ({ client, onBack }) => {
     return () => {
       const switchToAccountEvents = async () => {
         try {
-          console.log('Switching back to account-specific events');
+          logDebug('Switching back to account-specific events');
           // Get the current public key from the nonce manager
           const publicKey = client.nonceManager.publicKeyBytes;
           if (!publicKey) {

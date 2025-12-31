@@ -56,6 +56,16 @@ path = "src/bin/bridge_relayer.rs"
 required-features = []
 
 [[bin]]
+name = "tournament-scheduler"
+path = "src/bin/tournament_scheduler.rs"
+required-features = []
+
+[[bin]]
+name = "session-dump"
+path = "src/bin/session_dump.rs"
+required-features = []
+
+[[bin]]
 name = "recovery-pool"
 path = "src/bin/recovery_pool.rs"
 required-features = []

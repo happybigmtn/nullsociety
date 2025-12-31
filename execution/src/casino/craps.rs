@@ -29,8 +29,9 @@
 //!                          Note: Odds cannot be added in atomic batch
 
 use super::super_mode::apply_super_multiplier_total;
-use super::{CasinoGame, GameError, GameResult, GameRng};
+use super::{limits, CasinoGame, GameError, GameResult, GameRng};
 use nullspace_types::casino::GameSession;
+use std::fmt::Write;
 
 /// Payout multipliers for Craps (expressed as "to 1" winnings unless noted).
 mod payouts {
@@ -67,7 +68,6 @@ mod payouts {
 }
 
 const STATE_VERSION: u8 = 2;
-const MAX_BETS: usize = 20;
 #[cfg(test)]
 const BUY_COMMISSION_BPS: u64 = 500; // 5.00%
 #[cfg(test)]
@@ -254,13 +254,13 @@ pub struct CrapsBet {
 
 impl CrapsBet {
     /// Serialize to 19 bytes
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(19);
-        bytes.push(self.bet_type as u8);
-        bytes.push(self.target);
-        bytes.push(self.status as u8);
-        bytes.extend_from_slice(&self.amount.to_be_bytes());
-        bytes.extend_from_slice(&self.odds_amount.to_be_bytes());
+    fn to_bytes(&self) -> [u8; 19] {
+        let mut bytes = [0u8; 19];
+        bytes[0] = self.bet_type as u8;
+        bytes[1] = self.target;
+        bytes[2] = self.status as u8;
+        bytes[3..11].copy_from_slice(&self.amount.to_be_bytes());
+        bytes[11..19].copy_from_slice(&self.odds_amount.to_be_bytes());
         bytes
     }
 
@@ -274,6 +274,9 @@ impl CrapsBet {
         let status = BetStatus::try_from(bytes[2]).ok()?;
         let amount = u64::from_be_bytes(bytes[3..11].try_into().ok()?);
         let odds_amount = u64::from_be_bytes(bytes[11..19].try_into().ok()?);
+        if amount == 0 {
+            return None;
+        }
         Some(CrapsBet {
             bet_type,
             target,
@@ -281,6 +284,36 @@ impl CrapsBet {
             amount,
             odds_amount,
         })
+    }
+}
+
+fn is_valid_bet_state(bet: &CrapsBet) -> bool {
+    match bet.bet_type {
+        BetType::Pass | BetType::DontPass => {
+            bet.status == BetStatus::On && (bet.target == 0 || is_point_total(bet.target))
+        }
+        BetType::Come | BetType::DontCome => match bet.status {
+            BetStatus::Pending => bet.target == 0,
+            BetStatus::On => is_point_total(bet.target),
+        },
+        BetType::Field => bet.status == BetStatus::On && bet.target == 0,
+        BetType::Yes | BetType::No => {
+            bet.status == BetStatus::On && (2..=12).contains(&bet.target) && bet.target != 7
+        }
+        BetType::Next => bet.status == BetStatus::On && (2..=12).contains(&bet.target),
+        BetType::Hardway4 => bet.status == BetStatus::On && (bet.target == 0 || bet.target == 4),
+        BetType::Hardway6 => bet.status == BetStatus::On && (bet.target == 0 || bet.target == 6),
+        BetType::Hardway8 => bet.status == BetStatus::On && (bet.target == 0 || bet.target == 8),
+        BetType::Hardway10 => bet.status == BetStatus::On && (bet.target == 0 || bet.target == 10),
+        BetType::Fire
+        | BetType::AtsSmall
+        | BetType::AtsTall
+        | BetType::AtsAll
+        | BetType::Muggsy
+        | BetType::DiffDoubles
+        | BetType::RideLine
+        | BetType::Replay
+        | BetType::HotRoller => bet.status == BetStatus::On && bet.target == 0,
     }
 }
 
@@ -335,40 +368,103 @@ fn generate_craps_logs(
     total_wagered: u64,
     total_return: u64,
 ) -> Vec<String> {
+    let clamp_i64 = |value: i128| -> i64 {
+        value
+            .clamp(i64::MIN as i128, i64::MAX as i128) as i64
+    };
     let d1 = state.d1;
     let d2 = state.d2;
     let total = d1.saturating_add(d2);
 
     // Build bet results array
-    let bet_results: Vec<String> = resolved_bets
-        .iter()
-        .map(|(bet_type, target, wagered, return_amount, odds)| {
-            let outcome = if *return_amount > *wagered {
-                "WIN"
-            } else if *return_amount == *wagered {
-                "PUSH"
-            } else {
-                "LOSS"
-            };
-            if *target > 0 {
-                format!(
-                    r#"{{"type":"{}","target":{},"wagered":{},"odds":{},"return":{},"outcome":"{}"}}"#,
-                    bet_type_str(*bet_type), target, wagered, odds, return_amount, outcome
-                )
-            } else {
-                format!(
-                    r#"{{"type":"{}","wagered":{},"odds":{},"return":{},"outcome":"{}"}}"#,
-                    bet_type_str(*bet_type), wagered, odds, return_amount, outcome
-                )
-            }
-        })
-        .collect();
-
-    let bets_json = bet_results.join(",");
+    let mut bet_results = String::new();
+    let mut resolved_entries = String::new();
+    let mut resolved_sum: i128 = 0;
+    let mut total_odds: u64 = 0;
+    for (idx, (bet_type, target, wagered, return_amount, odds)) in
+        resolved_bets.iter().enumerate()
+    {
+        if idx > 0 {
+            bet_results.push(',');
+            resolved_entries.push(',');
+        }
+        let outcome = if *return_amount > *wagered {
+            "WIN"
+        } else if *return_amount == *wagered {
+            "PUSH"
+        } else {
+            "LOSS"
+        };
+        let type_label = bet_type_str(*bet_type);
+        let label = if type_label.starts_with("HARDWAY_") {
+            format!("HARDWAY {}", &type_label["HARDWAY_".len()..])
+        } else if *target > 0 {
+            format!("{} {}", type_label, target)
+        } else {
+            type_label.to_string()
+        };
+        let pnl = clamp_i64(
+            i128::from(*return_amount)
+                .saturating_sub(i128::from(*wagered))
+                .saturating_sub(i128::from(*odds)),
+        );
+        resolved_sum = resolved_sum.saturating_add(i128::from(pnl));
+        total_odds = total_odds.saturating_add(*odds);
+        let _ = write!(resolved_entries, r#"{{"label":"{}","pnl":{}}}"#, label, pnl);
+        if *target > 0 {
+            let _ = write!(
+                bet_results,
+                r#"{{"type":"{}","target":{},"wagered":{},"odds":{},"return":{},"outcome":"{}"}}"#,
+                type_label,
+                target,
+                wagered,
+                odds,
+                return_amount,
+                outcome
+            );
+        } else {
+            let _ = write!(
+                bet_results,
+                r#"{{"type":"{}","wagered":{},"odds":{},"return":{},"outcome":"{}"}}"#,
+                type_label,
+                wagered,
+                odds,
+                return_amount,
+                outcome
+            );
+        }
+    }
+    let summary = format!("Roll: {} ({}-{})", total, d1, d2);
+    let net_from_totals =
+        i128::from(total_return).saturating_sub(i128::from(total_wagered)).saturating_sub(
+            i128::from(total_odds),
+        );
+    let net_pnl = clamp_i64(net_from_totals);
+    let diff = i128::from(net_pnl).saturating_sub(resolved_sum);
+    if diff != 0 {
+        if !resolved_entries.is_empty() {
+            resolved_entries.push(',');
+        }
+        let _ = write!(
+            resolved_entries,
+            r#"{{"label":"ADJUSTMENT","pnl":{}}}"#,
+            clamp_i64(diff)
+        );
+    }
 
     vec![format!(
-        r#"{{"dice":[{},{}],"total":{},"phase":"{}","point":{},"bets":[{}],"totalWagered":{},"totalReturn":{}}}"#,
-        d1, d2, total, phase_str(state.phase), state.main_point, bets_json, total_wagered, total_return
+        r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"dice":[{},{}],"total":{},"phase":"{}","point":{},"bets":[{}],"totalWagered":{},"totalReturn":{}}}"#,
+        summary,
+        net_pnl,
+        resolved_entries,
+        d1,
+        d2,
+        total,
+        phase_str(state.phase),
+        state.main_point,
+        bet_results,
+        total_wagered,
+        total_return
     )]
 }
 
@@ -431,8 +527,16 @@ impl CrapsState {
         let bet_count = blob[7] as usize;
         let header_len = 8usize;
 
+        if (d1 > 6 || d2 > 6) || (d1 == 0 && d2 != 0) || (d1 != 0 && d2 == 0) {
+            return None;
+        }
+
+        if main_point != 0 && !matches!(main_point, 4 | 5 | 6 | 8 | 9 | 10) {
+            return None;
+        }
+
         // Validate bet count against maximum to prevent DoS via large allocations
-        if bet_count > MAX_BETS {
+        if bet_count > limits::CRAPS_MAX_BETS {
             return None;
         }
 
@@ -450,17 +554,21 @@ impl CrapsState {
                 return None;
             }
             let bet = CrapsBet::from_bytes(&blob[offset..offset + 19])?;
+            if !is_valid_bet_state(&bet) {
+                return None;
+            }
             bets.push(bet);
             offset += 19;
         }
 
-        let (field_paytable, buy_commission_timing) = if blob.len() >= offset + 2 {
-            (
+        let remaining = blob.len().saturating_sub(offset);
+        let (field_paytable, buy_commission_timing) = match remaining {
+            0 => (FieldPaytable::default(), BuyCommissionTiming::default()),
+            2 => (
                 FieldPaytable::try_from(blob[offset]).ok()?,
                 BuyCommissionTiming::try_from(blob[offset + 1]).ok()?,
-            )
-        } else {
-            (FieldPaytable::default(), BuyCommissionTiming::default())
+            ),
+            _ => return None,
         };
 
         Some(CrapsState {
@@ -626,7 +734,10 @@ fn calculate_next_payout(target: u8, total: u8, amount: u64) -> u64 {
     }
 
     // Payout based on probability
-    let ways = WAYS[target as usize];
+    let ways = WAYS.get(target as usize).copied().unwrap_or(0);
+    if ways == 0 {
+        return 0;
+    }
     let multiplier: u64 = match ways {
         1 => payouts::NEXT_1_WAY,   // 2 or 12
         2 => payouts::NEXT_2_WAYS,  // 3 or 11
@@ -1514,7 +1625,7 @@ impl CasinoGame for Craps {
 
                 // Validate bet
                 super::payload::ensure_nonzero_amount(amount)?;
-                if state.bets.len() >= MAX_BETS {
+                if state.bets.len() >= limits::CRAPS_MAX_BETS {
                     return Err(GameError::InvalidMove);
                 }
 
@@ -1678,11 +1789,10 @@ impl CasinoGame for Craps {
                 state.d2 = d2;
 
                 // Capture bet info before processing (for logs)
-                let bets_snapshot: Vec<(BetType, u8, u64, u64)> = state
-                    .bets
-                    .iter()
-                    .map(|b| (b.bet_type, b.target, b.amount, b.odds_amount))
-                    .collect();
+                let mut bets_snapshot = Vec::with_capacity(state.bets.len());
+                for bet in &state.bets {
+                    bets_snapshot.push((bet.bet_type, bet.target, bet.amount, bet.odds_amount));
+                }
 
                 // Process roll
                 let results = process_roll(&mut state, d1, d2);
@@ -1692,7 +1802,8 @@ impl CasinoGame for Craps {
                 let mut total_wagered: u64 = 0;
                 let mut total_loss: u64 = 0;
                 let mut resolved_indices = Vec::with_capacity(state.bets.len());
-                let mut resolved_bets: Vec<(BetType, u8, u64, u64, u64)> = Vec::new();
+                let mut resolved_bets: Vec<(BetType, u8, u64, u64, u64)> =
+                    Vec::with_capacity(results.len());
 
                 for result in results {
                     if result.resolved {
@@ -1722,25 +1833,24 @@ impl CasinoGame for Craps {
                     session.is_complete = true;
                     // Determine if this is a pure push (all bets returned stake, no wins/losses)
                     let is_pure_push = total_return == total_wagered && total_loss == 0 && total_wagered > 0;
+                    let final_return = if !is_pure_push && total_return > 0 && session.super_mode.is_active {
+                        let dice_total = d1.saturating_add(d2);
+                        apply_super_multiplier_total(
+                            dice_total,
+                            &session.super_mode.multipliers,
+                            total_return,
+                        )
+                    } else {
+                        total_return
+                    };
 
                     // Generate logs for completed game
-                    let logs = generate_craps_logs(&state, &resolved_bets, total_wagered, total_return);
+                    let logs = generate_craps_logs(&state, &resolved_bets, total_wagered, final_return);
 
                     if is_pure_push {
                         // All bets pushed - return stake without double modifier
                         Ok(GameResult::Push(total_wagered, logs))
                     } else if total_return > 0 {
-                        // Apply super mode multipliers if active
-                        let final_return = if session.super_mode.is_active {
-                            let dice_total = d1.saturating_add(d2);
-                            apply_super_multiplier_total(
-                                dice_total,
-                                &session.super_mode.multipliers,
-                                total_return,
-                            )
-                        } else {
-                            total_return
-                        };
                         Ok(GameResult::Win(final_return, logs))
                     } else {
                         Ok(GameResult::LossPreDeducted(total_loss, logs))
@@ -1807,7 +1917,7 @@ impl CasinoGame for Craps {
                 }
 
                 let bet_count = payload[1] as usize;
-                if bet_count == 0 || bet_count > MAX_BETS {
+                if bet_count == 0 || bet_count > limits::CRAPS_MAX_BETS {
                     return Err(GameError::InvalidPayload);
                 }
 
@@ -1880,11 +1990,10 @@ impl CasinoGame for Craps {
                 state.d2 = d2;
 
                 // Capture bet info before processing (for logs)
-                let bets_snapshot: Vec<(BetType, u8, u64, u64)> = state
-                    .bets
-                    .iter()
-                    .map(|b| (b.bet_type, b.target, b.amount, b.odds_amount))
-                    .collect();
+                let mut bets_snapshot = Vec::with_capacity(state.bets.len());
+                for bet in &state.bets {
+                    bets_snapshot.push((bet.bet_type, bet.target, bet.amount, bet.odds_amount));
+                }
 
                 // Process the roll
                 let results = process_roll(&mut state, d1, d2);
@@ -1894,7 +2003,8 @@ impl CasinoGame for Craps {
                 let mut total_resolved_wagered: u64 = 0;
                 let mut total_loss: u64 = 0;
                 let mut resolved_indices = Vec::with_capacity(state.bets.len());
-                let mut resolved_bets: Vec<(BetType, u8, u64, u64, u64)> = Vec::new();
+                let mut resolved_bets: Vec<(BetType, u8, u64, u64, u64)> =
+                    Vec::with_capacity(results.len());
 
                 for result in results {
                     if result.resolved {
@@ -1923,24 +2033,24 @@ impl CasinoGame for Craps {
                     session.is_complete = true;
                     // Determine if this is a pure push (all bets returned stake, no wins/losses)
                     let is_pure_push = total_return == total_resolved_wagered && total_loss == 0 && total_resolved_wagered > 0;
+                    let final_return = if !is_pure_push && total_return > 0 && session.super_mode.is_active {
+                        let dice_total = d1.saturating_add(d2);
+                        apply_super_multiplier_total(
+                            dice_total,
+                            &session.super_mode.multipliers,
+                            total_return,
+                        )
+                    } else {
+                        total_return
+                    };
 
                     // Generate logs for completed game
-                    let logs = generate_craps_logs(&state, &resolved_bets, total_resolved_wagered, total_return);
+                    let logs = generate_craps_logs(&state, &resolved_bets, total_resolved_wagered, final_return);
 
                     if is_pure_push {
                         // All bets pushed - return stake without double modifier
                         Ok(GameResult::Push(total_wager, logs))
                     } else if total_return > 0 {
-                        let final_return = if session.super_mode.is_active {
-                            let dice_total = d1.saturating_add(d2);
-                            apply_super_multiplier_total(
-                                dice_total,
-                                &session.super_mode.multipliers,
-                                total_return,
-                            )
-                        } else {
-                            total_return
-                        };
                         Ok(GameResult::Win(final_return, logs))
                     } else {
                         // Total loss - wager is deducted on completion for atomic batch
@@ -1987,10 +2097,12 @@ impl CasinoGame for Craps {
 }
 
 #[cfg(test)]
+#[allow(unused_must_use)]
 mod tests {
     use super::*;
     use crate::mocks::{create_account_keypair, create_network_keypair, create_seed};
     use nullspace_types::casino::GameType;
+    use rand::{rngs::StdRng, Rng, SeedableRng};
 
     fn create_test_seed() -> nullspace_types::Seed {
         let (network_secret, _) = create_network_keypair();
@@ -2080,6 +2192,17 @@ mod tests {
     }
 
     #[test]
+    fn test_state_blob_fuzz_does_not_panic() {
+        let mut rng = StdRng::seed_from_u64(0x5eed_5eed);
+        for _ in 0..1_000 {
+            let len = rng.gen_range(0..=256);
+            let mut blob = vec![0u8; len];
+            rng.fill(&mut blob[..]);
+            let _ = CrapsState::from_blob(&blob);
+        }
+    }
+
+    #[test]
     fn test_field_payout() {
         // Payouts are TOTAL RETURN (stake + winnings)
         assert_eq!(
@@ -2105,12 +2228,47 @@ mod tests {
     }
 
     #[test]
+    fn test_field_payout_triple_twelve() {
+        assert_eq!(
+            calculate_field_payout(2, 100, FieldPaytable::Double2Triple12),
+            300
+        ); // 2:1 -> 3x total
+        assert_eq!(
+            calculate_field_payout(12, 100, FieldPaytable::Double2Triple12),
+            400
+        ); // 3:1 -> 4x total
+    }
+
+    #[test]
+    fn test_odds_payouts() {
+        // Pass odds: 4 pays 2:1
+        assert_eq!(calculate_odds_payout(4, 100, true), 200);
+        // Don't pass odds: 4 pays 1:2
+        assert_eq!(calculate_odds_payout(4, 100, false), 50);
+        // Pass odds: 6 pays 6:5
+        assert_eq!(calculate_odds_payout(6, 120, true), 144);
+        // Don't pass odds: 6 pays 5:6
+        assert_eq!(calculate_odds_payout(6, 120, false), 100);
+    }
+
+    #[test]
     fn test_yes_payout() {
         // YES pays true odds with a 1% commission on winnings.
         // 6:5 on a 60 bet -> 72 winnings + 60 stake = 132 total.
         assert_eq!(calculate_yes_payout(6, 60, true), 132);
         // Miss
         assert_eq!(calculate_yes_payout(6, 60, false), 0);
+    }
+
+    #[test]
+    fn test_no_payout() {
+        // NO pays true odds with a 1% commission on winnings.
+        // Target 4: 1:2 on 500 -> 250 winnings - 2 commission = 248; total return 748.
+        assert_eq!(calculate_no_payout(4, 500, true), 748);
+        // Target 6: 5:6 on 120 -> 100 winnings - 1 commission = 99; total return 219.
+        assert_eq!(calculate_no_payout(6, 120, true), 219);
+        // Miss
+        assert_eq!(calculate_no_payout(6, 120, false), 0);
     }
 
     #[test]

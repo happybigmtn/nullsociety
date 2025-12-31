@@ -64,6 +64,7 @@ export class SessionManager {
       gameSessionCounter: 0n,
       connectedAt: now,
       lastActivityAt: now,
+      lastFaucetAt: 0,
     };
 
     this.sessions.set(ws, session);
@@ -155,6 +156,7 @@ export class SessionManager {
 
     if (result.accepted) {
       session.hasBalance = true;
+      session.balance = session.balance + amount;
       this.nonceManager.confirmNonce(session.publicKeyHex, nonce);
       console.log(`Deposited ${amount} chips for ${session.playerName}`);
       return true;
@@ -169,6 +171,38 @@ export class SessionManager {
 
     console.error(`Deposit rejected for ${session.playerName}: ${result.error}`);
     return false;
+  }
+
+  /**
+   * Refresh balance from backend account state (best-effort).
+   */
+  async refreshBalance(session: Session): Promise<bigint | null> {
+    const account = await this.submitClient.getAccount(session.publicKeyHex);
+    if (!account) {
+      return null;
+    }
+    session.balance = account.balance;
+    return account.balance;
+  }
+
+  /**
+   * Request faucet chips (rate-limited client side).
+   */
+  async requestFaucet(session: Session, amount: bigint, cooldownMs: number): Promise<{ success: boolean; error?: string }> {
+    const now = Date.now();
+    const lastClaim = session.lastFaucetAt ?? 0;
+    if (now - lastClaim < cooldownMs) {
+      const seconds = Math.ceil((cooldownMs - (now - lastClaim)) / 1000);
+      return { success: false, error: `Faucet cooling down. Try again in ${seconds}s.` };
+    }
+
+    const ok = await this.depositChips(session, amount);
+    if (ok) {
+      session.lastFaucetAt = now;
+      return { success: true };
+    }
+
+    return { success: false, error: 'Faucet claim rejected' };
   }
 
   /**

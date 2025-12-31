@@ -13,8 +13,14 @@ import { StatusBar, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { COLORS } from './src/constants/theme';
-import { useAppState } from './src/hooks';
+import { useAppState, useGatewaySession, useWebSocketReconnectOnForeground } from './src/hooks';
 import { AuthProvider, WebSocketProvider } from './src/context';
+
+function GatewaySessionBridge({ children }: { children: React.ReactNode }) {
+  useGatewaySession();
+  useWebSocketReconnectOnForeground();
+  return children;
+}
 
 function App() {
   // Handle app lifecycle state persistence
@@ -25,7 +31,9 @@ function App() {
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
       <AuthProvider>
         <WebSocketProvider>
-          <RootNavigator />
+          <GatewaySessionBridge>
+            <RootNavigator />
+          </GatewaySessionBridge>
         </WebSocketProvider>
       </AuthProvider>
     </GestureHandlerRootView>

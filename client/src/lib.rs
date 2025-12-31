@@ -77,6 +77,7 @@ mod tests {
         sync::{
             atomic::{AtomicUsize, Ordering},
             Arc,
+            Once,
         },
     };
     use tokio::time::{sleep, Duration};
@@ -91,6 +92,12 @@ mod tests {
 
     impl TestContext {
         async fn new() -> Self {
+            static ORIGIN_ALLOWLIST: Once = Once::new();
+            ORIGIN_ALLOWLIST.call_once(|| {
+                std::env::set_var("ALLOW_HTTP_NO_ORIGIN", "1");
+                std::env::set_var("ALLOW_WS_NO_ORIGIN", "1");
+            });
+
             let (network_secret, network_identity) = create_network_keypair();
             let simulator = Arc::new(Simulator::new(network_identity));
             let api = Api::new(simulator.clone());

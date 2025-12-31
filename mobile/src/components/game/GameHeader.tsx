@@ -4,6 +4,7 @@
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { HelpButton } from '../ui/HelpButton';
+import { WalletBadge } from '../ui/WalletBadge';
 import { EventBadge } from './EventBadge';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS } from '../../constants/theme';
 
@@ -36,6 +37,7 @@ export function GameHeader({ title, balance, sessionDelta = 0, onHelp, rightCont
       <Text style={styles.title}>{title}</Text>
       <View style={styles.rightSection}>
         <EventBadge />
+        <WalletBadge />
         {rightContent}
         {onHelp && <HelpButton onPress={onHelp} />}
       </View>

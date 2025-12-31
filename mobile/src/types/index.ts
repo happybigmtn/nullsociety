@@ -38,21 +38,6 @@ export interface Balance {
   locked: number;
 }
 
-// WebSocket message types - re-exported from shared protocol for convenience
-export type {
-  GameMessage,
-  BlackjackMessage,
-  RouletteMessage,
-  HiLoMessage,
-  BaccaratMessage,
-  CrapsMessage,
-  CasinoWarMessage,
-  VideoPokerMessage,
-  SicBoMessage,
-  ThreeCardPokerMessage,
-  UltimateTXMessage,
-} from '@nullspace/protocol/mobile';
-
 // Tutorial step
 export interface TutorialStep {
   title: string;

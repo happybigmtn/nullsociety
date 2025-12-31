@@ -316,6 +316,7 @@ Phase 2 (EVM + bridge workstream):
 - [x] QA + compliance checklists for launch readiness.
 - [x] Auth + billing + entitlement + freeroll E2E automation script (`website/scripts/e2e-auth-billing.mjs`).
 - [x] Layout smoke automation for breakpoints + side bet drawers (`website/scripts/layout-smoke.mjs`).
+  - WebKit runs on Arch use `website/scripts/setup-webkit-libs.sh` + `PW_WEBKIT_LIB_PATH`.
 - [x] Capped in-memory rate-limit buckets for auth + Convex Stripe webhook.
 - [x] Convex Stripe storage moved to non-node module (`website/convex/stripeStore.ts`) to satisfy `use node` action rules.
 - [x] Stripe-enabled E2E run against self-hosted Convex + Auth service (checkout + entitlements + freeroll sync; freeroll sync reports `admin_unconfigured` without casino keys).

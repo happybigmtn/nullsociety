@@ -2,7 +2,6 @@
  * WebSocket connection manager with reconnection logic
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { z } from 'zod';
 import { BaseMessageSchema } from '@nullspace/protocol/mobile';
 
 // Base message type for all game communications

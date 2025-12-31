@@ -8,6 +8,8 @@
 - Auth service (HTTP 4000):
   - Prometheus: `/metrics/prometheus`
   - JSON snapshot: `/metrics`
+- Node (metrics port, default 9100 in local configs):
+  - Prometheus: `/metrics`
 
 ## Prometheus + Grafana Quickstart (Local)
 Files live in `docker/observability/`.
@@ -18,7 +20,8 @@ cd docker/observability
 docker compose up -d
 ```
 2) Open Grafana: `http://localhost:3001` (admin/admin).
-3) Use the preloaded dashboard: "Nullspace / Nullspace SLO Overview".
+3) Use the preloaded dashboard: "Nullspace / Nullspace SLO Overview" (includes casino activity, node memory/CPU, and limit reject panels).
+4) Optional: Alertmanager UI is available at `http://localhost:9093` (no-op receiver by default).
 
 Notes:
 - `prometheus.yml` targets `host.docker.internal` for local dev. On Linux, the
@@ -26,6 +29,10 @@ Notes:
   change targets to service IPs or internal DNS.
 - Loki + Promtail are included for log aggregation. Promtail watches
   `*.log` files in the repo root (mounted read-only at `/var/log/nullspace`).
+- Alert rules live in `docker/observability/alerts.yml`; wire receivers in
+  `docker/observability/alertmanager.yml` for real notifications.
+- Node configs default `metrics_port` to 9100+ to avoid clashing with the local
+  Prometheus port (9090). Adjust targets accordingly if you change ports.
 
 ## Baseline SLOs (Phase 1)
 These are initial targets; tighten after load tests and production telemetry.
@@ -36,12 +43,18 @@ These are initial targets; tighten after load tests and production telemetry.
 - Auth request latency (p95): <= 200ms.
 - WS send errors: 0 sustained rate; any non-zero sustained rate pages on-call.
 - Explorer persistence drops: 0 sustained rate.
+- Casino errors: 0 sustained rate; investigate any spike.
 
 ## Alert Thresholds (Initial)
 - `nullspace_simulator_update_index_failures_total` increases over 5m.
 - `nullspace_simulator_ws_updates_send_errors_total` rate > 0 for 5m.
 - `nullspace_simulator_explorer_persistence_queue_depth` > 50% buffer for 10m.
 - Auth 5xx rate > 1% for 5m (derive from logs or add a counter).
+- `nullspace_simulator_http_reject_*_total` increases over 5m.
+- `nullspace_simulator_ws_*_queue_full_total` increases over 5m.
+- `nullspace_simulator_ws_*_send_timeouts_total` rate > 0 for 5m.
+- `nullspace_simulator_casino_errors_total` rate > 0 for 5m.
+- `nullspace_simulator_casino_active_sessions` drops to 0 during expected peak.
 
 ## Logging + Aggregation Guidance
 - All services already log structured JSON with request IDs.
@@ -64,3 +77,13 @@ These are initial targets; tighten after load tests and production telemetry.
   `rate(nullspace_simulator_ws_updates_send_errors_total[5m])`
 - Update index failure rate:
   `rate(nullspace_simulator_update_index_failures_total[5m])`
+- Casino active sessions:
+  `nullspace_simulator_casino_active_sessions`
+- Casino completions rate:
+  `rate(nullspace_simulator_casino_games_completed_total[5m])`
+- Node memory (per instance):
+  `runtime_process_rss{job="node"} / 1024 / 1024`
+- Node CPU (per instance):
+  `engine_system_process_cpu_percent{job="node"}`
+- HTTP limit rejects:
+  `rate(nullspace_simulator_http_reject_rate_limit_total[5m])`

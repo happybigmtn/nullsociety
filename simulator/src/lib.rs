@@ -48,6 +48,8 @@ pub struct WsMetrics {
     mempool_send_errors: AtomicU64,
     updates_send_timeouts: AtomicU64,
     mempool_send_timeouts: AtomicU64,
+    connection_reject_global: AtomicU64,
+    connection_reject_per_ip: AtomicU64,
 }
 
 #[derive(Default)]
@@ -66,6 +68,8 @@ pub struct WsMetricsSnapshot {
     pub mempool_send_errors: u64,
     pub updates_send_timeouts: u64,
     pub mempool_send_timeouts: u64,
+    pub connection_reject_global: u64,
+    pub connection_reject_per_ip: u64,
 }
 
 impl WsMetrics {
@@ -79,6 +83,8 @@ impl WsMetrics {
             mempool_send_errors: self.mempool_send_errors.load(Ordering::Relaxed),
             updates_send_timeouts: self.updates_send_timeouts.load(Ordering::Relaxed),
             mempool_send_timeouts: self.mempool_send_timeouts.load(Ordering::Relaxed),
+            connection_reject_global: self.connection_reject_global.load(Ordering::Relaxed),
+            connection_reject_per_ip: self.connection_reject_per_ip.load(Ordering::Relaxed),
         }
     }
 
@@ -113,6 +119,16 @@ impl WsMetrics {
     pub fn inc_mempool_send_timeout(&self) {
         self.mempool_send_timeouts.fetch_add(1, Ordering::Relaxed);
     }
+
+    pub fn inc_connection_reject_global(&self) {
+        self.connection_reject_global
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn inc_connection_reject_per_ip(&self) {
+        self.connection_reject_per_ip
+            .fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 #[derive(Default)]
@@ -123,6 +139,14 @@ pub struct ExplorerMetrics {
     persistence_queue_dropped: AtomicU64,
     persistence_write_errors: AtomicU64,
     persistence_prune_errors: AtomicU64,
+    casino_games_started: AtomicU64,
+    casino_games_completed: AtomicU64,
+    casino_games_moved: AtomicU64,
+    casino_errors: AtomicU64,
+    casino_leaderboard_updates: AtomicU64,
+    tournament_started: AtomicU64,
+    tournament_ended: AtomicU64,
+    active_casino_sessions: AtomicU64,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -133,6 +157,14 @@ pub struct ExplorerMetricsSnapshot {
     pub persistence_queue_dropped: u64,
     pub persistence_write_errors: u64,
     pub persistence_prune_errors: u64,
+    pub casino_games_started: u64,
+    pub casino_games_completed: u64,
+    pub casino_games_moved: u64,
+    pub casino_errors: u64,
+    pub casino_leaderboard_updates: u64,
+    pub tournament_started: u64,
+    pub tournament_ended: u64,
+    pub active_casino_sessions: u64,
 }
 
 impl ExplorerMetrics {
@@ -148,6 +180,16 @@ impl ExplorerMetrics {
             persistence_queue_dropped: self.persistence_queue_dropped.load(Ordering::Relaxed),
             persistence_write_errors: self.persistence_write_errors.load(Ordering::Relaxed),
             persistence_prune_errors: self.persistence_prune_errors.load(Ordering::Relaxed),
+            casino_games_started: self.casino_games_started.load(Ordering::Relaxed),
+            casino_games_completed: self.casino_games_completed.load(Ordering::Relaxed),
+            casino_games_moved: self.casino_games_moved.load(Ordering::Relaxed),
+            casino_errors: self.casino_errors.load(Ordering::Relaxed),
+            casino_leaderboard_updates: self
+                .casino_leaderboard_updates
+                .load(Ordering::Relaxed),
+            tournament_started: self.tournament_started.load(Ordering::Relaxed),
+            tournament_ended: self.tournament_ended.load(Ordering::Relaxed),
+            active_casino_sessions: self.active_casino_sessions.load(Ordering::Relaxed),
         }
     }
 
@@ -198,6 +240,52 @@ impl ExplorerMetrics {
 
     pub fn inc_prune_error(&self) {
         self.persistence_prune_errors.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn inc_casino_started(&self) {
+        self.casino_games_started.fetch_add(1, Ordering::Relaxed);
+        self.active_casino_sessions.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn inc_casino_completed(&self) {
+        self.casino_games_completed.fetch_add(1, Ordering::Relaxed);
+        self.dec_active_sessions();
+    }
+
+    pub fn inc_casino_moved(&self) {
+        self.casino_games_moved.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn inc_casino_error(&self) {
+        self.casino_errors.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn inc_casino_leaderboard_update(&self) {
+        self.casino_leaderboard_updates
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn inc_tournament_started(&self) {
+        self.tournament_started.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn inc_tournament_ended(&self) {
+        self.tournament_ended.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn dec_active_sessions(&self) {
+        let mut current = self.active_casino_sessions.load(Ordering::Relaxed);
+        while current > 0 {
+            match self.active_casino_sessions.compare_exchange_weak(
+                current,
+                current - 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(next) => current = next,
+            }
+        }
     }
 }
 
@@ -430,10 +518,17 @@ impl Simulator {
             .or(self.config.ws_max_connections);
         let max_per_ip = parse_env_usize("RATE_LIMIT_WS_CONNECTIONS_PER_IP")
             .or(self.config.ws_max_connections_per_ip);
-        let mut tracker = self.ws_connections.lock().unwrap();
+        let mut tracker = match self.ws_connections.lock() {
+            Ok(tracker) => tracker,
+            Err(poisoned) => {
+                tracing::warn!("WebSocket connection tracker lock poisoned; recovering");
+                poisoned.into_inner()
+            }
+        };
 
         if let Some(limit) = max_total {
             if tracker.total >= limit {
+                self.ws_metrics.inc_connection_reject_global();
                 return Err(WsConnectionRejection::GlobalLimit);
             }
         }
@@ -441,6 +536,7 @@ impl Simulator {
         let current_ip = tracker.per_ip.get(&ip).copied().unwrap_or(0);
         if let Some(limit) = max_per_ip {
             if current_ip >= limit {
+                self.ws_metrics.inc_connection_reject_per_ip();
                 return Err(WsConnectionRejection::PerIpLimit);
             }
         }
@@ -454,7 +550,13 @@ impl Simulator {
     }
 
     fn release_ws_connection(&self, ip: IpAddr) {
-        let mut tracker = self.ws_connections.lock().unwrap();
+        let mut tracker = match self.ws_connections.lock() {
+            Ok(tracker) => tracker,
+            Err(poisoned) => {
+                tracing::warn!("WebSocket connection tracker lock poisoned; recovering");
+                poisoned.into_inner()
+            }
+        };
         tracker.total = tracker.total.saturating_sub(1);
         match tracker.per_ip.get_mut(&ip) {
             Some(count) if *count > 1 => {
@@ -473,7 +575,7 @@ mod tests {
     use super::*;
     use commonware_codec::Encode;
     use commonware_cryptography::{Hasher, Sha256};
-    use commonware_runtime::{deterministic::Runner, Runner as _};
+    use commonware_runtime::{tokio as cw_tokio, Runner as _};
     use commonware_storage::adb::create_proof_store_from_digests;
     use commonware_storage::store::operation::{Keyless, Variable};
     use nullspace_execution::mocks::{
@@ -555,7 +657,7 @@ mod tests {
 
     #[test]
     fn test_submit_summary() {
-        let executor = Runner::default();
+        let executor = cw_tokio::Runner::new(cw_tokio::Config::default());
         executor.start(|context| async move {
             // Initialize databases
             let (network_secret, network_identity) = create_network_keypair();
@@ -628,7 +730,7 @@ mod tests {
 
     #[test]
     fn test_filtered_events() {
-        let executor = Runner::default();
+        let executor = cw_tokio::Runner::new(cw_tokio::Config::default());
         executor.start(|context| async move {
             // Initialize
             let (network_secret, network_identity) = create_network_keypair();
@@ -748,7 +850,7 @@ mod tests {
 
     #[test]
     fn test_multiple_transactions_per_block() {
-        let executor = Runner::default();
+        let executor = cw_tokio::Runner::new(cw_tokio::Config::default());
         executor.start(|context| async move {
             // Initialize
             let (network_secret, network_identity) = create_network_keypair();

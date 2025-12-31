@@ -11,10 +11,6 @@ import { ErrorCodes, createError } from '../types/errors.js';
 // Import shared HiLoMove from @nullspace/constants
 import { HiLoMove as SharedHiLoMove } from '@nullspace/constants';
 
-// TODO: The shared HiLoMove has Higher=1, Lower=2, CashOut=3
-// This differs from local buildHiLoPayload which uses 0=higher, 1=lower, 3=same
-// Need to verify which is correct against execution/src/casino/hilo.rs
-
 export class HiLoHandler extends GameHandler {
   constructor() {
     super(GameType.HiLo);
@@ -118,8 +114,7 @@ export class HiLoHandler extends GameHandler {
   }
 
   private async handleCashout(ctx: HandlerContext): Promise<HandleResult> {
-    // Cash out: payload [2] as per execution/src/casino/hilo.rs Move enum
-    const payload = new Uint8Array([2]);
+    const payload = new Uint8Array([SharedHiLoMove.Cashout]);
     return this.makeMove(ctx, payload);
   }
 }

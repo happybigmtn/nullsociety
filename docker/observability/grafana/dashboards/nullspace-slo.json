@@ -77,6 +77,170 @@
       },
       "options": {},
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Casino active sessions",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "nullspace_simulator_casino_active_sessions",
+          "legendFormat": "active"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Casino game start/complete rate",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(nullspace_simulator_casino_games_started_total[5m])",
+          "legendFormat": "started/sec"
+        },
+        {
+          "expr": "rate(nullspace_simulator_casino_games_completed_total[5m])",
+          "legendFormat": "completed/sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Casino errors rate",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(nullspace_simulator_casino_errors_total[5m])",
+          "legendFormat": "errors/sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Simulator CPU/RSS",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "nullspace_simulator_system_cpu_usage_percent",
+          "legendFormat": "cpu_percent"
+        },
+        {
+          "expr": "nullspace_simulator_system_rss_bytes / 1024 / 1024",
+          "legendFormat": "rss_mb"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Node RSS/Virtual Memory",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "runtime_process_rss{job=\"node\"} / 1024 / 1024",
+          "legendFormat": "rss_mb"
+        },
+        {
+          "expr": "runtime_process_virtual_memory{job=\"node\"} / 1024 / 1024",
+          "legendFormat": "virt_mb"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Node block advance rate",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(engine_marshal_verified_blocks_journal_tracked{job=\"node\"}[5m])",
+          "legendFormat": "blocks/sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Node CPU percent",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "engine_system_process_cpu_percent{job=\"node\"}",
+          "legendFormat": "cpu_percent"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Limit rejects rate",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(nullspace_simulator_http_reject_origin_total[5m])",
+          "legendFormat": "http_origin/sec"
+        },
+        {
+          "expr": "rate(nullspace_simulator_http_reject_rate_limit_total[5m])",
+          "legendFormat": "http_rate_limit/sec"
+        },
+        {
+          "expr": "rate(nullspace_simulator_http_reject_body_limit_total[5m])",
+          "legendFormat": "http_body_limit/sec"
+        },
+        {
+          "expr": "rate(nullspace_simulator_ws_connection_reject_global_total[5m])",
+          "legendFormat": "ws_global/sec"
+        },
+        {
+          "expr": "rate(nullspace_simulator_ws_connection_reject_per_ip_total[5m])",
+          "legendFormat": "ws_per_ip/sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 }
     }
   ]
 }

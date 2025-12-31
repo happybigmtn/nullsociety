@@ -6,6 +6,7 @@
  */
 
 import { Platform } from 'react-native';
+import { CHIP_VALUES } from '@nullspace/constants/chips';
 import {
   TITANIUM,
   ACTION,
@@ -13,6 +14,7 @@ import {
   RADIUS as TOKEN_RADIUS,
   DURATION,
   SPRING,
+  GAME,
 } from '@nullspace/design-tokens';
 
 const FONT_FAMILY = Platform.select({
@@ -42,6 +44,8 @@ export const COLORS = {
   primary: ACTION.indigo,
   primaryDark: ACTION.indigoHover,
   success: ACTION.success,
+  warning: ACTION.warning,
+  error: ACTION.error,
   destructive: ACTION.error,
   gold: '#FFCC00', // Not in design-tokens yet
 
@@ -94,46 +98,39 @@ export const TYPOGRAPHY = {
     fontWeight: '800' as const,
     letterSpacing: -1,
     fontFamily: FONT_FAMILY,
-    color: COLORS.textPrimary,
   },
   displayMedium: {
     fontSize: 36,
     fontWeight: '700' as const,
     letterSpacing: -0.5,
     fontFamily: FONT_FAMILY,
-    color: COLORS.textPrimary,
   },
   h1: {
     fontSize: 28,
     fontWeight: '700' as const,
     fontFamily: FONT_FAMILY,
-    color: COLORS.textPrimary,
   },
   h2: {
     fontSize: 24,
     fontWeight: '600' as const,
     fontFamily: FONT_FAMILY,
-    color: COLORS.textPrimary,
   },
   h3: {
     fontSize: 20,
     fontWeight: '600' as const,
     fontFamily: FONT_FAMILY,
-    color: COLORS.textPrimary,
   },
   bodyLarge: {
     fontSize: 18,
     fontWeight: '500' as const,
     lineHeight: 28,
     fontFamily: FONT_FAMILY,
-    color: COLORS.textPrimary,
   },
   body: {
     fontSize: 16,
     fontWeight: '400' as const,
     lineHeight: 24,
     fontFamily: FONT_FAMILY,
-    color: COLORS.textSecondary,
   },
   label: {
     fontSize: 10,
@@ -141,7 +138,6 @@ export const TYPOGRAPHY = {
     letterSpacing: 1.5,
     fontFamily: FONT_FAMILY,
     textTransform: 'uppercase' as const,
-    color: COLORS.textMuted,
   },
   mono: {
     fontFamily: MONO_FONT,
@@ -153,14 +149,12 @@ export const TYPOGRAPHY = {
     fontWeight: '400' as const,
     lineHeight: 20,
     fontFamily: FONT_FAMILY,
-    color: COLORS.textSecondary,
   },
   caption: {
     fontSize: 12,
     fontWeight: '400' as const,
     lineHeight: 16,
     fontFamily: FONT_FAMILY,
-    color: COLORS.textMuted,
   },
 } as const;
 
@@ -176,11 +170,20 @@ export const ANIMATION = {
 } as const;
 
 // Re-export spring configs for components that need physics-based animations
-export { SPRING };
+export { SPRING, CHIP_VALUES };
 
-// TODO: CHIP_VALUES duplicates @nullspace/constants/chips
-// Consider migrating to: import { CHIP_VALUES, type ChipValue } from '@nullspace/constants';
-export const CHIP_VALUES = [1, 5, 25, 100, 500, 1000] as const;
+export const GAME_COLORS = {
+  hi_lo: GAME.hiLo.accent,
+  blackjack: GAME.blackjack.accent,
+  roulette: GAME.roulette.accent,
+  craps: GAME.craps.accent,
+  baccarat: GAME.baccarat.accent,
+  casino_war: GAME.casinoWar.accent,
+  video_poker: GAME.videoPoker.accent,
+  sic_bo: GAME.sicBo.accent,
+  three_card_poker: GAME.threeCard.accent,
+  ultimate_texas_holdem: GAME.ultimateHoldem.accent,
+} as const;
 
 export const GAME_DETAIL_COLORS = {
   roulette: {

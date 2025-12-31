@@ -33,23 +33,9 @@ const GAME_COMPONENTS = {
   ultimate_texas_holdem: UltimateTXHoldemScreen,
 } as const;
 
-const GAME_NAMES = {
-  hi_lo: 'Hi-Lo',
-  blackjack: 'Blackjack',
-  roulette: 'Roulette',
-  craps: 'Craps',
-  casino_war: 'Casino War',
-  video_poker: 'Video Poker',
-  baccarat: 'Baccarat',
-  sic_bo: 'Sic Bo',
-  three_card_poker: '3 Card Poker',
-  ultimate_texas_holdem: 'Ultimate Holdem',
-} as const;
-
 export function GameScreen({ navigation, route }: GameScreenProps) {
   const { gameId } = route.params;
   const GameComponent = GAME_COMPONENTS[gameId];
-  const gameName = GAME_NAMES[gameId];
 
   const handleBack = () => {
     haptics.buttonPress();

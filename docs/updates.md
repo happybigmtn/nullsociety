@@ -3280,9 +3280,9 @@ The following findings were determined to be **NOT actual issues**:
 ### V-3: useTerminalGame.ts Size
 **Severity**: Medium
 **Location**: `website/src/hooks/useTerminalGame.ts`
-**Status**: ⚠️ PARTIAL
-**Description**: 4,920 lines with 122 functions. However, it IS well-organized with clear section delimiters and some games already extracted (Baccarat, Blackjack, Craps, ThreeCardPoker).
-**Action**: Continue extracting Roulette and SicBo into separate hooks following existing pattern.
+**Status**: ✅ RESOLVED
+**Description**: Refactored into focused hooks and services; `useTerminalGame.ts` is now <400 LOC and orchestration-only. Game-specific logic lives in `website/src/hooks/games/` and shared parsing/serialization in `website/src/services/games/`.
+**Action**: Complete. See `website/src/hooks/terminalGame/useTerminalGameState.ts`, `website/src/hooks/terminalGame/useGameActions.ts`, and `website/src/hooks/terminalGame/actions/` for the new structure.
 
 ---
 
@@ -3378,6 +3378,14 @@ These are improvement opportunities, not issues requiring immediate action:
    - ✅ Created `Dockerfile` with multi-stage build
    - ✅ Created `.dockerignore` for efficient builds
    - Includes health check and non-root user
+5. **V-7**: Generate shared game state TS bindings (ts-rs)
+   - ✅ Added `types/src/casino_state.rs` with ts-rs exports
+   - ✅ Exported bindings via `cargo run -p nullspace-types --features ts --bin export_ts`
+   - ✅ New entrypoint `@nullspace/types/casino-state` for frontend alignment
+6. **V-8**: Cross-browser layout smoke
+   - ✅ `website/scripts/layout-smoke.mjs` now supports `PW_BROWSERS=chromium,firefox,webkit`
+   - ✅ `website/scripts/setup-webkit-libs.sh` stages WebKit runtime libs; use `PW_WEBKIT_LIB_PATH` for WebKit runs
+   - ✅ Layout smoke auto-detects Playwright Firefox/WebKit binaries in `~/.cache/ms-playwright` when available
 
 ### Priority 3 (Nice to Have) - ✅ COMPLETED
 5. **V-1**: Add WebSocket origin validation for production

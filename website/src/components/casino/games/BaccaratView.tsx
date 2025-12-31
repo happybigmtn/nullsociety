@@ -1,9 +1,8 @@
 
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { GameState } from '../../../types';
-import { getBaccaratValue } from '../../../utils/gameUtils';
 import { Hand } from '../GameComponents';
-import { cardIdToString } from '../../../utils/gameStateParser';
+import { cardIdToString } from '../../../services/games';
 import { MobileDrawer } from '../MobileDrawer';
 import { SideBetMenu } from './SideBetMenu';
 import { Label } from '../ui/Label';
@@ -41,14 +40,14 @@ export const BaccaratView = React.memo<{
     const isPlayerSelected = useMemo(() => gameState.baccaratSelection === 'PLAYER', [gameState.baccaratSelection]);
     const isBankerSelected = useMemo(() => gameState.baccaratSelection === 'BANKER', [gameState.baccaratSelection]);
 
-    const playerValue = useMemo(() => getBaccaratValue(gameState.playerCards), [gameState.playerCards]);
-    const bankerValue = useMemo(() => getBaccaratValue(gameState.dealerCards), [gameState.dealerCards]);
+    const playerValue = useMemo(() => gameState.baccaratPlayerTotal, [gameState.baccaratPlayerTotal]);
+    const bankerValue = useMemo(() => gameState.baccaratBankerTotal, [gameState.baccaratBankerTotal]);
     const playerLabel = useMemo(
-        () => (gameState.playerCards.length > 0 ? `PLAYER (${playerValue})` : 'PLAYER'),
+        () => (gameState.playerCards.length > 0 ? `PLAYER (${playerValue ?? '?'})` : 'PLAYER'),
         [gameState.playerCards.length, playerValue]
     );
     const bankerLabel = useMemo(
-        () => (gameState.dealerCards.length > 0 ? `BANKER (${bankerValue})` : 'BANKER'),
+        () => (gameState.dealerCards.length > 0 ? `BANKER (${bankerValue ?? '?'})` : 'BANKER'),
         [gameState.dealerCards.length, bankerValue]
     );
 

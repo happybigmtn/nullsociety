@@ -2,13 +2,14 @@
  * Lobby Screen - Jony Ive Redesigned
  * Game selection with balance display and minimal navigation
  */
-import { View, Text, StyleSheet, FlatList, Pressable, ListRenderItem } from 'react-native';
-import { useCallback, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, Pressable, ListRenderItem, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect } from 'react';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, GAME_COLORS } from '../constants/theme';
 import { haptics } from '../services/haptics';
+import { initializeNotifications } from '../services';
 import { useGameStore } from '../stores/gameStore';
-import { getBoolean, getNumber, getString, setBoolean, setNumber, setString, STORAGE_KEYS } from '../services/storage';
+import { useGatewaySession } from '../hooks';
 import type { LobbyScreenProps } from '../navigation/types';
 import type { GameId } from '../types';
 
@@ -93,19 +94,24 @@ const GAMES: GameInfo[] = [
   },
 ];
 
-const parseDateKey = (key: string) => {
-  const [year, month, day] = key.split('-').map(Number);
-  return new Date(year, month - 1, day);
-};
-
 export function LobbyScreen({ navigation }: LobbyScreenProps) {
-  const { balance, updateBalance } = useGameStore();
-  const now = new Date();
-  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const [lastClaim, setLastClaim] = useState(() => getString(STORAGE_KEYS.REWARDS_LAST_CLAIM, ''));
-  const [streak, setStreak] = useState(() => getNumber(STORAGE_KEYS.REWARDS_STREAK, 0));
-  const [clubJoined, setClubJoined] = useState(() => getBoolean(STORAGE_KEYS.REWARDS_CLUB_JOINED, false));
-  const claimedToday = lastClaim === todayKey;
+  const { width } = useWindowDimensions();
+  const {
+    balance,
+    balanceReady,
+    publicKey,
+    faucetStatus,
+    faucetMessage,
+  } = useGameStore();
+  const { requestFaucet, connectionState } = useGatewaySession();
+  const faucetDisabled = faucetStatus === 'pending';
+  const balanceLabel = balanceReady ? `$${balance.toLocaleString()}` : '...';
+  const shortKey = publicKey ? `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}` : 'Not connected';
+  const networkLabel = connectionState === 'connected' ? 'Testnet Online' : connectionState === 'connecting' ? 'Connecting' : 'Offline';
+
+  useEffect(() => {
+    void initializeNotifications();
+  }, []);
 
   const handleGameSelect = useCallback((gameId: GameId) => {
     haptics.selectionChange();
@@ -113,17 +119,11 @@ export function LobbyScreen({ navigation }: LobbyScreenProps) {
   }, [navigation]);
 
   const handleClaimBonus = useCallback(() => {
-    if (claimedToday) return;
-    updateBalance(1000);
-    const today = new Date();
-    const last = lastClaim ? parseDateKey(lastClaim) : null;
-    const diffDays = last ? Math.floor((today.getTime() - last.getTime()) / 86400000) : null;
-    const nextStreak = diffDays === 1 ? streak + 1 : 1;
-    setLastClaim(todayKey);
-    setStreak(nextStreak);
-    setString(STORAGE_KEYS.REWARDS_LAST_CLAIM, todayKey);
-    setNumber(STORAGE_KEYS.REWARDS_STREAK, nextStreak);
-  }, [claimedToday, lastClaim, streak, todayKey, updateBalance]);
+    if (faucetDisabled) return;
+    requestFaucet();
+  }, [faucetDisabled, requestFaucet]);
+
+  const numColumns = width >= 900 ? 4 : width >= 700 ? 3 : 2;
 
   const renderGameCard: ListRenderItem<GameInfo> = useCallback(({ item: game, index }) => (
     <Animated.View
@@ -162,7 +162,12 @@ export function LobbyScreen({ navigation }: LobbyScreenProps) {
       <Animated.View entering={FadeIn} style={styles.header}>
         <View>
           <Text style={styles.greeting}>Good evening</Text>
-          <Text style={styles.balance}>${balance.toLocaleString()}</Text>
+          <Text style={styles.balance}>{balanceLabel}</Text>
+          <View style={styles.headerMetaRow}>
+            <Text style={styles.headerMetaText}>{networkLabel}</Text>
+            <Text style={styles.headerMetaDivider}>•</Text>
+            <Text style={styles.headerMetaText}>{shortKey}</Text>
+          </View>
         </View>
         <Pressable style={styles.profileButton}>
           <Text style={styles.profileIcon}>👤</Text>
@@ -172,49 +177,40 @@ export function LobbyScreen({ navigation }: LobbyScreenProps) {
       <View style={styles.rewardsCard}>
         <View style={styles.rewardsHeader}>
           <View>
-            <Text style={styles.rewardsLabel}>Daily bonus</Text>
+            <Text style={styles.rewardsLabel}>Testnet faucet</Text>
             <Text style={styles.rewardsValue}>+1,000 chips</Text>
-            <Text style={styles.rewardsSub}>{claimedToday ? 'Claimed today' : 'Ready to claim'}</Text>
-          </View>
-          <View style={styles.rewardsStreak}>
-            <Text style={styles.rewardsStreakLabel}>Streak</Text>
-            <Text style={styles.rewardsStreakValue}>{streak}x</Text>
+            <Text style={styles.rewardsSub}>
+              {faucetStatus === 'success'
+                ? 'Faucet claimed'
+                : faucetStatus === 'pending'
+                  ? 'Requesting chips...'
+                  : faucetMessage ?? 'Ready to claim'}
+            </Text>
           </View>
         </View>
         <Pressable
           onPress={handleClaimBonus}
-          disabled={claimedToday}
+          disabled={faucetDisabled}
           style={({ pressed }) => [
             styles.rewardsButton,
-            claimedToday && styles.rewardsButtonDisabled,
-            pressed && !claimedToday && styles.rewardsButtonPressed,
+            faucetDisabled && styles.rewardsButtonDisabled,
+            pressed && !faucetDisabled && styles.rewardsButtonPressed,
           ]}
         >
-          <Text style={[styles.rewardsButtonText, claimedToday && styles.rewardsButtonTextDisabled]}>
-            {claimedToday ? 'Claimed' : 'Claim now'}
+          <Text style={[styles.rewardsButtonText, faucetDisabled && styles.rewardsButtonTextDisabled]}>
+            {faucetStatus === 'pending' ? 'Claiming...' : 'Claim now'}
           </Text>
         </Pressable>
         <View style={styles.clubRow}>
-          <Text style={styles.clubText}>{clubJoined ? 'Club: Orion Table' : 'Join a club for weekly goals'}</Text>
-          {!clubJoined && (
-            <Pressable
-              onPress={() => {
-                setClubJoined(true);
-                setBoolean(STORAGE_KEYS.REWARDS_CLUB_JOINED, true);
-              }}
-              style={styles.clubButton}
-            >
-              <Text style={styles.clubButtonText}>Join</Text>
-            </Pressable>
-          )}
-          {clubJoined && <Text style={styles.clubJoinedTag}>Joined</Text>}
+          <Text style={styles.clubText}>Need more chips? Faucet is rate-limited by testnet rules.</Text>
         </View>
       </View>
 
       {/* Games Grid */}
       <FlatList
+        key={`games-${numColumns}`}
         data={GAMES}
-        numColumns={2}
+        numColumns={numColumns}
         keyExtractor={(item) => item.id}
         renderItem={renderGameCard}
         columnWrapperStyle={styles.row}
@@ -247,6 +243,20 @@ const styles = StyleSheet.create({
   balance: {
     color: COLORS.primary,
     ...TYPOGRAPHY.displayLarge,
+  },
+  headerMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginTop: SPACING.xs,
+  },
+  headerMetaText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+  },
+  headerMetaDivider: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
   },
   profileButton: {
     width: 44,
@@ -287,17 +297,6 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: 2,
   },
-  rewardsStreak: {
-    alignItems: 'flex-end',
-  },
-  rewardsStreakLabel: {
-    ...TYPOGRAPHY.label,
-    color: COLORS.textMuted,
-  },
-  rewardsStreakValue: {
-    ...TYPOGRAPHY.h2,
-    color: COLORS.success,
-  },
   rewardsButton: {
     marginTop: SPACING.xs,
     paddingVertical: SPACING.sm,
@@ -333,20 +332,6 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
     flex: 1,
-  },
-  clubButton: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary,
-  },
-  clubButtonText: {
-    ...TYPOGRAPHY.label,
-    color: '#FFFFFF',
-  },
-  clubJoinedTag: {
-    ...TYPOGRAPHY.label,
-    color: COLORS.success,
   },
   gamesContainer: {
     paddingHorizontal: SPACING.md,

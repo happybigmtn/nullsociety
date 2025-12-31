@@ -24,17 +24,61 @@ export const StateUpdateMessageSchema = BaseMessageSchema.extend({
 export const GameResultMessageSchema = BaseMessageSchema.extend({
     type: z.literal('game_result'),
     won: z.boolean(),
-    payout: z.number(),
+    payout: z.union([z.number(), z.string()]),
     message: z.string().optional(),
-});
+    finalChips: z.union([z.number(), z.string()]).optional(),
+    balance: z.union([z.number(), z.string()]).optional(),
+}).passthrough();
 // Error message
 export const ErrorMessageSchema = BaseMessageSchema.extend({
     type: z.literal('error'),
     code: z.string(),
     message: z.string(),
 });
+export const SessionReadyMessageSchema = BaseMessageSchema.extend({
+    type: z.literal('session_ready'),
+    sessionId: z.string(),
+    publicKey: z.string(),
+    registered: z.boolean(),
+    hasBalance: z.boolean(),
+    balance: z.union([z.number(), z.string()]).optional(),
+}).passthrough();
+export const BalanceMessageSchema = BaseMessageSchema.extend({
+    type: z.literal('balance'),
+    registered: z.boolean(),
+    hasBalance: z.boolean(),
+    publicKey: z.string(),
+    balance: z.union([z.number(), z.string()]).optional(),
+    message: z.string().optional(),
+}).passthrough();
+export const GameStartedMessageSchema = BaseMessageSchema.extend({
+    type: z.literal('game_started'),
+    gameType: z.number().optional(),
+    sessionId: z.string(),
+    bet: z.union([z.number(), z.string()]).optional(),
+    state: z.array(z.number()).optional(),
+    initialState: z.unknown().optional(),
+    balance: z.union([z.number(), z.string()]).optional(),
+}).passthrough();
+export const GameMoveMessageSchema = BaseMessageSchema.extend({
+    type: z.literal('game_move'),
+    sessionId: z.string(),
+    moveNumber: z.number().optional(),
+    gameType: z.number().optional(),
+    state: z.array(z.number()).optional(),
+    balance: z.union([z.number(), z.string()]).optional(),
+}).passthrough();
+export const MoveAcceptedMessageSchema = BaseMessageSchema.extend({
+    type: z.literal('move_accepted'),
+    sessionId: z.string(),
+}).passthrough();
 // Generic game message union (base types)
 export const GameMessageSchema = z.discriminatedUnion('type', [
+    SessionReadyMessageSchema,
+    BalanceMessageSchema,
+    GameStartedMessageSchema,
+    GameMoveMessageSchema,
+    MoveAcceptedMessageSchema,
     StateUpdateMessageSchema,
     GameResultMessageSchema,
     ErrorMessageSchema,
@@ -347,6 +391,11 @@ export const UltimateTXLegacyCheckRequestSchema = UltimateTXCheckRequestSchema.e
 export const UltimateTXLegacyFoldRequestSchema = UltimateTXFoldRequestSchema.extend({
     type: z.literal('ultimateholdem_fold'),
 });
+// --- System Outbound ---
+export const FaucetClaimRequestSchema = z.object({
+    type: z.literal('faucet_claim'),
+    amount: z.number().positive().optional(),
+});
 // --- Outbound Message Union ---
 export const OutboundMessageSchema = z.discriminatedUnion('type', [
     // Blackjack
@@ -396,6 +445,7 @@ export const OutboundMessageSchema = z.discriminatedUnion('type', [
     UltimateTXLegacyBetRequestSchema,
     UltimateTXLegacyCheckRequestSchema,
     UltimateTXLegacyFoldRequestSchema,
+    FaucetClaimRequestSchema,
 ]);
 /**
  * Validates a raw WebSocket message and returns the parsed result or null

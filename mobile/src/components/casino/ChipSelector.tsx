@@ -183,6 +183,7 @@ const styles = StyleSheet.create({
   },
   chipText: {
     ...TYPOGRAPHY.caption,
+    color: COLORS.textPrimary,
     fontWeight: '700',
     fontSize: 11,
   },

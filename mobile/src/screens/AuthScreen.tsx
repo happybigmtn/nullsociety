@@ -33,7 +33,7 @@ export function AuthScreen({ navigation }: AuthScreenProps) {
         haptics.loss();
         setError('Authentication failed. Please try again.');
       }
-    } catch (err) {
+    } catch {
       haptics.loss();
       setError('An error occurred. Please try again.');
     } finally {

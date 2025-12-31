@@ -1,41 +1,7 @@
 import { Dispatch, SetStateAction, MutableRefObject, useCallback } from 'react';
 import { GameState, SicBoBet, PlayerStats, GameType, AutoPlayDraft } from '../../types';
 import { CasinoChainService } from '../../services/CasinoChainService';
-import { SicBoMove } from '@nullspace/constants';
-
-const MAX_GRAPH_POINTS = 100;
-
-/**
- * Convert SicBoBet to numeric format for serialization
- * Mappings from execution/src/casino/sic_bo.rs BetType enum
- */
-const sicBoBetToNumeric = (bet: SicBoBet): {betType: number, number: number, amount: number} => {
-  const betTypeMap: Record<SicBoBet['type'], number> = {
-    'SMALL': 0, 'BIG': 1, 'ODD': 2, 'EVEN': 3,
-    'TRIPLE_SPECIFIC': 4, 'TRIPLE_ANY': 5, 'DOUBLE_SPECIFIC': 6, 'SUM': 7, 'SINGLE_DIE': 8,
-    'DOMINO': 9, 'HOP3_EASY': 10, 'HOP3_HARD': 11, 'HOP4_EASY': 12
-  };
-  return { betType: betTypeMap[bet.type], number: bet.target ?? 0, amount: bet.amount };
-};
-
-/**
- * Serialize Sic Bo atomic batch: [3, bet_count, bets...]
- * Each bet is 10 bytes: [bet_type:u8] [number:u8] [amount:u64 BE]
- */
-const serializeSicBoAtomicBatch = (bets: SicBoBet[]): Uint8Array => {
-  const numericBets = bets.map(sicBoBetToNumeric);
-  const payload = new Uint8Array(2 + numericBets.length * 10);
-  payload[0] = 3; // Action 3: Atomic batch
-  payload[1] = numericBets.length;
-  const view = new DataView(payload.buffer);
-  numericBets.forEach((b, i) => {
-    const offset = 2 + i * 10;
-    payload[offset] = b.betType;
-    payload[offset + 1] = b.number;
-    view.setBigUint64(offset + 2, BigInt(b.amount), false);
-  });
-  return payload;
-};
+import { serializeSicBoAtomicBatch } from '../../services/games';
 
 interface UseSicBoProps {
   gameState: GameState;
@@ -141,13 +107,11 @@ export const useSicBo = ({
 
     // Prevent double-submits
     if (isPendingRef.current) {
-      console.log('[useSicBo] rollSicBo - Already pending, ignoring');
       return;
     }
 
     if (isOnChain && chainService && !currentSessionIdRef.current) {
       autoPlayDraftRef.current = { type: GameType.SIC_BO, sicBoBets: betsToRoll };
-      console.log('[useSicBo] No active session, starting new sic bo game (auto-roll queued)');
       setGameState(prev => ({ ...prev, message: 'STARTING NEW SESSION...' }));
       startGame(GameType.SIC_BO);
       return;

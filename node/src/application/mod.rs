@@ -70,4 +70,13 @@ pub struct Config<I: Indexer> {
 
     /// Maximum age for nonce cache entries.
     pub nonce_cache_ttl: Duration,
+
+    /// Attempt to prune the state every N blocks (randomly).
+    pub prune_interval: u64,
+
+    /// Upper bound on cached ancestry results.
+    pub ancestry_cache_entries: usize,
+
+    /// Buffer size for proof job queue.
+    pub proof_queue_size: usize,
 }

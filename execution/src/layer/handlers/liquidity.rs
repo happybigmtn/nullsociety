@@ -2495,7 +2495,7 @@ mod tests {
             let mut state = MockState::new();
 
             let mut player = nullspace_types::casino::Player::new("Alice".to_string());
-            player.balances.chips = 100;
+            player.balances.chips = 1_000;
             state.data.insert(
                 Key::CasinoPlayer(public.clone()),
                 Value::CasinoPlayer(player),
@@ -2504,8 +2504,8 @@ mod tests {
             let mut amm = nullspace_types::casino::AmmPool::new(
                 nullspace_types::casino::AMM_DEFAULT_FEE_BASIS_POINTS,
             );
-            amm.reserve_rng = 1_000;
-            amm.reserve_vusdt = 1_000;
+            amm.reserve_rng = 100_000;
+            amm.reserve_vusdt = 100_000;
             amm.total_shares = MINIMUM_LIQUIDITY.saturating_add(1_000);
             state.data.insert(Key::AmmPool, Value::AmmPool(amm));
 

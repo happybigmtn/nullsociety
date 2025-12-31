@@ -2,7 +2,7 @@
  * Hi-Lo Game Screen - Jony Ive Redesigned
  * Simple binary choice: Higher or Lower
  */
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, InteractionManager } from 'react-native';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import Animated, { FadeIn, SlideInUp } from 'react-native-reanimated';
 import { Card } from '../../components/casino';
@@ -12,8 +12,9 @@ import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection, useChipBetting } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY, SPRING } from '../../constants/theme';
+import { decodeCardId, decodeStateBytes, parseHiLoState } from '../../utils';
 import type { ChipValue, TutorialStep, Suit, Rank } from '../../types';
-import type { HiLoMessage } from '@nullspace/protocol/mobile';
+import type { GameMessage } from '@nullspace/protocol/mobile';
 
 interface HiLoState {
   currentCard: { suit: Suit; rank: Rank } | null;
@@ -40,8 +41,8 @@ const TUTORIAL_STEPS: TutorialStep[] = [
 
 export function HiLoScreen() {
   // Shared hooks for connection and betting
-  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<HiLoMessage>();
-  const { bet, selectedChip, setSelectedChip, placeChip, clearBet, setBet, balance } = useChipBetting();
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<GameMessage>();
+  const { bet, selectedChip, setSelectedChip, placeChip, clearBet, balance } = useChipBetting();
 
   const [state, setState] = useState<HiLoState>({
     currentCard: null,
@@ -62,15 +63,31 @@ export function HiLoScreen() {
   useEffect(() => {
     if (!lastMessage) return;
 
-    if (lastMessage.type === 'state_update') {
-      setState((prev) => ({
-        ...prev,
-        currentCard: lastMessage.card ?? prev.currentCard,
-      }));
+    if (lastMessage.type === 'game_started' || lastMessage.type === 'game_move') {
+      const stateBytes = decodeStateBytes((lastMessage as { state?: unknown }).state);
+      if (!stateBytes) return;
+
+      InteractionManager.runAfterInteractions(() => {
+        const parsed = parseHiLoState(stateBytes);
+        if (!parsed?.currentCard) return;
+        setState((prev) => ({
+          ...prev,
+          currentCard: parsed.currentCard,
+          phase: 'playing',
+          message: 'Make your call',
+        }));
+      });
+      return;
     }
 
     if (lastMessage.type === 'game_result') {
-      const won = lastMessage.won ?? false;
+      const payload = lastMessage as Record<string, unknown>;
+      const won = (payload.won as boolean | undefined) ?? false;
+      const prevCardId = payload.previousCard ?? payload.card;
+      const nextCardId = payload.newCard ?? payload.nextCard;
+      const prevCard = typeof prevCardId === 'number' ? decodeCardId(prevCardId) : null;
+      const nextCard = typeof nextCardId === 'number' ? decodeCardId(nextCardId) : null;
+
       if (won) {
         haptics.win();
       } else {
@@ -79,10 +96,10 @@ export function HiLoScreen() {
       setState((prev) => ({
         ...prev,
         phase: 'result',
-        currentCard: lastMessage.card ?? prev.currentCard,
-        nextCard: lastMessage.nextCard ?? null,
+        currentCard: prevCard ?? prev.currentCard,
+        nextCard: nextCard ?? prev.nextCard,
         lastResult: won ? 'win' : 'loss',
-        message: lastMessage.message ?? (won ? 'You win!' : 'You lose'),
+        message: typeof payload.message === 'string' ? payload.message : won ? 'You win!' : 'You lose',
       }));
     }
   }, [lastMessage]);

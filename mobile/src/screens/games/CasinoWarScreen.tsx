@@ -2,9 +2,9 @@
  * Casino War Game Screen - Jony Ive Redesigned
  * Simplest card game - just deal and optional war
  */
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, InteractionManager } from 'react-native';
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import Animated, { FadeIn, SlideInLeft, SlideInRight } from 'react-native-reanimated';
+import Animated, { SlideInLeft, SlideInRight } from 'react-native-reanimated';
 import { Card } from '../../components/casino';
 import { ChipSelector } from '../../components/casino';
 import { GameLayout } from '../../components/game';
@@ -12,8 +12,9 @@ import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection, useChipBetting } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY, SPRING } from '../../constants/theme';
+import { decodeCardId, decodeStateBytes, parseCasinoWarState } from '../../utils';
 import type { ChipValue, TutorialStep, Card as CardType } from '../../types';
-import type { CasinoWarMessage } from '@nullspace/protocol/mobile';
+import type { GameMessage } from '@nullspace/protocol/mobile';
 
 interface CasinoWarState {
   playerCard: CardType | null;
@@ -41,7 +42,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
 
 export function CasinoWarScreen() {
   // Shared hooks for connection and betting
-  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<CasinoWarMessage>();
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<GameMessage>();
   const { bet, selectedChip, setSelectedChip, placeChip, clearBet, balance } = useChipBetting();
 
   const [state, setState] = useState<CasinoWarState>({
@@ -63,28 +64,41 @@ export function CasinoWarScreen() {
   useEffect(() => {
     if (!lastMessage) return;
 
-    if (lastMessage.type === 'cards_dealt') {
-      haptics.cardDeal();
-      setState((prev) => ({
-        ...prev,
-        playerCard: lastMessage.playerCard ?? null,
-        dealerCard: lastMessage.dealerCard ?? null,
-        phase: 'dealt',
-      }));
-    }
+    const payload = lastMessage as Record<string, unknown>;
+    const stateBytes = decodeStateBytes(payload.state);
+    const parsedState = stateBytes ? parseCasinoWarState(stateBytes) : null;
 
-    if (lastMessage.type === 'tie') {
-      haptics.push();
-      setState((prev) => ({
-        ...prev,
-        phase: 'war_choice',
-        message: 'Tie! Go to War or Surrender?',
-        lastResult: 'war',
-      }));
+    if (lastMessage.type === 'game_started' || lastMessage.type === 'game_move') {
+      if (parsedState) {
+        InteractionManager.runAfterInteractions(() => {
+          setState((prev) => {
+            const nextPhase =
+              parsedState.stage === 'war'
+                ? prev.phase === 'war'
+                  ? 'war'
+                  : 'war_choice'
+                : parsedState.stage === 'complete'
+                  ? 'result'
+                  : 'betting';
+
+            return {
+              ...prev,
+              playerCard: parsedState.playerCard ?? prev.playerCard,
+              dealerCard: parsedState.dealerCard ?? prev.dealerCard,
+              phase: nextPhase,
+              message: nextPhase === 'war_choice' ? 'Tie! Go to War or Surrender?' : prev.message,
+            };
+          });
+        });
+      }
+      return;
     }
 
     if (lastMessage.type === 'game_result') {
-      const won = lastMessage.won ?? false;
+      const won = (payload.won as boolean | undefined) ?? false;
+      const playerCard = typeof payload.playerCard === 'number' ? decodeCardId(payload.playerCard) : null;
+      const dealerCard = typeof payload.dealerCard === 'number' ? decodeCardId(payload.dealerCard) : null;
+
       if (won) {
         haptics.win();
       } else {
@@ -94,10 +108,10 @@ export function CasinoWarScreen() {
       setState((prev) => ({
         ...prev,
         phase: 'result',
-        playerCard: lastMessage.playerCard ?? prev.playerCard,
-        dealerCard: lastMessage.dealerCard ?? prev.dealerCard,
+        playerCard: playerCard ?? prev.playerCard,
+        dealerCard: dealerCard ?? prev.dealerCard,
         lastResult: won ? 'win' : 'loss',
-        message: lastMessage.message ?? (won ? 'You win!' : 'Dealer wins'),
+        message: typeof payload.message === 'string' ? payload.message : won ? 'You win!' : 'Dealer wins',
       }));
     }
   }, [lastMessage]);

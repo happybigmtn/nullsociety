@@ -2,7 +2,7 @@
  * Video Poker Game Screen - Jony Ive Redesigned
  * 5 card draw with hold selection, pay table modal
  */
-import { View, Text, StyleSheet, Pressable, Modal } from 'react-native';
+import { View, Text, StyleSheet, Pressable, Modal, InteractionManager } from 'react-native';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { Card } from '../../components/casino';
@@ -10,10 +10,11 @@ import { ChipSelector } from '../../components/casino';
 import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
-import { useGameKeyboard, KEY_ACTIONS, useGameConnection, useChipBetting } from '../../hooks';
+import { useGameKeyboard, KEY_ACTIONS, useGameConnection, useChipBetting, useModalBackHandler } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SPRING } from '../../constants/theme';
+import { decodeStateBytes, parseNumeric, parseVideoPokerState } from '../../utils';
 import type { ChipValue, TutorialStep, PokerHand, Card as CardType } from '../../types';
-import type { VideoPokerMessage } from '@nullspace/protocol/mobile';
+import type { GameMessage } from '@nullspace/protocol/mobile';
 
 interface VideoPokerState {
   cards: CardType[];
@@ -67,7 +68,7 @@ const HAND_NAMES: Record<PokerHand, string> = {
 
 export function VideoPokerScreen() {
   // Shared hooks for connection and betting
-  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<VideoPokerMessage>();
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<GameMessage>();
   const { bet, selectedChip, setSelectedChip, placeChip, clearBet, balance } = useChipBetting();
 
   const [state, setState] = useState<VideoPokerState>({
@@ -81,6 +82,8 @@ export function VideoPokerScreen() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [showPayTable, setShowPayTable] = useState(false);
 
+  useModalBackHandler(showPayTable, () => setShowPayTable(false));
+
   // Wrap chip placement to check game phase
   const handleChipPlace = useCallback((value: ChipValue) => {
     if (state.phase !== 'betting') return;
@@ -90,20 +93,28 @@ export function VideoPokerScreen() {
   useEffect(() => {
     if (!lastMessage) return;
 
-    if (lastMessage.type === 'cards_dealt') {
-      haptics.cardDeal();
-      setState((prev) => ({
-        ...prev,
-        cards: lastMessage.cards ?? [],
-        phase: 'initial',
-        message: 'Tap cards to HOLD, then DRAW',
-      }));
+    if (lastMessage.type === 'game_started' || lastMessage.type === 'game_move') {
+      const stateBytes = decodeStateBytes((lastMessage as { state?: unknown }).state);
+      if (!stateBytes) return;
+      InteractionManager.runAfterInteractions(() => {
+        const parsed = parseVideoPokerState(stateBytes);
+        if (!parsed) return;
+        setState((prev) => ({
+          ...prev,
+          cards: parsed.cards,
+          phase: parsed.stage === 'draw' ? 'initial' : 'betting',
+          message: parsed.stage === 'draw' ? 'Tap cards to HOLD, then DRAW' : 'Place your bet',
+        }));
+      });
+      return;
     }
 
     if (lastMessage.type === 'game_result') {
-      const payout = lastMessage.payout ?? 0;
+      const payload = lastMessage as Record<string, unknown>;
+      const payout = parseNumeric(payload.payout ?? payload.totalReturn) ?? 0;
+      const hand = typeof payload.hand === 'string' ? payload.hand as PokerHand : null;
       if (payout > 0) {
-        if (lastMessage.hand === 'ROYAL_FLUSH') {
+        if (hand === 'ROYAL_FLUSH') {
           haptics.jackpot();
         } else {
           haptics.win();
@@ -114,11 +125,14 @@ export function VideoPokerScreen() {
 
       setState((prev) => ({
         ...prev,
-        cards: lastMessage.cards ?? prev.cards,
         phase: 'result',
-        hand: lastMessage.hand ?? null,
+        hand,
         payout,
-        message: lastMessage.message ?? (payout > 0 ? HAND_NAMES[lastMessage.hand!] : 'No winning hand'),
+        message: typeof payload.message === 'string'
+          ? payload.message
+          : payout > 0 && hand
+            ? HAND_NAMES[hand]
+            : 'No winning hand',
       }));
     }
   }, [lastMessage]);

@@ -81,6 +81,22 @@ const buildEvmLinkMessage = (params: {
   ].join("\n");
 };
 
+const buildAiPrompt = (payload: {
+  gameType: string;
+  playerCards: unknown[];
+  dealerUpCard: unknown | null;
+  history: unknown[];
+}): string => {
+  const { gameType, playerCards, dealerUpCard, history } = payload;
+  return [
+    "You are a casino strategy assistant. Reply with one short sentence.",
+    `Game: ${gameType}`,
+    `Player cards: ${JSON.stringify(playerCards)}`,
+    `Dealer up card: ${JSON.stringify(dealerUpCard)}`,
+    `History: ${JSON.stringify(history)}`,
+  ].join("\n");
+};
+
 const verifySignature = (
   publicKeyHex: string,
   signatureHex: string,
@@ -130,6 +146,11 @@ if (allowedOrigins.length === 0) {
   throw new Error("AUTH_ALLOWED_ORIGINS must be set");
 }
 const allowedChainIds = parseAllowedChainIds();
+const aiStrategyDisabled = ["1", "true", "yes"].includes(
+  String(process.env.AI_STRATEGY_DISABLED ?? "").toLowerCase(),
+);
+const geminiApiKey = process.env.GEMINI_API_KEY ?? "";
+const geminiModel = process.env.GEMINI_MODEL ?? "gemini-1.5-flash";
 
 const getRequestOrigin = (req: express.Request): string | null => {
   const originHeader = req.headers.origin;
@@ -282,6 +303,11 @@ const billingRateLimit = rateLimit(
   "billing",
   parsePositiveInt(process.env.AUTH_BILLING_RATE_LIMIT_WINDOW_MS, 60_000),
   parsePositiveInt(process.env.AUTH_BILLING_RATE_LIMIT_MAX, 20),
+);
+const aiRateLimit = rateLimit(
+  "ai",
+  parsePositiveInt(process.env.AUTH_AI_RATE_LIMIT_WINDOW_MS, 60_000),
+  parsePositiveInt(process.env.AUTH_AI_RATE_LIMIT_MAX, 10),
 );
 
 type TimingSample = {
@@ -779,6 +805,78 @@ app.post("/profile/sync-freeroll", requireAllowedOrigin, profileRateLimit, async
     status: result.status,
     limit: result.limit ?? null,
   });
+});
+
+app.post("/ai/strategy", requireAllowedOrigin, aiRateLimit, async (req, res) => {
+  const session = await requireSession(req, res);
+  if (!session) return;
+
+  if (aiStrategyDisabled || !geminiApiKey) {
+    inc("ai.strategy.disabled");
+    res.status(503).json({ error: "ai_disabled" });
+    return;
+  }
+
+  const gameTypeRaw = req.body?.gameType;
+  const gameType =
+    typeof gameTypeRaw === "string" ? gameTypeRaw.slice(0, 64) : "unknown";
+  const playerCards = Array.isArray(req.body?.playerCards)
+    ? req.body.playerCards.slice(0, 10)
+    : [];
+  const dealerUpCard = req.body?.dealerUpCard ?? null;
+  const history = Array.isArray(req.body?.history) ? req.body.history.slice(0, 20) : [];
+
+  const prompt = buildAiPrompt({
+    gameType,
+    playerCards,
+    dealerUpCard,
+    history,
+  });
+
+  const start = Date.now();
+  inc("ai.strategy.request");
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        geminiModel,
+      )}:generateContent?key=${geminiApiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+        }),
+      },
+    );
+
+    const durationMs = Date.now() - start;
+    observe("ai.strategy_ms", durationMs);
+
+    if (!response.ok) {
+      inc("ai.strategy.failure");
+      logJson("warn", "ai.strategy.failed", {
+        requestId: res.locals.requestId,
+        status: response.status,
+      });
+      res.status(502).json({ error: "ai_unavailable" });
+      return;
+    }
+
+    const data = (await response.json()) as any;
+    const advice =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text ??
+      "AI Strategy Unavailable";
+    inc("ai.strategy.success");
+    res.json({ advice: String(advice).trim().slice(0, 500) });
+  } catch (error) {
+    inc("ai.strategy.failure");
+    logJson("warn", "ai.strategy.error", {
+      requestId: res.locals.requestId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    res.status(502).json({ error: "ai_unavailable" });
+  }
 });
 
 app.post("/billing/checkout", requireAllowedOrigin, billingRateLimit, async (req, res) => {

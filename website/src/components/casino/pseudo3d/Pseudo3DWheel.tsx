@@ -1,42 +1,56 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { animated, easings, to, useSpring } from '@react-spring/web';
 import { springConfig } from '../../../utils/motion';
+import { formatRouletteNumber, ROULETTE_DOUBLE_ZERO } from '../../../utils/gameUtils';
 
 interface Pseudo3DWheelProps {
     lastNumber: number | null;
     isSpinning: boolean;
+    isAmerican?: boolean;
     className?: string;
     style?: React.CSSProperties;
     onSpinComplete?: () => void;
 }
 
-const ROULETTE_NUMBERS = [
+const ROULETTE_NUMBERS_EURO = [
     0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26
 ];
 
+const ROULETTE_NUMBERS_AMERICAN = [
+    0, 28, 9, 26, 30, 11, 7, 20, 32, 17, 5, 22, 34, 15, 3, 24, 36, 13, 1,
+    ROULETTE_DOUBLE_ZERO, 27, 10, 25, 29, 12, 8, 19, 31, 18, 6, 21, 33, 16, 4, 23, 35, 14, 2
+];
+
 const getNumberColor = (num: number) => {
-    if (num === 0) return '#34C759';
+    if (num === 0 || num === ROULETTE_DOUBLE_ZERO) return '#34C759';
     const redNums = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
     return redNums.includes(num) ? '#FF3B30' : '#1C1C1E';
 };
 
 // Calculate the angle for a number on the wheel
-const getNumberAngle = (num: number): number => {
-    const index = ROULETTE_NUMBERS.indexOf(num);
+const getNumberAngle = (num: number, sequence: number[]): number => {
+    const index = sequence.indexOf(num);
     if (index === -1) return 0;
-    return (index * 360 / 37);
+    return (index * 360 / sequence.length);
 };
 
 export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
     lastNumber,
     isSpinning,
+    isAmerican = false,
     className = '',
     style,
     onSpinComplete
 }) => {
     const pendingSpinRef = useRef(false);
+    const settlingRef = useRef(false);
     const lastNumberRef = useRef<number | null>(lastNumber);
     const spinSeedRef = useRef({ extraSpins: 6, durationMs: 2800 });
+    const wheelSpinConfig = useMemo(() => springConfig('wheelSpin'), []);
+    const wheelNumbers = useMemo(
+        () => (isAmerican ? ROULETTE_NUMBERS_AMERICAN : ROULETTE_NUMBERS_EURO),
+        [isAmerican],
+    );
 
     const [{ rotate }, api] = useSpring(() => ({ rotate: 0 }));
     const [{ ballRotate, ballRadius }, ballApi] = useSpring(() => ({
@@ -47,6 +61,7 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
     useEffect(() => {
         if (!isSpinning) return;
         pendingSpinRef.current = true;
+        settlingRef.current = false;
         spinSeedRef.current = {
             extraSpins: 6 + Math.floor(Math.random() * 4),
             durationMs: 2600 + Math.floor(Math.random() * 600),
@@ -65,6 +80,10 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
             config: { duration: 700, easing: easings.linear },
         });
         ballApi.start({ ballRadius: 135 });
+        return () => {
+            api.stop();
+            ballApi.stop();
+        };
     }, [isSpinning, api, ballApi, rotate]);
 
     useEffect(() => {
@@ -77,14 +96,17 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
         lastNumberRef.current = lastNumber;
 
         if (!pendingSpinRef.current) {
-            const restingRotation = -(getNumberAngle(lastNumber) % 360);
-            api.start({ to: { rotate: restingRotation }, config: springConfig('wheelSpin') });
-            ballApi.start({ to: { ballRotate: 0, ballRadius: 118 }, config: springConfig('wheelSpin') });
+            const restingRotation = -(getNumberAngle(lastNumber, wheelNumbers) % 360);
+            api.start({ to: { rotate: restingRotation }, config: wheelSpinConfig });
+            ballApi.start({ to: { ballRotate: 0, ballRadius: 118 }, config: wheelSpinConfig });
             return;
         }
 
+        api.stop();
+        ballApi.stop();
+        settlingRef.current = true;
         const { extraSpins, durationMs } = spinSeedRef.current;
-        const numberAngle = getNumberAngle(lastNumber);
+        const numberAngle = getNumberAngle(lastNumber, wheelNumbers);
         const targetRotation = -(numberAngle + extraSpins * 360);
         const settleConfig = { duration: durationMs, easing: easings.easeOutCubic };
 
@@ -93,6 +115,7 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
             config: settleConfig,
             onRest: () => {
                 pendingSpinRef.current = false;
+                settlingRef.current = false;
                 onSpinComplete?.();
             },
         });
@@ -100,14 +123,19 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
             to: { ballRotate: 0, ballRadius: 118 },
             config: settleConfig,
         });
-    }, [lastNumber, api, ballApi, onSpinComplete]);
+    }, [lastNumber, api, ballApi, onSpinComplete, wheelSpinConfig, wheelNumbers]);
 
     useEffect(() => {
-        if (isSpinning || pendingSpinRef.current) return;
-        const restingRotation = lastNumber === null ? 0 : -(getNumberAngle(lastNumber) % 360);
-        api.start({ to: { rotate: restingRotation }, config: springConfig('wheelSpin') });
-        ballApi.start({ to: { ballRotate: 0, ballRadius: 118 }, config: springConfig('wheelSpin') });
-    }, [isSpinning, lastNumber, api, ballApi]);
+        if (isSpinning || settlingRef.current) return;
+        if (pendingSpinRef.current) {
+            pendingSpinRef.current = false;
+        }
+        const restingRotation = lastNumber === null ? 0 : -(getNumberAngle(lastNumber, wheelNumbers) % 360);
+        api.stop();
+        ballApi.stop();
+        api.start({ to: { rotate: restingRotation }, config: wheelSpinConfig });
+        ballApi.start({ to: { ballRotate: 0, ballRadius: 118 }, config: wheelSpinConfig });
+    }, [isSpinning, lastNumber, api, ballApi, wheelSpinConfig, wheelNumbers]);
 
     return (
         <div className={`relative aspect-square ${className}`} style={{ width: 320, height: 320, ...style }}>
@@ -120,8 +148,8 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
                     style={{ transform: rotate.to(r => `rotate(${r}deg)`) }}
                 >
                     <svg viewBox="0 0 320 320" className="w-full h-full transform -rotate-90">
-                        {ROULETTE_NUMBERS.map((num, i) => {
-                            const angle = 360 / 37;
+                        {wheelNumbers.map((num, i) => {
+                            const angle = 360 / wheelNumbers.length;
                             const rotation = i * angle;
                             const color = getNumberColor(num);
                             
@@ -157,7 +185,7 @@ export const Pseudo3DWheel: React.FC<Pseudo3DWheelProps> = ({
                                         style={{ fontFamily: 'Outfit' }}
                                         transform={`rotate(${rotation + 90}, ${tx}, ${ty})`}
                                     >
-                                        {num}
+                                        {formatRouletteNumber(num)}
                                     </text>
                                 </g>
                             );

@@ -18,6 +18,7 @@
 //! ```rust,ignore
 //! use nullspace_execution::state_transition::execute_state_transition;
 //! use nullspace_types::{Identity, NAMESPACE};
+//! use nullspace_execution::mocks::{create_network_keypair, create_seed};
 //!
 //! # async fn example(
 //! #     state: &mut /* Adb<...> */ (),
@@ -26,12 +27,15 @@
 //! # ) -> anyhow::Result<()> {
 //! // 1) Load or initialize `state` and `events` storage.
 //! // 2) Execute the next block (height must be exactly `state_height + 1`).
+//! // For tests, you can derive a seed using the mocks helper (requires `mocks` feature).
+//! let (network_secret, _network_public) = create_network_keypair();
+//! let seed = create_seed(&network_secret, 1);
 //! let _result = execute_state_transition(
 //!     state,
 //!     events,
 //!     identity,
 //!     /* height */ 1,
-//!     /* seed */ todo!(),
+//!     /* seed */ seed,
 //!     /* transactions */ vec![],
 //!     // (optional) thread pool when the `parallel` feature is enabled
 //! )

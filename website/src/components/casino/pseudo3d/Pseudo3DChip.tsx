@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useSpring, animated } from '@react-spring/web';
 import { springConfig } from '../../../utils/motion';
 
@@ -30,9 +30,10 @@ export const Pseudo3DChip: React.FC<Pseudo3DChipProps> = ({
 }) => {
   const config = chipColors[value] || chipColors[1];
   const size = 48;
+  const chipScaleConfig = useMemo(() => springConfig('chipStack'), []);
   const [{ scale }, api] = useSpring(() => ({
     scale: 1,
-    config: springConfig('chipStack'),
+    config: chipScaleConfig,
   }));
 
   useEffect(() => {

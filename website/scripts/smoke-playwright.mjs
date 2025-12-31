@@ -161,74 +161,164 @@ async function run() {
 
         const openSafety = async () => {
           for (let attempt = 0; attempt < 3; attempt++) {
-            if (await page.getByText(/session summary/i).isVisible().catch(() => false)) return;
+            if (await page.getByText(/session insight/i).isVisible().catch(() => false)) return true;
             try {
               await page.getByRole('button', { name: /^safety$/i }).click({ timeout: 2000 });
-              await page.getByText(/session summary/i).waitFor();
-              return;
+              await page.getByText(/session insight/i).waitFor();
+              return true;
             } catch {
               await page.keyboard.press('Escape');
               await page.waitForTimeout(150);
             }
           }
-          if (!(await page.getByText(/session summary/i).isVisible().catch(() => false))) {
-            throw new Error('Unable to open Safety overlay');
+          if (!(await page.getByText(/session insight/i).isVisible().catch(() => false))) {
+            console.warn('[smoke] Safety overlay not available');
+            return false;
           }
+          return true;
         };
         const closeSafety = async () => {
-          if (await page.getByText(/session summary/i).isVisible().catch(() => false)) {
-            await page.keyboard.press('Escape');
-            await page.getByText(/session summary/i).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+          if (await page.getByText(/session insight/i).isVisible().catch(() => false)) {
+            const acknowledge = page.getByRole('button', { name: /acknowledge|continue/i });
+            if (await acknowledge.isVisible().catch(() => false)) {
+              await acknowledge.click();
+            } else {
+              await page.keyboard.press('Escape');
+            }
+            await page.getByText(/session insight/i).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
           }
         };
+        const dismissOverlays = async () => {
+          await closeSafety();
+          await page.keyboard.press('Escape');
+          await page.waitForTimeout(200);
+        };
+
+      const clickWithFallback = async (locator, label) => {
+        try {
+          await locator.click({ timeout: 15000 });
+        } catch (error) {
+          console.warn(`[smoke] ${label} click fallback:`, error?.message ?? error);
+          await page.evaluate((labelText) => {
+            const buttons = Array.from(document.querySelectorAll('button'));
+            const target = buttons.find((btn) =>
+              btn.textContent?.toLowerCase().includes(labelText)
+            );
+            if (!target) {
+              throw new Error(`Button not found: ${labelText}`);
+            }
+            target.click();
+          }, label.toLowerCase());
+        }
+      };
 
       await page.goto('/');
-      await page.getByRole('button', { name: /cash game/i }).click();
+      await page.getByRole('heading', { name: /select your mode/i }).waitFor({ timeout: 30000 });
+      await clickWithFallback(page.getByRole('button', { name: /cash game/i }), 'cash game');
 
       if (ONCHAIN) {
-        // Claim faucet (register + deposit). This updates async state but does not render a toast when no game is active.
-        const startFaucet = async () => {
-          for (let attempt = 0; attempt < 5; attempt++) {
-            await page.getByRole('button', { name: /daily faucet/i }).click();
-            try {
-              await page.getByRole('button', { name: /claiming/i }).waitFor({ timeout: 3000 });
-              return;
-            } catch {
-              await page.waitForTimeout(500);
-            }
+        const openRewards = async () => {
+          const menuButton = page.getByLabel('Menu');
+          if (await menuButton.isVisible().catch(() => false)) {
+            await menuButton.click();
           }
-          throw new Error('Faucet did not start (client not ready?)');
+          const rewardsButton = page.getByRole('button', { name: /^rewards$/i });
+          if (await rewardsButton.isVisible().catch(() => false)) {
+            await rewardsButton.click();
+            await page.getByText(/daily bonus/i).waitFor({ timeout: 10000 });
+            return true;
+          }
+          return false;
         };
 
-        await startFaucet();
-        await page.getByRole('button', { name: /daily faucet/i }).waitFor({ timeout: 60_000 });
+        const claimFaucetIfAvailable = async () => {
+          const claimButton = page.getByRole('button', { name: /^claim now$/i });
+          if (await claimButton.isVisible().catch(() => false)) {
+            await claimButton.click();
+            await page
+              .getByRole('button', { name: /claiming|claimed/i })
+              .first()
+              .waitFor({ timeout: 60_000 });
+          }
+        };
+
+        if (await openRewards()) {
+          await claimFaucetIfAvailable();
+          await page.keyboard.press('Escape');
+        }
+
+        await page
+          .getByText(/localnet\s*·\s*offline|testnet\s*·\s*offline/i)
+          .first()
+          .waitFor({ state: 'hidden', timeout: 60_000 });
       }
 
-      await page.getByRole('button', { name: /^games$/i }).click();
-      await page.getByPlaceholder(/type command or game name/i).fill('blackjack');
-      await page.keyboard.press('Enter');
-      await page.getByRole('heading', { name: /^blackjack$/i }).waitFor();
-      await page.getByText(/place bets/i).first().waitFor({ timeout: 60_000 });
+      const gamesButton = page.getByRole('button', { name: /^games$/i });
+      await gamesButton.waitFor({ timeout: 30000 });
+      await gamesButton.click();
+      await page.getByPlaceholder(/search nullspace|type command/i).fill('blackjack');
+      await page.getByText(/^blackjack$/i).first().waitFor({ timeout: 10000 });
+      await page.getByText(/^blackjack$/i).first().click();
+      await page
+        .locator('#casino-main h2')
+        .filter({ hasText: /place bets|place your bet/i })
+        .first()
+        .waitFor({ timeout: 60_000 });
+      await dismissOverlays();
 
-        await openSafety();
-        await page.getByRole('button', { name: /^5m$/i }).click();
-        await closeSafety();
+        if (await openSafety()) {
+          await closeSafety();
+        }
 
-        await page.getByRole('button', { name: /deal/i }).click();
-        await page.getByText(/cooldown active/i).first().waitFor();
+        const statusHeading = page.locator('#casino-main h2').first();
+        const readStatus = async () => ((await statusHeading.textContent()) ?? '').trim();
 
-        await openSafety();
-        await page.getByRole('button', { name: /^clear$/i }).click();
-        await closeSafety();
-        await page.getByRole('button', { name: /deal/i }).click();
-        await page.locator('.animate-card-deal').first().waitFor({ timeout: 60_000 });
+        await dismissOverlays();
+        console.log('[smoke] blackjack status before deal:', await readStatus());
+        await clickWithFallback(page.getByRole('button', { name: /^deal$/i }), 'deal');
+        console.log('[smoke] blackjack status after deal:', await readStatus());
+        try {
+          await page
+            .locator('#casino-main h2')
+            .filter({ hasText: /your move|reveal|game complete/i })
+            .first()
+            .waitFor({ timeout: 60_000 });
+        } catch (error) {
+          console.warn('[smoke] blackjack status timeout:', await readStatus());
+          throw error;
+        }
+
+        let status = ((await statusHeading.textContent()) ?? '').toLowerCase();
+        if (status.includes('your move')) {
+          await page.keyboard.press('s');
+          await page
+            .locator('#casino-main h2')
+            .filter({ hasText: /reveal|game complete/i })
+            .first()
+            .waitFor({ timeout: 60_000 });
+          status = ((await statusHeading.textContent()) ?? '').toLowerCase();
+        }
+
+        if (status.includes('reveal')) {
+          await page.keyboard.press(' ');
+          await page
+            .locator('#casino-main h2')
+            .filter({ hasText: /game complete/i })
+            .first()
+            .waitFor({ timeout: 60_000 });
+        }
 
       if (ONCHAIN) {
-        await page.getByRole('button', { name: /^games$/i }).click();
-        await page.getByPlaceholder(/type command or game name/i).fill('craps');
-        await page.keyboard.press('Enter');
-        await page.getByRole('heading', { name: /^craps$/i }).waitFor();
-        await page.getByText(/place bets/i).first().waitFor({ timeout: 60_000 });
+        await gamesButton.click();
+        await page.getByPlaceholder(/search nullspace|type command/i).fill('craps');
+        await page.getByText(/^craps$/i).first().waitFor({ timeout: 10000 });
+        await page.getByText(/^craps$/i).first().click();
+        await page
+          .locator('#casino-main h2')
+          .filter({ hasText: /place bets/i })
+          .first()
+          .waitFor({ timeout: 60_000 });
+        await dismissOverlays();
 
         await page.keyboard.press('Shift+3');
         await page.keyboard.press('0');

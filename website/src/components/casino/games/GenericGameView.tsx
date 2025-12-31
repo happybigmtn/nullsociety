@@ -1,24 +1,11 @@
 
 import React, { useMemo, useEffect, useState, useRef } from 'react';
-import { Card, GameState, GameType } from '../../../types';
+import { GameState, GameType } from '../../../types';
 import { Hand } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
-import { getVisibleHandValue } from '../../../utils/gameUtils';
-
-const getWarCardValue = (card?: Card | null) => {
-    if (!card) return 0;
-    if (card.rank === 'A') return 14;
-    if (card.rank === 'K') return 13;
-    if (card.rank === 'Q') return 12;
-    if (card.rank === 'J') return 11;
-    const parsed = Number.parseInt(card.rank, 10);
-    return Number.isFinite(parsed) ? parsed : 0;
-};
 
 export const GenericGameView = React.memo<{ gameState: GameState; actions: any; lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
-    const dealerValue = useMemo(() => getVisibleHandValue(gameState.dealerCards), [gameState.dealerCards]);
-    const playerValue = useMemo(() => getVisibleHandValue(gameState.playerCards), [gameState.playerCards]);
     const gameTitle = useMemo(() => gameState.type.replace(/_/g, ' '), [gameState.type]);
     const isWarState = useMemo(() => gameState.type === GameType.CASINO_WAR && gameState.message.includes('WAR'), [gameState.type, gameState.message]);
     const isCasinoWarBetting = useMemo(() => gameState.type === GameType.CASINO_WAR && gameState.stage === 'BETTING', [gameState.type, gameState.stage]);
@@ -27,13 +14,14 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any; 
     const warPlayerCard = gameState.playerCards[0];
     const warDealerCard = gameState.dealerCards[0];
     const warOutcome = useMemo(() => {
-        if (!isCasinoWar || !warPlayerCard || !warDealerCard) return null;
-        const playerVal = getWarCardValue(warPlayerCard);
-        const dealerVal = getWarCardValue(warDealerCard);
-        if (playerVal > dealerVal) return 'player';
-        if (dealerVal > playerVal) return 'dealer';
-        return 'tie';
-    }, [isCasinoWar, warPlayerCard, warDealerCard]);
+        if (!isCasinoWar) return null;
+        const rawOutcome = gameState.casinoWarOutcome;
+        if (!rawOutcome) return null;
+        if (rawOutcome.includes('PLAYER')) return 'player';
+        if (rawOutcome.includes('DEALER')) return 'dealer';
+        if (rawOutcome.includes('TIE')) return 'tie';
+        return null;
+    }, [isCasinoWar, gameState.casinoWarOutcome]);
     const warAccentColor = useMemo(() => {
         if (!warOutcome) return undefined;
         if (warOutcome === 'player') return '#22ff88';
@@ -99,7 +87,6 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any; 
                             <span className="text-lg font-mono font-bold tracking-widest text-action-destructive">DEALER</span>
                             <Hand
                                 cards={gameState.dealerCards}
-                                title={`(${dealerValue})`}
                                 forcedColor="text-action-destructive"
                             />
                         </div>
@@ -125,7 +112,6 @@ export const GenericGameView = React.memo<{ gameState: GameState; actions: any; 
                         {gameState.playerCards.length > 0 ? (
                             <Hand
                                 cards={gameState.playerCards}
-                                title={`(${playerValue})`}
                                 forcedColor="text-action-success"
                             />
                         ) : (

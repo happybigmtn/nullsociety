@@ -54,11 +54,13 @@ impl<T> LossySender<T> {
         if self.inner.closed.load(Ordering::Acquire) {
             return false;
         }
-        let mut queue = self
-            .inner
-            .queue
-            .lock()
-            .expect("lossy channel mutex poisoned");
+        let mut queue = match self.inner.queue.lock() {
+            Ok(queue) => queue,
+            Err(poisoned) => {
+                warn!("lossy channel mutex poisoned; recovering");
+                poisoned.into_inner()
+            }
+        };
         if queue.len() == self.inner.capacity {
             queue.pop_front();
         }
@@ -76,11 +78,13 @@ impl<T> LossySender<T> {
 
 impl<T> LossyReceiver<T> {
     fn pop_front(&mut self) -> Option<T> {
-        let mut queue = self
-            .inner
-            .queue
-            .lock()
-            .expect("lossy channel mutex poisoned");
+        let mut queue = match self.inner.queue.lock() {
+            Ok(queue) => queue,
+            Err(poisoned) => {
+                warn!("lossy channel mutex poisoned; recovering");
+                poisoned.into_inner()
+            }
+        };
         queue.pop_front()
     }
 

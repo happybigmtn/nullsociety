@@ -31,8 +31,9 @@
 //! 12 = Four-Number Easy Hop (7:1) - number = 6-bit mask of chosen numbers (exactly 4 bits set)
 
 use super::super_mode::apply_super_multiplier_total;
-use super::{CasinoGame, GameError, GameResult, GameRng};
+use super::{limits, CasinoGame, GameError, GameResult, GameRng};
 use nullspace_types::casino::GameSession;
+use std::fmt::Write;
 
 /// Payout multipliers for Sic Bo (expressed as "to 1" winnings).
 mod payouts {
@@ -69,7 +70,6 @@ mod payouts {
 }
 
 /// Maximum number of bets per session.
-const MAX_BETS: usize = 20;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -172,11 +172,11 @@ pub struct SicBoBet {
 }
 
 impl SicBoBet {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(10);
-        bytes.push(self.bet_type as u8);
-        bytes.push(self.number);
-        bytes.extend_from_slice(&self.amount.to_be_bytes());
+    pub fn to_bytes(&self) -> [u8; 10] {
+        let mut bytes = [0u8; 10];
+        bytes[0] = self.bet_type as u8;
+        bytes[1] = self.number;
+        bytes[2..10].copy_from_slice(&self.amount.to_be_bytes());
         bytes
     }
 
@@ -187,12 +187,41 @@ impl SicBoBet {
         let bet_type = BetType::try_from(bytes[0]).ok()?;
         let number = bytes[1];
         let amount = u64::from_be_bytes(bytes[2..10].try_into().ok()?);
+        if amount == 0 {
+            return None;
+        }
         Some(Self {
             bet_type,
             number,
             amount,
         })
     }
+}
+
+fn is_valid_bet_number(bet_type: BetType, number: u8) -> bool {
+    match bet_type {
+        BetType::SpecificTriple | BetType::SpecificDouble | BetType::Single => {
+            (1..=6).contains(&number)
+        }
+        BetType::Total => (3..=18).contains(&number),
+        BetType::Domino => {
+            let min = (number >> 4) & 0x0f;
+            let max = number & 0x0f;
+            (1..=6).contains(&min) && (1..=6).contains(&max) && min < max
+        }
+        BetType::ThreeNumberEasyHop => number & !0x3F == 0 && number.count_ones() == 3,
+        BetType::ThreeNumberHardHop => {
+            let double = (number >> 4) & 0x0f;
+            let single = number & 0x0f;
+            (1..=6).contains(&double) && (1..=6).contains(&single) && double != single
+        }
+        BetType::FourNumberEasyHop => number & !0x3F == 0 && number.count_ones() == 4,
+        _ => true,
+    }
+}
+
+fn is_valid_dice(dice: &[u8; 3]) -> bool {
+    dice.iter().all(|d| (1..=6).contains(d))
 }
 
 /// Sic Bo game state.
@@ -219,8 +248,7 @@ impl SicBoState {
         let bet_count = bytes[0] as usize;
 
         // Validate bet count against maximum to prevent DoS via large allocations
-        const MAX_BETS: usize = 20;
-        if bet_count > MAX_BETS {
+        if bet_count > limits::SIC_BO_MAX_BETS {
             return None;
         }
 
@@ -234,22 +262,33 @@ impl SicBoState {
         let mut offset = 1;
         for _ in 0..bet_count {
             let bet = SicBoBet::from_bytes(&bytes[offset..])?;
+            if !is_valid_bet_number(bet.bet_type, bet.number) {
+                return None;
+            }
             bets.push(bet);
             offset += 10;
         }
 
-        // Optional dice result (3 bytes)
-        let dice = if bytes.len() >= offset + 3 {
-            Some([bytes[offset], bytes[offset + 1], bytes[offset + 2]])
-        } else {
-            None
-        };
-
-        let rules_offset = offset + if dice.is_some() { 3 } else { 0 };
-        let rules = if bytes.len() > rules_offset {
-            SicBoRules::from_byte(bytes[rules_offset])?
-        } else {
-            SicBoRules::default()
+        let remaining = bytes.len().saturating_sub(offset);
+        let (dice, rules) = match remaining {
+            0 => (None, SicBoRules::default()),
+            1 => (None, SicBoRules::from_byte(bytes[offset])?),
+            3 => {
+                let dice = [bytes[offset], bytes[offset + 1], bytes[offset + 2]];
+                if !is_valid_dice(&dice) {
+                    return None;
+                }
+                (Some(dice), SicBoRules::default())
+            }
+            4 => {
+                let dice = [bytes[offset], bytes[offset + 1], bytes[offset + 2]];
+                if !is_valid_dice(&dice) {
+                    return None;
+                }
+                let rules = SicBoRules::from_byte(bytes[offset + 3])?;
+                (Some(dice), rules)
+            }
+            _ => return None,
         };
 
         Some(Self { bets, dice, rules })
@@ -262,7 +301,7 @@ impl SicBoState {
         let mut bytes = Vec::with_capacity(capacity);
         bytes.push(self.bets.len() as u8);
         for bet in &self.bets {
-            bytes.extend(bet.to_bytes());
+            bytes.extend_from_slice(&bet.to_bytes());
         }
         if let Some(dice) = self.dice {
             bytes.extend_from_slice(&dice);
@@ -466,44 +505,99 @@ fn generate_sicbo_logs(
     total_wagered: u64,
     total_return: u64,
 ) -> Vec<String> {
+    let clamp_i64 = |value: i128| -> i64 {
+        value
+            .clamp(i64::MIN as i128, i64::MAX as i128) as i64
+    };
     let total: u8 = dice.iter().sum();
     let is_triple = is_triple(dice);
 
     // Build bet results array
-    let bet_results: Vec<String> = state
-        .bets
-        .iter()
-        .map(|bet| {
-            let payout = calculate_bet_payout(bet, dice, state.rules);
-            let won = payout > 0;
-            let bet_type_str = match bet.bet_type {
-                BetType::Small => "SMALL",
-                BetType::Big => "BIG",
-                BetType::Odd => "ODD",
-                BetType::Even => "EVEN",
-                BetType::SpecificTriple => "SPECIFIC_TRIPLE",
-                BetType::AnyTriple => "ANY_TRIPLE",
-                BetType::SpecificDouble => "SPECIFIC_DOUBLE",
-                BetType::Total => "TOTAL",
-                BetType::Single => "SINGLE",
-                BetType::Domino => "DOMINO",
-                BetType::ThreeNumberEasyHop => "THREE_NUMBER_EASY_HOP",
-                BetType::ThreeNumberHardHop => "THREE_NUMBER_HARD_HOP",
-                BetType::FourNumberEasyHop => "FOUR_NUMBER_EASY_HOP",
-            };
-            format!(
-                r#"{{"type":"{}","number":{},"amount":{},"won":{},"payout":{}}}"#,
-                bet_type_str, bet.number, bet.amount, won, payout
-            )
-        })
-        .collect();
+    let mut bet_results = String::new();
+    let mut resolved_entries = String::new();
+    let mut resolved_sum: i128 = 0;
+    for (idx, bet) in state.bets.iter().enumerate() {
+        if idx > 0 {
+            bet_results.push(',');
+            resolved_entries.push(',');
+        }
+        let payout = calculate_bet_payout(bet, dice, state.rules);
+        let won = payout > 0;
+        let bet_type_str = match bet.bet_type {
+            BetType::Small => "SMALL",
+            BetType::Big => "BIG",
+            BetType::Odd => "ODD",
+            BetType::Even => "EVEN",
+            BetType::SpecificTriple => "SPECIFIC_TRIPLE",
+            BetType::AnyTriple => "ANY_TRIPLE",
+            BetType::SpecificDouble => "SPECIFIC_DOUBLE",
+            BetType::Total => "TOTAL",
+            BetType::Single => "SINGLE",
+            BetType::Domino => "DOMINO",
+            BetType::ThreeNumberEasyHop => "THREE_NUMBER_EASY_HOP",
+            BetType::ThreeNumberHardHop => "THREE_NUMBER_HARD_HOP",
+            BetType::FourNumberEasyHop => "FOUR_NUMBER_EASY_HOP",
+        };
+        let label = match bet.bet_type {
+            BetType::SpecificTriple => "TRIPLE_SPECIFIC".to_string(),
+            BetType::AnyTriple => "TRIPLE_ANY".to_string(),
+            BetType::SpecificDouble => "DOUBLE_SPECIFIC".to_string(),
+            BetType::Total => "SUM".to_string(),
+            BetType::Single => "SINGLE_DIE".to_string(),
+            BetType::ThreeNumberEasyHop => "HOP3_EASY".to_string(),
+            BetType::ThreeNumberHardHop => "HOP3_HARD".to_string(),
+            BetType::FourNumberEasyHop => "HOP4_EASY".to_string(),
+            _ => bet_type_str.to_string(),
+        };
+        let label = if bet.number > 0 {
+            format!("{} {}", label, bet.number)
+        } else {
+            label
+        };
+        let pnl = clamp_i64(i128::from(payout) - i128::from(bet.amount));
+        resolved_sum = resolved_sum.saturating_add(i128::from(pnl));
+        let _ = write!(
+            resolved_entries,
+            r#"{{"label":"{}","pnl":{}}}"#,
+            label, pnl
+        );
+        let _ = write!(
+            bet_results,
+            r#"{{"type":"{}","number":{},"amount":{},"won":{},"payout":{}}}"#,
+            bet_type_str, bet.number, bet.amount, won, payout
+        );
+    }
+
+    let dice_label = format!("{}-{}-{}", dice[0], dice[1], dice[2]);
+    let summary = if is_triple {
+        format!("Roll: {} ({}) TRIPLE", total, dice_label)
+    } else {
+        format!("Roll: {} ({})", total, dice_label)
+    };
+    let net_pnl = clamp_i64(i128::from(total_return) - i128::from(total_wagered));
+    let diff = i128::from(net_pnl).saturating_sub(resolved_sum);
+    if diff != 0 {
+        if !resolved_entries.is_empty() {
+            resolved_entries.push(',');
+        }
+        let _ = write!(
+            resolved_entries,
+            r#"{{"label":"ADJUSTMENT","pnl":{}}}"#,
+            clamp_i64(diff)
+        );
+    }
 
     vec![format!(
-        r#"{{"dice":[{},{},{}],"total":{},"isTriple":{},"bets":[{}],"totalWagered":{},"totalReturn":{}}}"#,
-        dice[0], dice[1], dice[2],
+        r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"dice":[{},{},{}],"total":{},"isTriple":{},"bets":[{}],"totalWagered":{},"totalReturn":{}}}"#,
+        summary,
+        net_pnl,
+        resolved_entries,
+        dice[0],
+        dice[1],
+        dice[2],
         total,
         is_triple,
-        bet_results.join(","),
+        bet_results,
         total_wagered,
         total_return
     )]
@@ -541,46 +635,8 @@ impl CasinoGame for SicBo {
                 let (bet_type, number, amount) = super::payload::parse_place_bet_payload(payload)?;
                 let bet_type = BetType::try_from(bet_type)?;
 
-                // Validate number for bet types that need it
-                match bet_type {
-                    BetType::SpecificTriple | BetType::SpecificDouble | BetType::Single => {
-                        if !(1..=6).contains(&number) {
-                            return Err(GameError::InvalidPayload);
-                        }
-                    }
-                    BetType::Total => {
-                        if !(3..=18).contains(&number) {
-                            return Err(GameError::InvalidPayload);
-                        }
-                    }
-                    BetType::Domino => {
-                        let min = (number >> 4) & 0x0f;
-                        let max = number & 0x0f;
-                        if !(1..=6).contains(&min) || !(1..=6).contains(&max) || min >= max {
-                            return Err(GameError::InvalidPayload);
-                        }
-                    }
-                    BetType::ThreeNumberEasyHop => {
-                        if number & !0x3F != 0 || number.count_ones() != 3 {
-                            return Err(GameError::InvalidPayload);
-                        }
-                    }
-                    BetType::ThreeNumberHardHop => {
-                        let double = (number >> 4) & 0x0f;
-                        let single = number & 0x0f;
-                        if !(1..=6).contains(&double)
-                            || !(1..=6).contains(&single)
-                            || double == single
-                        {
-                            return Err(GameError::InvalidPayload);
-                        }
-                    }
-                    BetType::FourNumberEasyHop => {
-                        if number & !0x3F != 0 || number.count_ones() != 4 {
-                            return Err(GameError::InvalidPayload);
-                        }
-                    }
-                    _ => {}
+                if !is_valid_bet_number(bet_type, number) {
+                    return Err(GameError::InvalidPayload);
                 }
 
                 super::payload::ensure_nonzero_amount(amount)?;
@@ -688,7 +744,7 @@ impl CasinoGame for SicBo {
                 }
 
                 let bet_count = payload[1] as usize;
-                if bet_count == 0 || bet_count > MAX_BETS {
+                if bet_count == 0 || bet_count > limits::SIC_BO_MAX_BETS {
                     return Err(GameError::InvalidPayload);
                 }
 
@@ -777,10 +833,12 @@ impl CasinoGame for SicBo {
 }
 
 #[cfg(test)]
+#[allow(unused_must_use)]
 mod tests {
     use super::*;
     use crate::mocks::{create_account_keypair, create_network_keypair, create_seed};
     use nullspace_types::casino::GameType;
+    use rand::{rngs::StdRng, Rng, SeedableRng};
 
     fn create_test_seed() -> nullspace_types::Seed {
         let (network_secret, _) = create_network_keypair();
@@ -841,6 +899,17 @@ mod tests {
     }
 
     #[test]
+    fn test_state_blob_fuzz_does_not_panic() {
+        let mut rng = StdRng::seed_from_u64(0x5eed_51cb);
+        for _ in 0..1_000 {
+            let len = rng.gen_range(0..=256);
+            let mut blob = vec![0u8; len];
+            rng.fill(&mut blob[..]);
+            let _ = SicBoState::from_bytes(&blob);
+        }
+    }
+
+    #[test]
     fn test_atlantic_city_triple_payouts() {
         let rules = SicBoRules {
             paytable: SicBoPaytable::AtlanticCity,
@@ -892,6 +961,30 @@ mod tests {
             calculate_bet_payout(&bet, &[1, 3, 4], SicBoRules::default()),
             0
         );
+    }
+
+    #[test]
+    fn test_small_big_payouts() {
+        let rules = SicBoRules::default();
+        let small = SicBoBet {
+            bet_type: BetType::Small,
+            number: 0,
+            amount: 10,
+        };
+        let big = SicBoBet {
+            bet_type: BetType::Big,
+            number: 0,
+            amount: 10,
+        };
+
+        // Small win (total 6), not a triple.
+        assert_eq!(calculate_bet_payout(&small, &[1, 2, 3], rules), 20);
+        // Small loses on triples.
+        assert_eq!(calculate_bet_payout(&small, &[2, 2, 2], rules), 0);
+        // Big win (total 15), not a triple.
+        assert_eq!(calculate_bet_payout(&big, &[4, 5, 6], rules), 20);
+        // Big loses on triples.
+        assert_eq!(calculate_bet_payout(&big, &[6, 6, 6], rules), 0);
     }
 
     #[test]

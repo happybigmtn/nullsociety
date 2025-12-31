@@ -1,0 +1,2 @@
+export type CrapsBetType = "PASS" | "DONT_PASS" | "COME" | "DONT_COME" | "FIELD" | "YES" | "NO" | "NEXT" | "HARDWAY" | "FIRE" | "ATS_SMALL" | "ATS_TALL" | "ATS_ALL" | "MUGGSY" | "DIFF_DOUBLES" | "RIDE_LINE" | "REPLAY" | "HOT_ROLLER";
+//# sourceMappingURL=CrapsBetType.d.ts.map

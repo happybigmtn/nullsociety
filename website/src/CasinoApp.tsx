@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { GameType } from './types';
+import { ROULETTE_DOUBLE_ZERO } from './utils/gameUtils';
 import { useTerminalGame } from './hooks/useTerminalGame';
 import { useKeyboardControls } from './hooks/useKeyboardControls';
 import { PlaySwapStakeTabs } from './components/PlaySwapStakeTabs';
@@ -48,7 +49,10 @@ export default function CasinoApp() {
   // Mode selection (Cash vs Freeroll)
   const [playMode, setPlayMode] = useState<PlayMode | null>(null);
 
-  const { stats, gameState, setGameState, deck, aiAdvice, tournamentTime, phase, leaderboard, isRegistered, walletRng, walletVusdt, walletCredits, walletCreditsLocked, walletPublicKeyHex, lastTxSig, botConfig, setBotConfig, isRegisteringOrJoining, isFaucetClaiming, freerollActiveTournamentId, freerollActiveTimeLeft, freerollActivePrizePool, freerollActivePlayerCount, playerActiveTournamentId, freerollNextStartIn, freerollNextTournamentId, freerollIsJoinedNext, tournamentsPlayedToday, tournamentDailyLimit, actions } = useTerminalGame(playMode);
+  const { stats, gameState, setGameState, aiAdvice, tournamentTime, phase, leaderboard, isRegistered, walletRng, walletVusdt, walletCredits, walletCreditsLocked, walletPublicKeyHex, lastTxSig, isOnChain, botConfig, setBotConfig, isRegisteringOrJoining, isFaucetClaiming, freerollActiveTournamentId, freerollActiveTimeLeft, freerollActivePrizePool, freerollActivePlayerCount, playerActiveTournamentId, freerollNextStartIn, freerollNextTournamentId, freerollIsJoinedNext, tournamentsPlayedToday, tournamentDailyLimit, actions } = useTerminalGame(playMode);
+  const chainUrl = String(import.meta.env.VITE_CHAIN_URL ?? import.meta.env.VITE_URL ?? '');
+  const networkLabel = chainUrl.includes('localhost') || chainUrl.includes('127.0.0.1') ? 'Localnet' : 'Testnet';
+  const networkStatus = isOnChain ? 'online' : 'offline';
 
   // UI State
   const [commandOpen, setCommandOpen] = useState(false);
@@ -353,7 +357,19 @@ export default function CasinoApp() {
       setCustomBetOpen(false); setCustomBetString("");
   };
   const handleNumberInputEnter = () => {
-      const val = parseInt(numberInputString);
+      const trimmedInput = numberInputString.trim();
+      let val = parseInt(trimmedInput, 10);
+      if (
+        gameState.type === GameType.ROULETTE
+        && gameState.rouletteInputMode === 'STRAIGHT'
+        && trimmedInput === '00'
+      ) {
+        if (gameState.rouletteZeroRule === 'AMERICAN') {
+          val = ROULETTE_DOUBLE_ZERO;
+        } else {
+          val = NaN;
+        }
+      }
       if (!isNaN(val)) {
           if (gameState.type === GameType.ROULETTE) {
               let betType: Parameters<typeof actions.placeRouletteBet>[0] | null = null;
@@ -362,7 +378,7 @@ export default function CasinoApp() {
               switch (gameState.rouletteInputMode) {
                   case 'STRAIGHT':
                       betType = 'STRAIGHT';
-                      valid = val >= 0 && val <= 36;
+                      valid = val >= 0 && val <= (gameState.rouletteZeroRule === 'AMERICAN' ? ROULETTE_DOUBLE_ZERO : 36);
                       break;
                   case 'SPLIT_H':
                       betType = 'SPLIT_H';
@@ -391,7 +407,11 @@ export default function CasinoApp() {
               }
 
               if (betType && valid) {
-                  actions.placeRouletteBet(betType, val);
+                  if (betType === 'STRAIGHT' && val === 0) {
+                      actions.placeRouletteBet('ZERO');
+                  } else {
+                      actions.placeRouletteBet(betType, val);
+                  }
               } else {
                   setGameState((prev) => ({ ...prev, message: "INVALID NUMBER" }));
               }
@@ -523,6 +543,8 @@ export default function CasinoApp() {
                  credits={walletCredits}
                  creditsLocked={walletCreditsLocked}
                  pubkeyHex={walletPublicKeyHex}
+                 networkLabel={networkLabel}
+                 networkStatus={networkStatus}
                />
            </div>
        </div>
@@ -542,6 +564,8 @@ export default function CasinoApp() {
                      credits={walletCredits}
                      creditsLocked={walletCreditsLocked}
                      pubkeyHex={walletPublicKeyHex}
+                     networkLabel={networkLabel}
+                     networkStatus={networkStatus}
                      className="w-full"
                    />
 	               </div>
@@ -573,7 +597,6 @@ export default function CasinoApp() {
                <ErrorBoundary>
                  <ActiveGame
                     gameState={gameState}
-                    deck={deck}
                     chips={stats.chips}
                     numberInput={numberInputString}
                     onToggleHold={safeActions.toggleHold}

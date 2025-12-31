@@ -4,8 +4,7 @@ import { GameState } from '../../../types';
 import { Hand } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
 import { Label } from '../ui/Label';
-import { getVisibleHandValue } from '../../../utils/gameUtils';
-import { cardIdToString } from '../../../utils/gameStateParser';
+import { cardIdToString } from '../../../services/games';
 
 const CHIP_VALUES = [1, 5, 25, 100, 500, 1000, 5000, 10000];
 
@@ -56,24 +55,24 @@ export const BlackjackView = React.memo<{
     onBetChange?: (bet: number) => void;
 }>(({ gameState, actions, lastWin, playMode, currentBet, onBetChange }) => {
     const [showChipSelector, setShowChipSelector] = useState(false);
-    const dealerValue = useMemo(() => getVisibleHandValue(gameState.dealerCards), [gameState.dealerCards]);
-    const playerValue = useMemo(() => getVisibleHandValue(gameState.playerCards), [gameState.playerCards]);
+    const dealerValue = useMemo(
+        () => (typeof gameState.blackjackDealerValue === 'number' ? gameState.blackjackDealerValue : '?'),
+        [gameState.blackjackDealerValue]
+    );
+    const playerValue = useMemo(
+        () => (typeof gameState.blackjackPlayerValue === 'number' ? gameState.blackjackPlayerValue : '?'),
+        [gameState.blackjackPlayerValue]
+    );
     const showInsurancePrompt = useMemo(() => {
         if (gameState.stage !== 'PLAYING') return false;
         const msg = (gameState.message ?? '').toString().toUpperCase();
         return msg.includes('INSURANCE');
     }, [gameState.message, gameState.stage]);
 
-    // TODO: Remove local action availability logic - chain state should provide canHit/canStand/canDouble/canSplit flags.
-    // These calculations duplicate chain logic and may drift. Chain is source of truth.
-    const canHit = gameState.stage === 'PLAYING' && !showInsurancePrompt && playerValue < 21;
-    const canStand = gameState.stage === 'PLAYING' && !showInsurancePrompt && gameState.playerCards.length > 0;
-    const canDouble = gameState.stage === 'PLAYING' && !showInsurancePrompt && gameState.playerCards.length === 2;
-    const canSplit =
-        gameState.stage === 'PLAYING' &&
-        !showInsurancePrompt &&
-        gameState.playerCards.length === 2 &&
-        gameState.playerCards[0]?.rank === gameState.playerCards[1]?.rank;
+    const canHit = gameState.blackjackActions?.canHit && !showInsurancePrompt;
+    const canStand = gameState.blackjackActions?.canStand && !showInsurancePrompt;
+    const canDouble = gameState.blackjackActions?.canDouble && !showInsurancePrompt;
+    const canSplit = gameState.blackjackActions?.canSplit && !showInsurancePrompt;
     const isBettingStage = gameState.stage === 'BETTING' || gameState.stage === 'RESULT';
 
     const activeHandNumber = gameState.completedHands.length + 1;

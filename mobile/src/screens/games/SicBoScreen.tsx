@@ -17,12 +17,13 @@ import { ChipSelector } from '../../components/casino';
 import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
-import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
+import { useGameKeyboard, KEY_ACTIONS, useGameConnection, useModalBackHandler } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SPRING } from '../../constants/theme';
 import { useGameStore } from '../../stores/gameStore';
 import { getDieFace } from '../../utils/dice';
+import { decodeStateBytes, parseNumeric, parseSicBoState } from '../../utils';
 import type { ChipValue, TutorialStep, SicBoBetType } from '../../types';
-import type { SicBoMessage } from '@nullspace/protocol/mobile';
+import type { GameMessage } from '@nullspace/protocol/mobile';
 
 interface SicBoBet {
   type: SicBoBetType;
@@ -56,7 +57,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
 
 export function SicBoScreen() {
   // Shared hook for connection (SicBo has multi-bet so keeps custom bet state)
-  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<SicBoMessage>();
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<GameMessage>();
   const { balance } = useGameStore();
 
   const [state, setState] = useState<SicBoState>({
@@ -73,6 +74,8 @@ export function SicBoScreen() {
   const [comboMode, setComboMode] = useState<'NONE' | 'DOMINO' | 'HOP3_EASY' | 'HOP3_HARD' | 'HOP4_EASY'>('NONE');
   const [comboPicks, setComboPicks] = useState<number[]>([]);
 
+  useModalBackHandler(showAdvanced, () => setShowAdvanced(false));
+
   const dice1Bounce = useSharedValue(0);
   const dice2Bounce = useSharedValue(0);
   const dice3Bounce = useSharedValue(0);
@@ -86,7 +89,14 @@ export function SicBoScreen() {
   useEffect(() => {
     if (!lastMessage) return;
 
-    if (lastMessage.type === 'dice_roll') {
+    const payload = lastMessage as Record<string, unknown>;
+    const stateBytes = decodeStateBytes(payload.state);
+    const parsedState = stateBytes ? parseSicBoState(stateBytes) : null;
+    const dice = Array.isArray(payload.dice) && payload.dice.length === 3
+      ? payload.dice as [number, number, number]
+      : parsedState?.dice ?? null;
+
+    if (dice) {
       // Animate dice bouncing - Toss up then land with physics
       dice1Bounce.value = withSequence(
         withTiming(-40, { duration: 150 }),
@@ -127,19 +137,38 @@ export function SicBoScreen() {
         withSpring(0, SPRING.diceTumble)
       );
       haptics.diceRoll();
+    }
 
-      const dice = lastMessage.dice;
+    if (lastMessage.type === 'game_started') {
+      setState((prev) => ({
+        ...prev,
+        bets: [],
+        dice: parsedState?.dice ?? null,
+        total: parsedState?.dice ? parsedState.dice[0] + parsedState.dice[1] + parsedState.dice[2] : 0,
+        phase: 'betting',
+        winAmount: 0,
+        message: 'Place your bets',
+      }));
+      return;
+    }
+
+    if (lastMessage.type === 'game_move') {
       if (dice) {
         setState((prev) => ({
           ...prev,
           dice,
           total: dice[0] + dice[1] + dice[2],
+          phase: 'rolling',
         }));
       }
+      return;
     }
 
     if (lastMessage.type === 'game_result') {
-      const won = (lastMessage.winAmount ?? 0) > 0;
+      const totalReturn = parseNumeric(payload.totalReturn ?? payload.payout) ?? 0;
+      const totalWagered = parseNumeric(payload.totalWagered) ?? 0;
+      const winAmount = Math.max(0, totalReturn - totalWagered);
+      const won = winAmount > 0;
       if (won) {
         haptics.win();
       } else {
@@ -148,12 +177,25 @@ export function SicBoScreen() {
 
       setState((prev) => ({
         ...prev,
+        dice,
+        total: dice ? dice[0] + dice[1] + dice[2] : prev.total,
         phase: 'result',
-        winAmount: lastMessage.winAmount ?? 0,
-        message: lastMessage.message ?? (won ? 'You win!' : 'No luck'),
+        winAmount,
+        message: typeof payload.message === 'string' ? payload.message : won ? 'You win!' : 'No luck',
       }));
     }
-  }, [lastMessage]); // dice1Bounce, dice2Bounce, dice3Bounce are SharedValues (stable refs) - must not be in deps
+  }, [
+    lastMessage,
+    dice1Bounce,
+    dice1OffsetX,
+    dice1Spin,
+    dice2Bounce,
+    dice2OffsetX,
+    dice2Spin,
+    dice3Bounce,
+    dice3OffsetX,
+    dice3Spin,
+  ]);
 
   useEffect(() => {
     setComboPicks([]);
@@ -180,58 +222,6 @@ export function SicBoScreen() {
       { rotate: `${dice3Spin.value}deg` },
     ],
   }));
-
-  const handleComboPick = useCallback((num: number) => {
-    if (comboMode === 'NONE') return;
-
-    const place = (type: SicBoBetType, target?: number) => {
-      addBet(type, target);
-      setComboPicks([]);
-    };
-
-    if (comboMode === 'DOMINO') {
-      const next = comboPicks.includes(num)
-        ? comboPicks.filter((x) => x !== num)
-        : [...comboPicks, num].slice(0, 2);
-      if (next.length < 2) {
-        setComboPicks(next);
-        return;
-      }
-      const [a, b] = next;
-      if (a === b) {
-        setComboPicks([a]);
-        return;
-      }
-      const min = Math.min(a, b);
-      const max = Math.max(a, b);
-      return place('DOMINO', (min << 4) | max);
-    }
-
-    if (comboMode === 'HOP3_EASY' || comboMode === 'HOP4_EASY') {
-      const maxCount = comboMode === 'HOP3_EASY' ? 3 : 4;
-      const next = comboPicks.includes(num) ? comboPicks.filter((x) => x !== num) : [...comboPicks, num];
-      if (next.length > maxCount) return;
-      if (next.length < maxCount) {
-        setComboPicks(next);
-        return;
-      }
-      const mask = next.reduce((m, v) => m | (1 << (v - 1)), 0);
-      return place(comboMode, mask);
-    }
-
-    if (comboMode === 'HOP3_HARD') {
-      if (comboPicks.length === 0) {
-        setComboPicks([num]);
-        return;
-      }
-      const doubled = comboPicks[0];
-      if (num === doubled) {
-        setComboPicks([]);
-        return;
-      }
-      return place('HOP3_HARD', (doubled << 4) | num);
-    }
-  }, [comboMode, comboPicks, addBet]);
 
   const addBet = useCallback((type: SicBoBetType, target?: number) => {
     if (state.phase !== 'betting') return;
@@ -270,6 +260,65 @@ export function SicBoScreen() {
     });
   }, [state.phase, selectedChip, state.bets, balance]);
 
+  const handleComboPick = useCallback((num: number) => {
+    if (comboMode === 'NONE') return;
+
+    const place = (type: SicBoBetType, target?: number) => {
+      addBet(type, target);
+      setComboPicks([]);
+    };
+
+    if (comboMode === 'DOMINO') {
+      const next = comboPicks.includes(num)
+        ? comboPicks.filter((x) => x !== num)
+        : [...comboPicks, num].slice(0, 2);
+      if (next.length < 2) {
+        setComboPicks(next);
+        return;
+      }
+      const a = next[0];
+      const b = next[1];
+      if (a === undefined || b === undefined) {
+        return;
+      }
+      if (a === b) {
+        setComboPicks([a]);
+        return;
+      }
+      const min = Math.min(a, b);
+      const max = Math.max(a, b);
+      return place('DOMINO', (min << 4) | max);
+    }
+
+    if (comboMode === 'HOP3_EASY' || comboMode === 'HOP4_EASY') {
+      const maxCount = comboMode === 'HOP3_EASY' ? 3 : 4;
+      const next = comboPicks.includes(num) ? comboPicks.filter((x) => x !== num) : [...comboPicks, num];
+      if (next.length > maxCount) return;
+      if (next.length < maxCount) {
+        setComboPicks(next);
+        return;
+      }
+      const mask = next.reduce((m, v) => m | (1 << (v - 1)), 0);
+      return place(comboMode, mask);
+    }
+
+    if (comboMode === 'HOP3_HARD') {
+      if (comboPicks.length === 0) {
+        setComboPicks([num]);
+        return;
+      }
+      const doubled = comboPicks[0];
+      if (doubled === undefined) {
+        return;
+      }
+      if (num === doubled) {
+        setComboPicks([]);
+        return;
+      }
+      return place('HOP3_HARD', (doubled << 4) | num);
+    }
+  }, [comboMode, comboPicks, addBet]);
+
   const handleRoll = useCallback(async () => {
     if (state.bets.length === 0) return;
     await haptics.diceRoll();
@@ -301,7 +350,7 @@ export function SicBoScreen() {
     addBet('BIG');
   }, [addBet]);
 
-  const totalBet = state.bets.reduce((sum, b) => sum + b.amount, 0);
+  const totalBet = useMemo(() => state.bets.reduce((sum, b) => sum + b.amount, 0), [state.bets]);
 
   const handleClearBets = useCallback(() => {
     if (state.phase !== 'betting') return;

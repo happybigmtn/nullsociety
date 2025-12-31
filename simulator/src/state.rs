@@ -303,7 +303,13 @@ pub struct SubscriptionGuard {
 
 impl Drop for SubscriptionGuard {
     fn drop(&mut self) {
-        let mut tracker = self.tracker.lock().unwrap();
+        let mut tracker = match self.tracker.lock() {
+            Ok(tracker) => tracker,
+            Err(poisoned) => {
+                tracing::warn!("Subscription tracker lock poisoned; recovering");
+                poisoned.into_inner()
+            }
+        };
         tracker.unregister(&self.filter);
     }
 }
@@ -819,7 +825,13 @@ pub(crate) async fn index_events(
     if has_account_subs {
         let mut tasks = FuturesUnordered::new();
         for (account, ops) in account_ops {
-            let permit = semaphore.clone().acquire_owned().await.expect("semaphore open");
+            let permit = match semaphore.clone().acquire_owned().await {
+                Ok(permit) => permit,
+                Err(err) => {
+                    tracing::warn!("Update indexing semaphore closed: {err}");
+                    break;
+                }
+            };
             let events = Arc::clone(&events);
             let proof_store = Arc::clone(&proof_store);
             let public_ops = Arc::clone(&public_ops);
@@ -860,7 +872,13 @@ pub(crate) async fn index_events(
     if has_session_subs {
         let mut tasks = FuturesUnordered::new();
         for (session_id, ops) in session_ops {
-            let permit = semaphore.clone().acquire_owned().await.expect("semaphore open");
+            let permit = match semaphore.clone().acquire_owned().await {
+                Ok(permit) => permit,
+                Err(err) => {
+                    tracing::warn!("Update indexing semaphore closed: {err}");
+                    break;
+                }
+            };
             let events = Arc::clone(&events);
             let proof_store = Arc::clone(&proof_store);
             let index_metrics = Arc::clone(&index_metrics);
@@ -1224,7 +1242,13 @@ impl Simulator {
     }
 
     pub fn register_subscription(&self, filter: &UpdatesFilter) -> SubscriptionGuard {
-        let mut tracker = self.subscriptions.lock().unwrap();
+        let mut tracker = match self.subscriptions.lock() {
+            Ok(tracker) => tracker,
+            Err(poisoned) => {
+                tracing::warn!("Subscriptions lock poisoned; recovering");
+                poisoned.into_inner()
+            }
+        };
         tracker.register(filter);
         SubscriptionGuard {
             tracker: Arc::clone(&self.subscriptions),
@@ -1233,7 +1257,13 @@ impl Simulator {
     }
 
     fn subscription_snapshot(&self, receiver_count: usize) -> SubscriptionSnapshot {
-        let tracker = self.subscriptions.lock().unwrap();
+        let tracker = match self.subscriptions.lock() {
+            Ok(tracker) => tracker,
+            Err(poisoned) => {
+                tracing::warn!("Subscriptions lock poisoned; recovering");
+                poisoned.into_inner()
+            }
+        };
         let tracked = tracker.total_count();
         let has_untracked = receiver_count > tracked;
         tracker.snapshot(has_untracked, has_untracked)

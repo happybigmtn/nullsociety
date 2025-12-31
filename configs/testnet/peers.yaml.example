@@ -1,0 +1,7 @@
+# Peer address mappings (testnet template)
+# Format: "<public_key_hex>": "<ip:port>"
+addresses:
+  "<NODE0_PUBLIC_KEY_HEX>": "10.0.0.10:9000"
+  "<NODE1_PUBLIC_KEY_HEX>": "10.0.0.11:9000"
+  "<NODE2_PUBLIC_KEY_HEX>": "10.0.0.12:9000"
+  "<NODE3_PUBLIC_KEY_HEX>": "10.0.0.13:9000"

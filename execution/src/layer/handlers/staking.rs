@@ -424,10 +424,9 @@ mod tests {
                             name: "Alice".to_string(),
                         },
                     ),
-                    Transaction::sign(&private, 1, Instruction::CasinoDeposit { amount: 100 }),
                     Transaction::sign(
                         &private,
-                        2,
+                        1,
                         Instruction::Stake {
                             amount: 40,
                             duration: 10,
@@ -444,7 +443,7 @@ mod tests {
                 Some(Value::CasinoPlayer(player)) => player,
                 other => panic!("expected casino player, got {other:?}"),
             };
-            assert_eq!(player.balances.chips, 1_060);
+            assert_eq!(player.balances.chips, 960);
 
             let staker = match crate::State::get(&state, &Key::Staker(public.clone()))
                 .await
@@ -474,7 +473,7 @@ mod tests {
                 Some(Value::Account(account)) => account,
                 other => panic!("expected account, got {other:?}"),
             };
-            assert_eq!(account.nonce, 3);
+            assert_eq!(account.nonce, 2);
 
             // Unstake before unlock should keep stake locked (but consume nonce).
             execute_block(
@@ -483,7 +482,7 @@ mod tests {
                 &mut state,
                 &mut events,
                 2,
-                vec![Transaction::sign(&private, 3, Instruction::Unstake)],
+                vec![Transaction::sign(&private, 2, Instruction::Unstake)],
             )
             .await;
 
@@ -494,7 +493,7 @@ mod tests {
                 Some(Value::CasinoPlayer(player)) => player,
                 other => panic!("expected casino player, got {other:?}"),
             };
-            assert_eq!(player.balances.chips, 1_060);
+            assert_eq!(player.balances.chips, 960);
 
             let staker = match crate::State::get(&state, &Key::Staker(public.clone()))
                 .await
@@ -523,7 +522,7 @@ mod tests {
                 Some(Value::Account(account)) => account,
                 other => panic!("expected account, got {other:?}"),
             };
-            assert_eq!(account.nonce, 4);
+            assert_eq!(account.nonce, 3);
 
             // Unstake at/after unlock should return chips and clear staker.
             execute_block(
@@ -532,7 +531,7 @@ mod tests {
                 &mut state,
                 &mut events,
                 11,
-                vec![Transaction::sign(&private, 4, Instruction::Unstake)],
+                vec![Transaction::sign(&private, 3, Instruction::Unstake)],
             )
             .await;
 
@@ -543,7 +542,7 @@ mod tests {
                 Some(Value::CasinoPlayer(player)) => player,
                 other => panic!("expected casino player, got {other:?}"),
             };
-            assert_eq!(player.balances.chips, 1_100);
+            assert_eq!(player.balances.chips, 1_000);
 
             let staker = match crate::State::get(&state, &Key::Staker(public.clone()))
                 .await
@@ -572,7 +571,7 @@ mod tests {
                 Some(Value::Account(account)) => account,
                 other => panic!("expected account, got {other:?}"),
             };
-            assert_eq!(account.nonce, 5);
+            assert_eq!(account.nonce, 4);
         });
     }
 

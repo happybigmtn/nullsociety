@@ -3,10 +3,9 @@
  * Minimal branding with biometric authentication prompt
  */
 import { View, Text, StyleSheet } from 'react-native';
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import Animated, {
   FadeIn,
-  FadeOut,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -24,17 +23,7 @@ export function SplashScreen({ navigation }: SplashScreenProps) {
   const pulseOpacity = useSharedValue(0.5);
   const { authenticate } = useAuth();
 
-  useEffect(() => {
-    pulseOpacity.value = withRepeat(
-      withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
-      -1,
-      true
-    );
-
-    initializeApp();
-  }, []);
-
-  const initializeApp = async () => {
+  const initializeApp = useCallback(async () => {
     try {
       // Initialize storage first
       await initializeStorage();
@@ -62,7 +51,17 @@ export function SplashScreen({ navigation }: SplashScreenProps) {
       console.error('Initialization error:', error);
       navigation.replace('Auth');
     }
-  };
+  }, [authenticate, navigation]);
+
+  useEffect(() => {
+    pulseOpacity.value = withRepeat(
+      withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+
+    initializeApp();
+  }, [initializeApp, pulseOpacity]);
 
   const pulseStyle = useAnimatedStyle(() => ({
     opacity: pulseOpacity.value,

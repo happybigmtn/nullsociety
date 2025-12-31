@@ -18,11 +18,12 @@ import { ChipSelector } from '../../components/casino';
 import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
-import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
-import { COLORS, SPACING, TYPOGRAPHY, RADIUS, GAME_COLORS, GAME_DETAIL_COLORS, SPRING } from '../../constants/theme';
+import { useGameKeyboard, KEY_ACTIONS, useGameConnection, useModalBackHandler } from '../../hooks';
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, GAME_DETAIL_COLORS, SPRING } from '../../constants/theme';
+import { parseNumeric } from '../../utils';
 import { useGameStore } from '../../stores/gameStore';
 import type { ChipValue, TutorialStep, RouletteBetType } from '../../types';
-import type { RouletteMessage } from '@nullspace/protocol/mobile';
+import type { GameMessage } from '@nullspace/protocol/mobile';
 
 const QUICK_BETS: RouletteBetType[] = ['RED', 'BLACK', 'ODD', 'EVEN', 'LOW', 'HIGH'];
 const SPLIT_H_TARGETS = Array.from({ length: 35 }, (_, i) => i + 1).filter((num) => num % 3 !== 0);
@@ -74,7 +75,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
 
 export function RouletteScreen() {
   // Shared hook for connection (Roulette has multi-bet array so keeps custom bet state)
-  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<RouletteMessage>();
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<GameMessage>();
   const { balance } = useGameStore();
 
   const [state, setState] = useState<RouletteState>({
@@ -89,6 +90,8 @@ export function RouletteScreen() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [insideMode, setInsideMode] = useState<InsideBetType>('SPLIT_H');
   const spinSeedRef = useRef({ extraSpins: 4 });
+
+  useModalBackHandler(showAdvanced, () => setShowAdvanced(false));
 
   const insideTargets = useMemo(() => {
     switch (insideMode) {
@@ -110,18 +113,10 @@ export function RouletteScreen() {
   useEffect(() => {
     if (!lastMessage) return;
 
-    if (lastMessage.type === 'spin_start') {
-      spinSeedRef.current = { extraSpins: 4 + Math.floor(Math.random() * 3) };
-      wheelRotation.value = withRepeat(
-        withTiming(360, { duration: 500, easing: Easing.linear }),
-        -1,
-        false
-      );
-    }
-
     if (lastMessage.type === 'game_result') {
       cancelAnimation(wheelRotation);
-      const result = lastMessage.result ?? 0;
+      const payload = lastMessage as Record<string, unknown>;
+      const result = typeof payload.result === 'number' ? payload.result : 0;
       const current = wheelRotation.value % 360;
       const targetAngle = getNumberAngle(result);
       const delta = (targetAngle - current + 360) % 360;
@@ -131,7 +126,10 @@ export function RouletteScreen() {
         easing: Easing.out(Easing.cubic),
       });
 
-      const won = lastMessage.won ?? false;
+      const won = (payload.won as boolean | undefined) ?? false;
+      const totalReturn = parseNumeric(payload.totalReturn ?? payload.payout) ?? 0;
+      const totalWagered = parseNumeric(payload.totalWagered) ?? 0;
+      const winAmount = Math.max(0, totalReturn - totalWagered);
       if (won) {
         haptics.win();
       } else {
@@ -141,12 +139,16 @@ export function RouletteScreen() {
       setState((prev) => ({
         ...prev,
         phase: 'result',
-        result: lastMessage.result ?? null,
-        winAmount: lastMessage.winAmount ?? 0,
-        message: lastMessage.message ?? (won ? 'You win!' : 'No luck'),
+        result,
+        winAmount,
+        message: typeof payload.message === 'string' ? payload.message : won ? 'You win!' : 'No luck',
       }));
     }
-  }, [lastMessage]); // wheelRotation is a SharedValue (stable ref) - must not be in deps
+  }, [lastMessage, wheelRotation]);
+
+  useEffect(() => () => {
+    cancelAnimation(wheelRotation);
+  }, [wheelRotation]);
 
   const wheelStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${wheelRotation.value}deg` }],
@@ -198,12 +200,19 @@ export function RouletteScreen() {
       bets: state.bets,
     });
 
+    spinSeedRef.current = { extraSpins: 4 + Math.floor(Math.random() * 3) };
+    wheelRotation.value = withRepeat(
+      withTiming(360, { duration: 500, easing: Easing.linear }),
+      -1,
+      false
+    );
+
     setState((prev) => ({
       ...prev,
       phase: 'spinning',
       message: 'No more bets!',
     }));
-  }, [state.bets, send]);
+  }, [state.bets, send, wheelRotation]);
 
   const handleNewGame = useCallback(() => {
     setState((prev) => ({
@@ -220,7 +229,7 @@ export function RouletteScreen() {
     addBet('RED');
   }, [addBet]);
 
-  const totalBet = state.bets.reduce((sum, b) => sum + b.amount, 0);
+  const totalBet = useMemo(() => state.bets.reduce((sum, b) => sum + b.amount, 0), [state.bets]);
 
   const handleClearBets = useCallback(() => {
     if (state.phase !== 'betting') return;
@@ -515,6 +524,7 @@ const styles = StyleSheet.create({
   },
   resultNumber: {
     ...TYPOGRAPHY.displayLarge,
+    color: COLORS.textPrimary,
   },
   wheelPlaceholder: {
     fontSize: 48,

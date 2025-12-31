@@ -10,6 +10,13 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+
   loki:
     image: grafana/loki:2.9.4
     ports:

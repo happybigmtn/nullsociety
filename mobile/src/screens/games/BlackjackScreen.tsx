@@ -2,7 +2,7 @@
  * Blackjack Game Screen - Jony Ive Redesigned
  * Hit/Stand always visible, Split/Double contextual
  */
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, InteractionManager } from 'react-native';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import Animated, { SlideInRight } from 'react-native-reanimated';
 import { Card } from '../../components/casino';
@@ -12,8 +12,9 @@ import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection, useChipBetting } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY, SPRING } from '../../constants/theme';
+import { decodeCardList, decodeStateBytes, parseBlackjackState } from '../../utils';
 import type { ChipValue, TutorialStep, Card as CardType } from '../../types';
-import type { BlackjackMessage } from '@nullspace/protocol/mobile';
+import type { GameMessage } from '@nullspace/protocol/mobile';
 
 interface BlackjackState {
   playerCards: CardType[];
@@ -45,7 +46,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
 
 export function BlackjackScreen() {
   // Shared hooks for connection and betting
-  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<BlackjackMessage>();
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<GameMessage>();
   const { bet, selectedChip, setSelectedChip, placeChip, clearBet, setBet, balance } = useChipBetting();
 
   const [state, setState] = useState<BlackjackState>({
@@ -71,30 +72,52 @@ export function BlackjackScreen() {
   useEffect(() => {
     if (!lastMessage) return;
 
-    if (lastMessage.type === 'state_update') {
-      setState((prev) => ({
-        ...prev,
-        playerCards: lastMessage.playerCards ?? prev.playerCards,
-        dealerCards: lastMessage.dealerCards ?? prev.dealerCards,
-        playerTotal: lastMessage.playerTotal ?? prev.playerTotal,
-        dealerTotal: lastMessage.dealerTotal ?? prev.dealerTotal,
-        canDouble: lastMessage.canDouble ?? prev.canDouble,
-        canSplit: lastMessage.canSplit ?? prev.canSplit,
-      }));
-    }
+    if (lastMessage.type === 'game_started' || lastMessage.type === 'game_move') {
+      const stateBytes = decodeStateBytes((lastMessage as { state?: unknown }).state);
+      if (!stateBytes) return;
 
-    if (lastMessage.type === 'card_dealt') {
-      haptics.cardDeal();
+      InteractionManager.runAfterInteractions(() => {
+        const parsed = parseBlackjackState(stateBytes);
+        if (!parsed) return;
+
+        setState((prev) => ({
+          ...prev,
+          playerCards: parsed.playerCards,
+          dealerCards: parsed.dealerCards,
+          playerTotal: parsed.playerTotal,
+          dealerTotal: parsed.dealerTotal,
+          canDouble: parsed.canDouble,
+          canSplit: parsed.canSplit,
+          dealerHidden: parsed.dealerHidden,
+          phase: parsed.phase,
+          lastResult: parsed.phase === 'result' ? prev.lastResult : null,
+          message: parsed.phase === 'betting'
+            ? 'Place your bet'
+            : parsed.phase === 'player_turn'
+              ? 'Your turn'
+              : parsed.phase === 'dealer_turn'
+                ? 'Dealer\'s turn'
+                : 'Round complete',
+        }));
+      });
+      return;
     }
 
     if (lastMessage.type === 'game_result') {
-      const won = lastMessage.won ?? false;
-      const push = lastMessage.push ?? false;
-      const blackjack = lastMessage.blackjack ?? false;
+      const payload = lastMessage as Record<string, unknown>;
+      const dealerInfo = payload.dealer as { cards?: number[]; value?: number } | undefined;
+      const hands = Array.isArray(payload.hands)
+        ? (payload.hands as { cards?: number[]; value?: number }[])
+        : [];
+      const mainHand = hands[0];
 
-      if (blackjack) {
-        haptics.jackpot();
-      } else if (won) {
+      const playerCards = mainHand?.cards ? decodeCardList(mainHand.cards) : null;
+      const dealerCards = dealerInfo?.cards ? decodeCardList(dealerInfo.cards) : null;
+
+      const won = (payload.won as boolean | undefined) ?? false;
+      const push = (payload.push as boolean | undefined) ?? false;
+
+      if (won) {
         haptics.win();
       } else if (push) {
         haptics.push();
@@ -106,9 +129,28 @@ export function BlackjackScreen() {
         ...prev,
         phase: 'result',
         dealerHidden: false,
-        dealerTotal: lastMessage.dealerTotal ?? prev.dealerTotal,
-        lastResult: blackjack ? 'blackjack' : won ? 'win' : push ? 'push' : 'loss',
-        message: lastMessage.message ?? (blackjack ? 'Blackjack!' : won ? 'You win!' : push ? 'Push' : 'Dealer wins'),
+        playerCards: playerCards ?? prev.playerCards,
+        dealerCards: dealerCards ?? prev.dealerCards,
+        playerTotal: typeof mainHand?.value === 'number' ? mainHand.value : prev.playerTotal,
+        dealerTotal: typeof dealerInfo?.value === 'number' ? dealerInfo.value : prev.dealerTotal,
+        canDouble: false,
+        canSplit: false,
+        lastResult: won ? 'win' : push ? 'push' : 'loss',
+        message: typeof payload.message === 'string'
+          ? payload.message
+          : won
+            ? 'You win!'
+            : push
+              ? 'Push'
+              : 'Dealer wins',
+      }));
+      return;
+    }
+
+    if (lastMessage.type === 'error') {
+      setState((prev) => ({
+        ...prev,
+        message: typeof lastMessage.message === 'string' ? lastMessage.message : 'Action failed',
       }));
     }
   }, [lastMessage]);

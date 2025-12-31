@@ -118,7 +118,7 @@ export abstract class GameHandler {
 
         return {
           success: true,
-          response: this.buildGameStartedResponse(gameEvent, session.activeGameId!, bet),
+          response: this.buildGameStartedResponse(gameEvent, session, session.activeGameId!, bet),
         };
       }
 
@@ -130,6 +130,7 @@ export abstract class GameHandler {
           gameType: this.gameType,
           sessionId: gameSessionId.toString(),
           bet: bet.toString(),
+          balance: session.balance.toString(),
         },
       };
     }
@@ -197,14 +198,22 @@ export abstract class GameHandler {
           // Game is over, clear session state
           session.activeGameId = null;
           session.gameType = null;
+          if (gameEvent.finalChips !== undefined) {
+            session.balance = gameEvent.finalChips;
+          } else if (gameEvent.balanceSnapshot) {
+            session.balance = gameEvent.balanceSnapshot.chips;
+          }
           return {
             success: true,
-            response: this.buildGameCompletedResponse(gameEvent),
+            response: this.buildGameCompletedResponse(gameEvent, session),
           };
         } else if (gameEvent.type === 'moved') {
+          if (gameEvent.balanceSnapshot) {
+            session.balance = gameEvent.balanceSnapshot.chips;
+          }
           return {
             success: true,
-            response: this.buildGameMoveResponse(gameEvent),
+            response: this.buildGameMoveResponse(gameEvent, session),
           };
         }
       }
@@ -285,6 +294,7 @@ export abstract class GameHandler {
    */
   private buildGameStartedResponse(
     event: CasinoGameEvent,
+    session: Session,
     sessionId: bigint,
     bet: bigint
   ): Record<string, unknown> {
@@ -299,6 +309,11 @@ export abstract class GameHandler {
     if (event.initialState && event.initialState.length > 0) {
       // Parse initial state based on game type
       response.initialState = this.parseInitialState(event.initialState);
+      response.state = Array.from(event.initialState);
+    }
+
+    if (session.balance > 0n) {
+      response.balance = session.balance.toString();
     }
 
     return response;
@@ -307,11 +322,12 @@ export abstract class GameHandler {
   /**
    * Build response for game move event
    */
-  private buildGameMoveResponse(event: CasinoGameEvent): Record<string, unknown> {
+  private buildGameMoveResponse(event: CasinoGameEvent, session: Session): Record<string, unknown> {
     const response: Record<string, unknown> = {
       type: 'game_move',
       sessionId: event.sessionId.toString(),
       moveNumber: event.moveNumber,
+      gameType: session.gameType ?? this.gameType,
     };
 
     // Parse JSON logs for game state
@@ -322,18 +338,27 @@ export abstract class GameHandler {
       }
     }
 
+    if (event.newState && event.newState.length > 0) {
+      response.state = Array.from(event.newState);
+    }
+
+    if (event.balanceSnapshot) {
+      response.balance = event.balanceSnapshot.chips.toString();
+    }
+
     return response;
   }
 
   /**
    * Build response for game completed event
    */
-  private buildGameCompletedResponse(event: CasinoGameEvent): Record<string, unknown> {
+  private buildGameCompletedResponse(event: CasinoGameEvent, session: Session): Record<string, unknown> {
     const response: Record<string, unknown> = {
       type: 'game_result',
       sessionId: event.sessionId.toString(),
       payout: event.payout?.toString() ?? '0',
       finalChips: event.finalChips?.toString() ?? '0',
+      gameType: event.gameType ?? session.gameType ?? this.gameType,
     };
 
     // Determine win/loss status
@@ -356,6 +381,12 @@ export abstract class GameHandler {
       if (parsedLog) {
         Object.assign(response, parsedLog);
       }
+    }
+
+    if (event.finalChips !== undefined) {
+      response.balance = event.finalChips.toString();
+    } else if (event.balanceSnapshot) {
+      response.balance = event.balanceSnapshot.chips.toString();
     }
 
     return response;

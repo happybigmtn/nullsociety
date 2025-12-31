@@ -1,3 +1,4 @@
+#![cfg(any(test, feature = "mocks"))]
 //! Execution test and simulation helpers.
 //!
 //! This module provides deterministic mocks and storage harnesses used by unit/integration tests

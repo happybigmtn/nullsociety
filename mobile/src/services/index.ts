@@ -26,3 +26,4 @@ export {
   getNumber,
   setNumber,
 } from './storage';
+export { initializeNotifications } from './notifications';

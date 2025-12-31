@@ -4,6 +4,7 @@ import { WasmWrapper } from '../api/wasm';
 import { CasinoChainService } from '../services/CasinoChainService';
 import { LeaderboardEntry, GameType } from '../types';
 import { GameType as ChainGameType } from '@nullspace/types/casino';
+import { logDebug } from '../utils/logger';
 
 // Reverse mapping from chain game type to frontend game type
 const CHAIN_TO_FRONTEND_GAME_TYPE: Record<ChainGameType, GameType> = {
@@ -43,7 +44,7 @@ export const useChainService = () => {
       try {
         const identityHex = import.meta.env.VITE_IDENTITY as string | undefined;
         if (!identityHex) {
-            console.log('[useChainService] No VITE_IDENTITY found, skipping chain init.');
+            logDebug('[useChainService] No VITE_IDENTITY found, skipping chain init.');
             return;
         }
 
@@ -56,7 +57,7 @@ export const useChainService = () => {
 
         const keypair = casinoClient.getOrCreateKeypair();
         if (!keypair) {
-            console.log('[useChainService] Failed to get keypair (vault may be locked).');
+            logDebug('[useChainService] Failed to get keypair (vault may be locked).');
             return;
         }
 
@@ -68,7 +69,7 @@ export const useChainService = () => {
           const state = await casinoClient.getCasinoPlayer(keypair.publicKey);
           setPlayerState(state);
         } catch (e: any) {
-           console.log('[useChainService] Player check failed:', e);
+           logDebug('[useChainService] Player check failed:', e);
            // Attempt registration logic could go here if we want to extract it fully
            // For now, mimicking useTerminalGame which just logs warning or tries to register if 404
            if (e.message && e.message.includes('not found')) {
@@ -81,7 +82,7 @@ export const useChainService = () => {
             const house = await casinoClient.getHouse();
             setHouseState(house);
         } catch (e) {
-            console.debug('[useChainService] Failed to fetch house state:', e);
+            logDebug('[useChainService] Failed to fetch house state:', e);
         }
 
         const service = new CasinoChainService(casinoClient);
@@ -115,7 +116,7 @@ export const useChainService = () => {
                 setLeaderboard(newBoard);
             }
         } catch (e) {
-             console.debug('[useChainService] Failed to fetch initial leaderboard:', e);
+             logDebug('[useChainService] Failed to fetch initial leaderboard:', e);
         }
 
       } catch (error) {

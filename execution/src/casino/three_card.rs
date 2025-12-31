@@ -39,6 +39,7 @@
 use super::super_mode::apply_super_multiplier_cards;
 use super::{cards, CasinoGame, GameError, GameResult, GameRng};
 use nullspace_types::casino::{GameSession, THREE_CARD_PROGRESSIVE_BASE_JACKPOT};
+use std::fmt::Write;
 
 /// Payout multipliers for Three Card Poker (expressed as "to 1" winnings).
 mod payouts {
@@ -313,10 +314,20 @@ fn parse_state(state: &[u8]) -> Option<TcState> {
     if state.len() < STATE_LEN_BASE || state[0] != STATE_VERSION {
         return None;
     }
+    if state.len() != STATE_LEN_BASE && state.len() != STATE_LEN_WITH_RULES {
+        return None;
+    }
 
     let stage = Stage::try_from(state[1]).ok()?;
     let player = [state[2], state[3], state[4]];
     let dealer = [state[5], state[6], state[7]];
+    if player
+        .iter()
+        .chain(dealer.iter())
+        .any(|&card| card >= 52 && card != CARD_UNKNOWN)
+    {
+        return None;
+    }
     let pairplus_bet = u64::from_be_bytes(state[8..16].try_into().ok()?);
     let six_card_bonus_bet = u64::from_be_bytes(state[16..24].try_into().ok()?);
     let progressive_bet = u64::from_be_bytes(state[24..32].try_into().ok()?);
@@ -575,6 +586,24 @@ fn is_mini_royal(cards: &[u8; 3]) -> bool {
     cards.iter().all(|&card| cards::card_suit(card) == suit)
 }
 
+fn format_card_list(cards: &[u8]) -> String {
+    let mut out = String::new();
+    for (idx, card) in cards.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        let _ = write!(out, "{}", card);
+    }
+    out
+}
+
+fn push_resolved_entry(out: &mut String, label: &str, pnl: i64) {
+    if !out.is_empty() {
+        out.push(',');
+    }
+    let _ = write!(out, r#"{{"label":"{}","pnl":{}}}"#, label, pnl);
+}
+
 /// Generate JSON logs for Three Card Poker game completion
 fn generate_three_card_logs(
     state: &TcState,
@@ -582,8 +611,18 @@ fn generate_three_card_logs(
     is_fold: bool,
     dealer_qualifies: bool,
     outcome: &str,
+    ante_return: u64,
+    play_return: u64,
+    pairplus_return: u64,
+    six_card_return: u64,
+    progressive_return: u64,
+    ante_bonus: u64,
     total_return: u64,
 ) -> Vec<String> {
+    let clamp_i64 = |value: i128| -> i64 {
+        value
+            .clamp(i64::MIN as i128, i64::MAX as i128) as i64
+    };
     let player_hand = evaluate_hand(&state.player);
     let dealer_hand = evaluate_hand(&state.dealer);
 
@@ -597,17 +636,68 @@ fn generate_three_card_logs(
             HandRank::StraightFlush => "STRAIGHT_FLUSH",
         }
     };
+    let format_rank = |rank: HandRank| -> String {
+        hand_rank_str(rank).replace('_', " ")
+    };
 
-    let player_cards_str = state.player.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(",");
-    let dealer_cards_str = state.dealer.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(",");
+    let player_cards_str = format_card_list(&state.player);
+    let dealer_cards_str = format_card_list(&state.dealer);
 
-    let pairplus_return = resolve_pairplus_return(&state.player, state.pairplus_bet);
-    let six_card_return = resolve_six_card_bonus_return(&state.player, &state.dealer, state.six_card_bonus_bet);
-    let progressive_return = resolve_progressive_return(&state.player, state.progressive_bet);
-    let ante_bonus = if !is_fold { session.bet.saturating_mul(ante_bonus_multiplier(player_hand.0)) } else { 0 };
+    let play_bet = if is_fold { 0 } else { session.bet };
+    let total_wagered = session
+        .bet
+        .saturating_add(play_bet)
+        .saturating_add(state.pairplus_bet)
+        .saturating_add(state.six_card_bonus_bet)
+        .saturating_add(state.progressive_bet);
+    let mut resolved_entries = String::new();
+    let mut resolved_sum: i128 = 0;
+    let ante_pnl = clamp_i64(i128::from(ante_return) - i128::from(session.bet));
+    push_resolved_entry(&mut resolved_entries, "ANTE", ante_pnl);
+    resolved_sum = resolved_sum.saturating_add(i128::from(ante_pnl));
+    if play_bet > 0 || is_fold {
+        let play_pnl = clamp_i64(i128::from(play_return) - i128::from(play_bet));
+        push_resolved_entry(&mut resolved_entries, "PLAY", play_pnl);
+        resolved_sum = resolved_sum.saturating_add(i128::from(play_pnl));
+    }
+    if state.pairplus_bet > 0 {
+        let pnl = clamp_i64(i128::from(pairplus_return) - i128::from(state.pairplus_bet));
+        push_resolved_entry(&mut resolved_entries, "PAIR PLUS", pnl);
+        resolved_sum = resolved_sum.saturating_add(i128::from(pnl));
+    }
+    if state.six_card_bonus_bet > 0 {
+        let pnl =
+            clamp_i64(i128::from(six_card_return) - i128::from(state.six_card_bonus_bet));
+        push_resolved_entry(&mut resolved_entries, "SIX CARD", pnl);
+        resolved_sum = resolved_sum.saturating_add(i128::from(pnl));
+    }
+    if state.progressive_bet > 0 {
+        let pnl = clamp_i64(i128::from(progressive_return) - i128::from(state.progressive_bet));
+        push_resolved_entry(&mut resolved_entries, "PROGRESSIVE", pnl);
+        resolved_sum = resolved_sum.saturating_add(i128::from(pnl));
+    }
+    let net_pnl = clamp_i64(i128::from(total_return) - i128::from(total_wagered));
+    let diff = i128::from(net_pnl).saturating_sub(resolved_sum);
+    if diff != 0 {
+        push_resolved_entry(&mut resolved_entries, "ADJUSTMENT", clamp_i64(diff));
+    }
+    let mut summary = format!(
+        "P: {}, D: {}",
+        format_rank(player_hand.0),
+        format_rank(dealer_hand.0)
+    );
+    if !dealer_qualifies {
+        summary.push_str(" (NO QUALIFY)");
+    }
+    if is_fold {
+        summary.push_str(" (FOLD)");
+    }
 
     vec![format!(
-        r#"{{"player":{{"cards":[{}],"rank":"{}"}},"dealer":{{"cards":[{}],"rank":"{}","qualifies":{}}},"folded":{},"outcome":"{}","anteBet":{},"playBet":{},"pairplusBet":{},"sixCardBet":{},"progressiveBet":{},"pairplusReturn":{},"sixCardReturn":{},"progressiveReturn":{},"anteBonus":{},"totalReturn":{}}}"#,
+        r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"player":{{"cards":[{}],"rank":"{}"}},"dealer":{{"cards":[{}],"rank":"{}","qualifies":{}}},"folded":{},"outcome":"{}","anteBet":{},"playBet":{},"pairplusBet":{},"sixCardBet":{},"progressiveBet":{},"anteReturn":{},"playReturn":{},"pairplusReturn":{},"sixCardReturn":{},"progressiveReturn":{},"anteBonus":{},"totalWagered":{},"totalReturn":{}}}"#,
+        summary,
+        net_pnl,
+        resolved_entries,
         player_cards_str,
         hand_rank_str(player_hand.0),
         dealer_cards_str,
@@ -616,14 +706,17 @@ fn generate_three_card_logs(
         is_fold,
         outcome,
         session.bet,
-        if is_fold { 0 } else { session.bet },
+        play_bet,
         state.pairplus_bet,
         state.six_card_bonus_bet,
         state.progressive_bet,
+        ante_return,
+        play_return,
         pairplus_return,
         six_card_return,
         progressive_return,
         ante_bonus,
+        total_wagered,
         total_return
     )]
 }
@@ -799,34 +892,48 @@ impl CasinoGame for ThreeCardPoker {
                 Move::Fold => {
                     // Fold: lose ante, Pairplus still resolves.
                     // Reveal dealer cards for display.
-                    let used = state.player.to_vec();
-                    let mut deck = rng.create_deck_excluding(&used);
+                    let mut deck = rng.create_deck_excluding(&state.player);
                     state.dealer[0] = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
                     state.dealer[1] = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
                     state.dealer[2] = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
                     state.stage = Stage::Complete;
                     session.is_complete = true;
 
-                    let pairplus_return =
+                    let mut pairplus_return =
                         resolve_pairplus_return(&state.player, state.pairplus_bet);
-                    let six_card_return = resolve_six_card_bonus_return(
+                    let mut six_card_return = resolve_six_card_bonus_return(
                         &state.player,
                         &state.dealer,
                         state.six_card_bonus_bet,
                     );
-                    let progressive_return =
+                    let mut progressive_return =
                         resolve_progressive_return(&state.player, state.progressive_bet);
-                    let mut total_return = pairplus_return
-                        .saturating_add(six_card_return)
-                        .saturating_add(progressive_return);
+                    let ante_return = 0;
+                    let play_return = 0;
+                    let ante_bonus = 0;
 
-                    if session.super_mode.is_active && total_return > 0 {
-                        total_return = apply_super_multiplier_cards(
-                            &state.player,
-                            &session.super_mode.multipliers,
-                            total_return,
-                        );
+                    if session.super_mode.is_active {
+                        let apply_super = |amount: u64| {
+                            if amount > 0 {
+                                apply_super_multiplier_cards(
+                                    &state.player,
+                                    &session.super_mode.multipliers,
+                                    amount,
+                                )
+                            } else {
+                                0
+                            }
+                        };
+                        pairplus_return = apply_super(pairplus_return);
+                        six_card_return = apply_super(six_card_return);
+                        progressive_return = apply_super(progressive_return);
                     }
+
+                    let total_return = pairplus_return
+                        .saturating_add(six_card_return)
+                        .saturating_add(progressive_return)
+                        .saturating_add(ante_return)
+                        .saturating_add(play_return);
 
                     let total_wagered = session
                         .bet
@@ -836,7 +943,20 @@ impl CasinoGame for ThreeCardPoker {
 
                     session.state_blob = serialize_state(&state);
 
-                    let logs = generate_three_card_logs(&state, session, true, false, "FOLD", total_return);
+                    let logs = generate_three_card_logs(
+                        &state,
+                        session,
+                        true,
+                        false,
+                        "FOLD",
+                        ante_return,
+                        play_return,
+                        pairplus_return,
+                        six_card_return,
+                        progressive_return,
+                        ante_bonus,
+                        total_return,
+                    );
                     if total_return == 0 {
                         Ok(GameResult::LossPreDeducted(total_wagered, logs))
                     } else {
@@ -857,8 +977,7 @@ impl CasinoGame for ThreeCardPoker {
             Stage::AwaitingReveal => match mv {
                 Move::Reveal => {
                     // Reveal dealer cards and resolve all bets.
-                    let used = state.player.to_vec();
-                    let mut deck = rng.create_deck_excluding(&used);
+                    let mut deck = rng.create_deck_excluding(&state.player);
                     state.dealer[0] = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
                     state.dealer[1] = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
                     state.dealer[2] = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
@@ -869,14 +988,14 @@ impl CasinoGame for ThreeCardPoker {
                     let dealer_hand = evaluate_hand(&state.dealer);
                     let dealer_ok = dealer_qualifies(&dealer_hand, state.rules);
 
-                    let pairplus_return =
+                    let mut pairplus_return =
                         resolve_pairplus_return(&state.player, state.pairplus_bet);
-                    let six_card_return = resolve_six_card_bonus_return(
+                    let mut six_card_return = resolve_six_card_bonus_return(
                         &state.player,
                         &state.dealer,
                         state.six_card_bonus_bet,
                     );
-                    let progressive_return =
+                    let mut progressive_return =
                         resolve_progressive_return(&state.player, state.progressive_bet);
 
                     // Ante bonus is paid when the player plays, regardless of dealer qualification/outcome.
@@ -884,44 +1003,53 @@ impl CasinoGame for ThreeCardPoker {
                         .bet
                         .saturating_mul(ante_bonus_multiplier(player_hand.0));
 
-                    // Main bets: Ante (already deducted) and Play (deducted on Play move).
-                    let mut main_return: u64 = 0;
-                    if !dealer_ok {
+                    let (mut ante_return, mut play_return) = if !dealer_ok {
                         // Dealer doesn't qualify: Ante wins 1:1, Play pushes.
-                        main_return = main_return
-                            .saturating_add(session.bet.saturating_mul(2))
-                            .saturating_add(session.bet);
+                        (
+                            session.bet.saturating_mul(2).saturating_add(ante_bonus),
+                            session.bet,
+                        )
                     } else {
                         match compare_hands(&player_hand, &dealer_hand) {
-                            std::cmp::Ordering::Greater => {
-                                main_return = main_return
-                                    .saturating_add(session.bet.saturating_mul(2))
-                                    .saturating_add(session.bet.saturating_mul(2));
-                            }
-                            std::cmp::Ordering::Equal => {
-                                main_return = main_return
-                                    .saturating_add(session.bet)
-                                    .saturating_add(session.bet);
-                            }
+                            std::cmp::Ordering::Greater => (
+                                session.bet.saturating_mul(2).saturating_add(ante_bonus),
+                                session.bet.saturating_mul(2),
+                            ),
+                            std::cmp::Ordering::Equal => (
+                                session.bet.saturating_add(ante_bonus),
+                                session.bet,
+                            ),
                             std::cmp::Ordering::Less => {
-                                // Lose both.
+                                // Lose both; ante bonus can still apply.
+                                (ante_bonus, 0)
                             }
                         }
+                    };
+
+                    if session.super_mode.is_active {
+                        let apply_super = |amount: u64| {
+                            if amount > 0 {
+                                apply_super_multiplier_cards(
+                                    &state.player,
+                                    &session.super_mode.multipliers,
+                                    amount,
+                                )
+                            } else {
+                                0
+                            }
+                        };
+                        ante_return = apply_super(ante_return);
+                        play_return = apply_super(play_return);
+                        pairplus_return = apply_super(pairplus_return);
+                        six_card_return = apply_super(six_card_return);
+                        progressive_return = apply_super(progressive_return);
                     }
 
-                    let mut total_return = pairplus_return
-                        .saturating_add(main_return)
-                        .saturating_add(ante_bonus)
+                    let total_return = ante_return
+                        .saturating_add(play_return)
+                        .saturating_add(pairplus_return)
                         .saturating_add(six_card_return)
                         .saturating_add(progressive_return);
-
-                    if session.super_mode.is_active && total_return > 0 {
-                        total_return = apply_super_multiplier_cards(
-                            &state.player,
-                            &session.super_mode.multipliers,
-                            total_return,
-                        );
-                    }
 
                     let total_wagered = session
                         .bet
@@ -943,7 +1071,20 @@ impl CasinoGame for ThreeCardPoker {
                         }
                     };
 
-                    let logs = generate_three_card_logs(&state, session, false, dealer_ok, outcome, total_return);
+                    let logs = generate_three_card_logs(
+                        &state,
+                        session,
+                        false,
+                        dealer_ok,
+                        outcome,
+                        ante_return,
+                        play_return,
+                        pairplus_return,
+                        six_card_return,
+                        progressive_return,
+                        ante_bonus,
+                        total_return,
+                    );
                     if total_return == 0 {
                         Ok(GameResult::LossPreDeducted(total_wagered, logs))
                     } else {
@@ -958,10 +1099,12 @@ impl CasinoGame for ThreeCardPoker {
 }
 
 #[cfg(test)]
+#[allow(unused_must_use)]
 mod tests {
     use super::*;
     use crate::mocks::{create_account_keypair, create_network_keypair, create_seed};
     use nullspace_types::casino::GameType;
+    use rand::{rngs::StdRng, Rng, SeedableRng};
 
     fn create_test_seed() -> nullspace_types::Seed {
         let (network_secret, _) = create_network_keypair();
@@ -1012,6 +1155,34 @@ mod tests {
         assert_eq!(pairplus_multiplier(HandRank::Flush), 3);
         assert_eq!(pairplus_multiplier(HandRank::Pair), 1);
         assert_eq!(pairplus_multiplier(HandRank::HighCard), 0);
+    }
+
+    #[test]
+    fn test_ante_bonus_multiplier_table() {
+        assert_eq!(
+            ante_bonus_multiplier(HandRank::StraightFlush),
+            payouts::ANTE_STRAIGHT_FLUSH
+        );
+        assert_eq!(
+            ante_bonus_multiplier(HandRank::ThreeOfAKind),
+            payouts::ANTE_THREE_OF_A_KIND
+        );
+        assert_eq!(
+            ante_bonus_multiplier(HandRank::Straight),
+            payouts::ANTE_STRAIGHT
+        );
+        assert_eq!(ante_bonus_multiplier(HandRank::Flush), 0);
+    }
+
+    #[test]
+    fn test_state_blob_fuzz_does_not_panic() {
+        let mut rng = StdRng::seed_from_u64(0x5eed_7c3d);
+        for _ in 0..1_000 {
+            let len = rng.gen_range(0..=128);
+            let mut blob = vec![0u8; len];
+            rng.fill(&mut blob[..]);
+            let _ = parse_state(&blob);
+        }
     }
 
     #[test]

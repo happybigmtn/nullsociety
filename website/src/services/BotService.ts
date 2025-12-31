@@ -6,6 +6,7 @@
  */
 
 import { WasmWrapper } from '../api/wasm.js';
+import { logDebug } from '../utils/logger';
 
 export interface BotConfig {
   enabled: boolean;
@@ -111,7 +112,7 @@ export class BotService {
     const generation = this.prepareGeneration;
     this.preparedTournamentId = tournamentId;
 
-    console.log(`[BotService] Preparing ${this.config.numBots} bots for tournament ${tournamentId}...`);
+    logDebug(`[BotService] Preparing ${this.config.numBots} bots for tournament ${tournamentId}...`);
     this.updateStatus({ isRunning: false });
 
     for (let i = 0; i < this.config.numBots; i++) {
@@ -137,14 +138,14 @@ export class BotService {
       }
     }
 
-    console.log(`[BotService] Prepared ${this.bots.length} bots for tournament ${tournamentId}`);
+    logDebug(`[BotService] Prepared ${this.bots.length} bots for tournament ${tournamentId}`);
     this.updateStatus({ activeBots: this.bots.length });
   }
 
   startPlaying(): void {
     if (this.isRunning || !this.config.enabled) return;
 
-    console.log(`[BotService] Starting bot play loops (${this.bots.length} bots)...`);
+    logDebug(`[BotService] Starting bot play loops (${this.bots.length} bots)...`);
     this.isRunning = true;
     this.updateStatus({ isRunning: true });
 
@@ -158,7 +159,7 @@ export class BotService {
   stop(): void {
     if (!this.isRunning && this.bots.length === 0) return;
 
-    console.log('[BotService] Stopping all bots...');
+    logDebug('[BotService] Stopping all bots...');
     this.isRunning = false;
     this.prepareGeneration++;
 
@@ -211,10 +212,10 @@ export class BotService {
       const accountState = await this.getAccountState(publicKeyBytes);
       if (accountState) {
         currentNonce = accountState.nonce;
-        console.debug(`[BotService] Bot ${name} loaded nonce from chain: ${currentNonce}`);
+        logDebug(`[BotService] Bot ${name} loaded nonce from chain: ${currentNonce}`);
       }
     } catch (e) {
-      console.debug(`[BotService] Bot ${name} failed to fetch account state:`, e);
+      logDebug(`[BotService] Bot ${name} failed to fetch account state:`, e);
     }
 
     // Register the bot if not already registered
@@ -223,10 +224,10 @@ export class BotService {
         const registerTx = wasm.createCasinoRegisterTransaction(0, name);
         await this.submitTransaction(wasm, registerTx);
         currentNonce = 1; // After registration, nonce is 1
-        console.debug(`[BotService] Bot ${name} registered, nonce is now 1`);
+        logDebug(`[BotService] Bot ${name} registered, nonce is now 1`);
       } catch (e) {
         // May already be registered from previous run
-        console.debug(`[BotService] Bot ${name} registration:`, e);
+        logDebug(`[BotService] Bot ${name} registration:`, e);
         // If registration failed, query the nonce again
         try {
           const accountState = await this.getAccountState(publicKeyBytes);
@@ -345,7 +346,7 @@ export class BotService {
       try {
         await this.playRandomGame(bot);
       } catch (e) {
-        console.debug(`[BotService] Bot ${bot.name} game error:`, e);
+        logDebug(`[BotService] Bot ${bot.name} game error:`, e);
       }
 
       // Schedule next game
@@ -383,7 +384,7 @@ export class BotService {
       await this.submitTransaction(bot.wasm, startTx);
       bot.nonce++; // Only increment after successful submission
     } catch (e) {
-      console.debug(`[BotService] Bot ${bot.name} start game failed, re-syncing nonce`);
+      logDebug(`[BotService] Bot ${bot.name} start game failed, re-syncing nonce`);
       // Try to re-sync nonce from chain on failure
       await this.resyncNonce(bot);
       return; // Exit early, next iteration will try again
@@ -417,10 +418,10 @@ export class BotService {
       const accountState = await this.getAccountState(bot.wasm.getPublicKeyBytes());
       if (accountState) {
         bot.nonce = accountState.nonce;
-        console.debug(`[BotService] Bot ${bot.name} nonce re-synced to ${bot.nonce}`);
+        logDebug(`[BotService] Bot ${bot.name} nonce re-synced to ${bot.nonce}`);
       }
     } catch (e) {
-      console.debug(`[BotService] Bot ${bot.name} failed to re-sync nonce:`, e);
+      logDebug(`[BotService] Bot ${bot.name} failed to re-sync nonce:`, e);
     }
   }
 

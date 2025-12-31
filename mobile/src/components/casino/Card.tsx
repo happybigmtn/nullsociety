@@ -7,11 +7,10 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  withTiming,
   runOnJS,
 } from 'react-native-reanimated';
 import { haptics } from '../../services/haptics';
-import { COLORS, RADIUS, ANIMATION, SPRING } from '../../constants/theme';
+import { COLORS, RADIUS, SPRING } from '../../constants/theme';
 import type { Suit, Rank } from '../../types';
 
 interface CardProps {
@@ -109,7 +108,7 @@ export function Card({
         }
       }
     );
-  }, [faceUp]); // flip is SharedValue (stable ref), onFlipComplete uses ref pattern
+  }, [faceUp, flip]); // flip is stable, include to satisfy exhaustive-deps
 
   const frontStyle = useAnimatedStyle(() => ({
     transform: [

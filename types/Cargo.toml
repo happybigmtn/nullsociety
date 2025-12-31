@@ -13,6 +13,7 @@ documentation = "https://docs.rs/nullspace-types"
 [features]
 default = ["root-reexports"]
 root-reexports = []
+ts = ["dep:ts-rs"]
 
 [dependencies]
 commonware-codec = { workspace = true }
@@ -24,6 +25,7 @@ bytes = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+ts-rs = { version = "11.1.0", optional = true }
 
 [dev-dependencies]
 rand = "0.8"

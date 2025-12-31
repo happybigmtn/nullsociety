@@ -2,6 +2,7 @@
 //!
 //! State blob format:
 //! [currentCard:u8] [accumulator:i64 BE] [rules:u8]
+//! [higherMultiplier:u32 BE] [lowerMultiplier:u32 BE] [sameMultiplier:u32 BE]
 //!
 //! The accumulator stores the current pot multiplier in basis points (1/10000).
 //! For example, 15000 = 1.5x multiplier.
@@ -25,6 +26,33 @@ use nullspace_types::casino::GameSession;
 
 /// Base multiplier in basis points (1.0 = 10000)
 const BASE_MULTIPLIER: i64 = 10_000;
+
+fn format_card_label(card: u8) -> String {
+    if !cards::is_valid_card(card) {
+        return "?".to_string();
+    }
+    let rank = cards::card_rank_one_based(card);
+    let rank_label = match rank {
+        1 => "A".to_string(),
+        11 => "J".to_string(),
+        12 => "Q".to_string(),
+        13 => "K".to_string(),
+        10 => "10".to_string(),
+        _ => rank.to_string(),
+    };
+    let suit = match cards::card_suit(card) {
+        0 => "S",
+        1 => "H",
+        2 => "D",
+        3 => "C",
+        _ => "?",
+    };
+    format!("{}{}", rank_label, suit)
+}
+
+fn clamp_i64(value: i128) -> i64 {
+    value.clamp(i64::MIN as i128, i64::MAX as i128) as i64
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct HiLoRules {
@@ -130,13 +158,42 @@ fn calculate_multiplier(current_rank: u8, mv: Move) -> i64 {
     (13 * BASE_MULTIPLIER) / winning_ranks
 }
 
+fn next_guess_multipliers(current_card: u8, rules: HiLoRules) -> (u32, u32, u32) {
+    let current_rank = card_rank(current_card);
+    let higher = calculate_multiplier(current_rank, Move::Higher);
+    let lower = calculate_multiplier(current_rank, Move::Lower);
+    let same = if rules.allow_same_any || current_rank == 1 || current_rank == 13 {
+        calculate_multiplier(current_rank, Move::Same)
+    } else {
+        0
+    };
+
+    let clamp = |value: i64| -> u32 {
+        if value <= 0 {
+            0
+        } else if value > u32::MAX as i64 {
+            u32::MAX
+        } else {
+            value as u32
+        }
+    };
+
+    (clamp(higher), clamp(lower), clamp(same))
+}
+
 /// Parse state blob into current card, accumulator, and rules.
 fn parse_state(state: &[u8]) -> Option<HiLoState> {
     if state.len() < 9 {
         return None;
     }
+    if state.len() != 9 && state.len() != 10 && state.len() != 22 {
+        return None;
+    }
 
     let current_card = state[0];
+    if current_card >= 52 {
+        return None;
+    }
     let accumulator = i64::from_be_bytes([
         state[1], state[2], state[3], state[4], state[5], state[6], state[7], state[8],
     ]);
@@ -155,10 +212,14 @@ fn parse_state(state: &[u8]) -> Option<HiLoState> {
 
 /// Serialize state to blob.
 fn serialize_state(current_card: u8, accumulator: i64, rules: HiLoRules) -> Vec<u8> {
-    let mut state = Vec::with_capacity(10);
+    let mut state = Vec::with_capacity(22);
     state.push(current_card);
     state.extend_from_slice(&accumulator.to_be_bytes());
     state.push(rules.to_byte());
+    let (higher, lower, same) = next_guess_multipliers(current_card, rules);
+    state.extend_from_slice(&higher.to_be_bytes());
+    state.extend_from_slice(&lower.to_be_bytes());
+    state.extend_from_slice(&same.to_be_bytes());
     state
 }
 
@@ -226,17 +287,40 @@ impl CasinoGame for HiLo {
                     } else {
                         payout_u64
                     };
+                    let summary = format!("Cashout: {}", format_card_label(current_card));
+                    let net_pnl =
+                        clamp_i64(i128::from(final_payout) - i128::from(session.bet));
+                    let resolved_bets = format!(
+                        r#"{{"label":"CASHOUT","pnl":{}}}"#,
+                        net_pnl
+                    );
                     // Generate completion logs for frontend display
                     let logs = vec![format!(
-                        r#"{{"card":{},"guess":"CASHOUT","multiplier":{},"streak":{},"payout":{}}}"#,
-                        current_card, accumulator, session.move_count, final_payout
+                        r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"card":{},"guess":"CASHOUT","multiplier":{},"streak":{},"payout":{}}}"#,
+                        summary,
+                        net_pnl,
+                        resolved_bets,
+                        current_card,
+                        accumulator,
+                        session.move_count,
+                        final_payout
                     )];
                     Ok(GameResult::Win(final_payout, logs))
                 } else {
                     // Accumulator is 0 or negative (shouldn't happen in normal play)
+                    let summary = format!("Cashout: {}", format_card_label(current_card));
+                    let net_pnl = -(session.bet as i64);
+                    let resolved_bets = format!(
+                        r#"{{"label":"CASHOUT","pnl":{}}}"#,
+                        net_pnl
+                    );
                     let logs = vec![format!(
-                        r#"{{"card":{},"guess":"CASHOUT","multiplier":0,"streak":{},"payout":0}}"#,
-                        current_card, session.move_count
+                        r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"card":{},"guess":"CASHOUT","multiplier":0,"streak":{},"payout":0}}"#,
+                        summary,
+                        net_pnl,
+                        resolved_bets,
+                        current_card,
+                        session.move_count
                     )];
                     Ok(GameResult::Loss(logs))
                 }
@@ -297,9 +381,19 @@ impl CasinoGame for HiLo {
                 if is_push {
                     // Push: same rank drawn, game continues with no multiplier change
                     session.state_blob = serialize_state(new_card, accumulator, rules);
+                    let summary = format!(
+                        "{} -> {}",
+                        format_card_label(current_card),
+                        format_card_label(new_card)
+                    );
                     let logs = vec![format!(
-                        r#"{{"previousCard":{},"newCard":{},"guess":"{}","push":true,"multiplier":{},"streak":{}}}"#,
-                        current_card, new_card, guess_str, accumulator, session.move_count
+                        r#"{{"summary":"{}","netPnl":0,"resolvedBets":[],"previousCard":{},"newCard":{},"guess":"{}","push":true,"multiplier":{},"streak":{}}}"#,
+                        summary,
+                        current_card,
+                        new_card,
+                        guess_str,
+                        accumulator,
+                        session.move_count
                     )];
                     return Ok(GameResult::Continue(logs));
                 }
@@ -314,9 +408,19 @@ impl CasinoGame for HiLo {
 
                     session.state_blob = serialize_state(new_card, new_accumulator, rules);
                     // Generate move logs for frontend display
+                    let summary = format!(
+                        "{} -> {}",
+                        format_card_label(current_card),
+                        format_card_label(new_card)
+                    );
                     let logs = vec![format!(
-                        r#"{{"previousCard":{},"newCard":{},"guess":"{}","correct":true,"multiplier":{},"streak":{}}}"#,
-                        current_card, new_card, guess_str, new_accumulator, session.move_count
+                        r#"{{"summary":"{}","netPnl":0,"resolvedBets":[],"previousCard":{},"newCard":{},"guess":"{}","correct":true,"multiplier":{},"streak":{}}}"#,
+                        summary,
+                        current_card,
+                        new_card,
+                        guess_str,
+                        new_accumulator,
+                        session.move_count
                     )];
                     Ok(GameResult::Continue(logs))
                 } else {
@@ -324,9 +428,25 @@ impl CasinoGame for HiLo {
                     session.state_blob = serialize_state(new_card, 0, rules);
                     session.is_complete = true;
                     // Generate completion logs for frontend display
+                    let summary = format!(
+                        "{} -> {}",
+                        format_card_label(current_card),
+                        format_card_label(new_card)
+                    );
+                    let net_pnl = -(session.bet as i64);
+                    let resolved_bets = format!(
+                        r#"{{"label":"{}","pnl":{}}}"#,
+                        guess_str, net_pnl
+                    );
                     let logs = vec![format!(
-                        r#"{{"previousCard":{},"newCard":{},"guess":"{}","correct":false,"multiplier":0,"streak":{},"payout":0}}"#,
-                        current_card, new_card, guess_str, session.move_count
+                        r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"previousCard":{},"newCard":{},"guess":"{}","correct":false,"multiplier":0,"streak":{},"payout":0}}"#,
+                        summary,
+                        net_pnl,
+                        resolved_bets,
+                        current_card,
+                        new_card,
+                        guess_str,
+                        session.move_count
                     )];
                     Ok(GameResult::Loss(logs))
                 }
@@ -336,10 +456,12 @@ impl CasinoGame for HiLo {
 }
 
 #[cfg(test)]
+#[allow(unused_must_use)]
 mod tests {
     use super::*;
     use crate::mocks::{create_account_keypair, create_network_keypair, create_seed};
     use nullspace_types::casino::GameType;
+    use rand::{rngs::StdRng, Rng, SeedableRng};
 
     fn create_test_seed() -> nullspace_types::Seed {
         let (network_secret, _) = create_network_keypair();
@@ -418,6 +540,17 @@ mod tests {
 
         // Cannot guess lower than Ace (should use Same)
         assert_eq!(calculate_multiplier(1, Move::Lower), 0);
+    }
+
+    #[test]
+    fn test_state_blob_fuzz_does_not_panic() {
+        let mut rng = StdRng::seed_from_u64(0x5eed_4110);
+        for _ in 0..1_000 {
+            let len = rng.gen_range(0..=64);
+            let mut blob = vec![0u8; len];
+            rng.fill(&mut blob[..]);
+            let _ = parse_state(&blob);
+        }
     }
 
     #[test]
@@ -573,6 +706,36 @@ mod tests {
         let mut rng = GameRng::new(&seed, session.id, 1);
         let result = HiLo::process_move(&mut session, &[3], &mut rng); // Same
         assert!(!matches!(result, Err(GameError::InvalidMove)));
+    }
+
+    #[test]
+    fn test_tie_push_on_equal_rank() {
+        let seed = create_test_seed();
+        let rules = HiLoRules {
+            allow_same_any: false,
+            tie_push: true,
+        };
+
+        let mut base_session = create_test_session(100);
+        base_session.state_blob = serialize_state(6, BASE_MULTIPLIER, rules); // 7 of spades
+
+        let mut found = false;
+        for move_num in 1..=2000 {
+            let mut session = base_session.clone();
+            let mut rng = GameRng::new(&seed, session.id, move_num);
+            let result = HiLo::process_move(&mut session, &[Move::Higher as u8], &mut rng);
+            if let Ok(GameResult::Continue(_)) = result {
+                let parsed = parse_state(&session.state_blob).expect("parse state");
+                if parsed.accumulator == BASE_MULTIPLIER
+                    && card_rank(parsed.current_card) == card_rank(6)
+                {
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        assert!(found, "expected to find a tie push within search range");
     }
 
     #[test]

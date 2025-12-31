@@ -9,7 +9,7 @@ polynomial: "<GENERATE_WITH_generate-keys>"
 
 # Network - adjust port per node (9000, 9001, 9002, 9003)
 port: 9000
-metrics_port: 9090
+metrics_port: 9100
 indexer: "http://localhost:8080"
 
 # Storage - adjust directory per node (./data/node0, ./data/node1, etc.)

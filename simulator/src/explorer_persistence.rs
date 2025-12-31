@@ -59,7 +59,7 @@ impl ExplorerPersistence {
                 prune_to_min_height_sqlite(&mut conn, min_height)?;
             }
         }
-        load_into_sqlite(&conn, explorer, max_blocks)?;
+        load_into_sqlite(&conn, explorer, max_blocks, metrics.as_ref())?;
         drop(conn);
 
         let backend = PersistenceBackendConfig::Sqlite(path.to_path_buf());
@@ -92,7 +92,7 @@ impl ExplorerPersistence {
                 prune_to_min_height_postgres(&mut client, min_height)?;
             }
         }
-        load_into_postgres(&mut client, explorer, max_blocks)?;
+        load_into_postgres(&mut client, explorer, max_blocks, metrics.as_ref())?;
         drop(client);
 
         let backend = PersistenceBackendConfig::Postgres(url.to_string());
@@ -269,6 +269,7 @@ fn load_into_sqlite(
     conn: &Connection,
     explorer: &mut ExplorerState,
     max_blocks: Option<usize>,
+    metrics: &ExplorerMetrics,
 ) -> anyhow::Result<()> {
     let query = if max_blocks.is_some() {
         "SELECT height, progress, indexed_at_ms FROM explorer_blocks ORDER BY height DESC LIMIT ?"
@@ -307,7 +308,13 @@ fn load_into_sqlite(
     }
 
     for block in blocks {
-        apply_block_indexing(explorer, &block.progress, &block.ops, block.indexed_at_ms);
+        apply_block_indexing(
+            explorer,
+            &block.progress,
+            &block.ops,
+            block.indexed_at_ms,
+            metrics,
+        );
     }
 
     Ok(())
@@ -401,6 +408,7 @@ fn load_into_postgres(
     client: &mut Client,
     explorer: &mut ExplorerState,
     max_blocks: Option<usize>,
+    metrics: &ExplorerMetrics,
 ) -> anyhow::Result<()> {
     let rows = if let Some(limit) = max_blocks {
         let limit = to_i64_usize(limit, "max_blocks")?;
@@ -438,7 +446,13 @@ fn load_into_postgres(
     }
 
     for block in blocks {
-        apply_block_indexing(explorer, &block.progress, &block.ops, block.indexed_at_ms);
+        apply_block_indexing(
+            explorer,
+            &block.progress,
+            &block.ops,
+            block.indexed_at_ms,
+            metrics,
+        );
     }
 
     Ok(())

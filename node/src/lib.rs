@@ -10,7 +10,7 @@ use std::{
     collections::HashMap,
     fmt,
     net::SocketAddr,
-    num::{NonZeroU32, NonZeroUsize},
+    num::{NonZeroU32, NonZeroU64, NonZeroUsize},
     path::PathBuf,
     str::FromStr,
     time::Duration,
@@ -24,6 +24,7 @@ use nullspace_types::{Evaluation, Identity};
 pub mod aggregator;
 pub mod application;
 mod backoff;
+pub mod defaults;
 pub mod engine;
 pub mod indexer;
 pub mod seeder;
@@ -132,6 +133,40 @@ pub struct Config {
     pub buffer_pool_page_size: usize,
     #[serde(default = "default_buffer_pool_capacity")]
     pub buffer_pool_capacity: usize,
+    #[serde(default = "default_prunable_items_per_section")]
+    pub prunable_items_per_section: u64,
+    #[serde(default = "default_immutable_items_per_section")]
+    pub immutable_items_per_section: u64,
+    #[serde(default = "default_freezer_table_resize_frequency")]
+    pub freezer_table_resize_frequency: u8,
+    #[serde(default = "default_freezer_table_resize_chunk_size")]
+    pub freezer_table_resize_chunk_size: u32,
+    #[serde(default = "default_freezer_journal_target_size")]
+    pub freezer_journal_target_size: u64,
+    #[serde(default = "default_freezer_journal_compression")]
+    pub freezer_journal_compression: Option<u8>,
+    #[serde(default = "default_mmr_items_per_blob")]
+    pub mmr_items_per_blob: u64,
+    #[serde(default = "default_log_items_per_section")]
+    pub log_items_per_section: u64,
+    #[serde(default = "default_locations_items_per_blob")]
+    pub locations_items_per_blob: u64,
+    #[serde(default = "default_certificates_items_per_blob")]
+    pub certificates_items_per_blob: u64,
+    #[serde(default = "default_cache_items_per_blob")]
+    pub cache_items_per_blob: u64,
+    #[serde(default = "default_replay_buffer_bytes")]
+    pub replay_buffer_bytes: usize,
+    #[serde(default = "default_write_buffer_bytes")]
+    pub write_buffer_bytes: usize,
+    #[serde(default = "default_max_repair")]
+    pub max_repair: u64,
+    #[serde(default = "default_prune_interval")]
+    pub prune_interval: u64,
+    #[serde(default = "default_ancestry_cache_entries")]
+    pub ancestry_cache_entries: usize,
+    #[serde(default = "default_proof_queue_size")]
+    pub proof_queue_size: usize,
     #[serde(default = "default_pending_rate_per_second")]
     pub pending_rate_per_second: u32,
     #[serde(default = "default_recovered_rate_per_second")]
@@ -215,6 +250,23 @@ pub struct ValidatedConfig {
     pub finalized_freezer_table_initial_size: u32,
     pub buffer_pool_page_size: NonZeroUsize,
     pub buffer_pool_capacity: NonZeroUsize,
+    pub prunable_items_per_section: NonZeroU64,
+    pub immutable_items_per_section: NonZeroU64,
+    pub freezer_table_resize_frequency: u8,
+    pub freezer_table_resize_chunk_size: u32,
+    pub freezer_journal_target_size: u64,
+    pub freezer_journal_compression: Option<u8>,
+    pub mmr_items_per_blob: NonZeroU64,
+    pub log_items_per_section: NonZeroU64,
+    pub locations_items_per_blob: NonZeroU64,
+    pub certificates_items_per_blob: NonZeroU64,
+    pub cache_items_per_blob: NonZeroU64,
+    pub replay_buffer_bytes: NonZeroUsize,
+    pub write_buffer_bytes: NonZeroUsize,
+    pub max_repair: u64,
+    pub prune_interval: u64,
+    pub ancestry_cache_entries: usize,
+    pub proof_queue_size: usize,
     pub pending_rate_per_second: NonZeroU32,
     pub recovered_rate_per_second: NonZeroU32,
     pub resolver_rate_per_second: NonZeroU32,
@@ -278,6 +330,38 @@ impl fmt::Debug for RedactedConfig<'_> {
             )
             .field("buffer_pool_page_size", &cfg.buffer_pool_page_size)
             .field("buffer_pool_capacity", &cfg.buffer_pool_capacity)
+            .field("prunable_items_per_section", &cfg.prunable_items_per_section)
+            .field("immutable_items_per_section", &cfg.immutable_items_per_section)
+            .field(
+                "freezer_table_resize_frequency",
+                &cfg.freezer_table_resize_frequency,
+            )
+            .field(
+                "freezer_table_resize_chunk_size",
+                &cfg.freezer_table_resize_chunk_size,
+            )
+            .field(
+                "freezer_journal_target_size",
+                &cfg.freezer_journal_target_size,
+            )
+            .field(
+                "freezer_journal_compression",
+                &cfg.freezer_journal_compression,
+            )
+            .field("mmr_items_per_blob", &cfg.mmr_items_per_blob)
+            .field("log_items_per_section", &cfg.log_items_per_section)
+            .field("locations_items_per_blob", &cfg.locations_items_per_blob)
+            .field(
+                "certificates_items_per_blob",
+                &cfg.certificates_items_per_blob,
+            )
+            .field("cache_items_per_blob", &cfg.cache_items_per_blob)
+            .field("replay_buffer_bytes", &cfg.replay_buffer_bytes)
+            .field("write_buffer_bytes", &cfg.write_buffer_bytes)
+            .field("max_repair", &cfg.max_repair)
+            .field("prune_interval", &cfg.prune_interval)
+            .field("ancestry_cache_entries", &cfg.ancestry_cache_entries)
+            .field("proof_queue_size", &cfg.proof_queue_size)
             .field("pending_rate_per_second", &cfg.pending_rate_per_second)
             .field("recovered_rate_per_second", &cfg.recovered_rate_per_second)
             .field("resolver_rate_per_second", &cfg.resolver_rate_per_second)
@@ -299,115 +383,183 @@ impl fmt::Debug for RedactedConfig<'_> {
 }
 
 fn default_mempool_max_backlog() -> usize {
-    64
+    defaults::DEFAULT_MEMPOOL_MAX_BACKLOG
 }
 
 fn default_mempool_max_transactions() -> usize {
-    100_000
+    defaults::DEFAULT_MEMPOOL_MAX_TRANSACTIONS
 }
 
 fn default_mempool_stream_buffer_size() -> usize {
-    4_096
+    defaults::DEFAULT_MEMPOOL_STREAM_BUFFER_SIZE
 }
 
 fn default_nonce_cache_capacity() -> usize {
-    100_000
+    defaults::DEFAULT_NONCE_CACHE_CAPACITY
 }
 
 fn default_nonce_cache_ttl_seconds() -> u64 {
-    600
+    defaults::DEFAULT_NONCE_CACHE_TTL_SECONDS
 }
 
 fn default_max_pending_seed_listeners() -> usize {
-    10_000
+    defaults::DEFAULT_MAX_PENDING_SEED_LISTENERS
 }
 
 fn default_max_uploads_outstanding() -> usize {
-    4
+    defaults::DEFAULT_MAX_UPLOADS_OUTSTANDING
 }
 
 fn default_max_message_size() -> usize {
-    10 * 1024 * 1024
+    defaults::DEFAULT_MAX_MESSAGE_SIZE
 }
 
 fn default_leader_timeout_ms() -> u64 {
-    1_000
+    defaults::DEFAULT_LEADER_TIMEOUT_MS
 }
 
 fn default_notarization_timeout_ms() -> u64 {
-    2_000
+    defaults::DEFAULT_NOTARIZATION_TIMEOUT_MS
 }
 
 fn default_nullify_retry_ms() -> u64 {
-    10_000
+    defaults::DEFAULT_NULLIFY_RETRY_MS
 }
 
 fn default_fetch_timeout_ms() -> u64 {
-    2_000
+    defaults::DEFAULT_FETCH_TIMEOUT_MS
 }
 
 fn default_activity_timeout() -> u64 {
-    256
+    defaults::DEFAULT_ACTIVITY_TIMEOUT
 }
 
 fn default_skip_timeout() -> u64 {
-    32
+    defaults::DEFAULT_SKIP_TIMEOUT
 }
 
 fn default_fetch_concurrent() -> usize {
-    16
+    defaults::DEFAULT_FETCH_CONCURRENT
 }
 
 fn default_max_fetch_count() -> usize {
-    16
+    defaults::DEFAULT_MAX_FETCH_COUNT
 }
 
 fn default_max_fetch_size() -> usize {
-    1024 * 1024
+    defaults::DEFAULT_MAX_FETCH_SIZE
 }
 
 fn default_blocks_freezer_table_initial_size() -> u32 {
-    2u32.pow(21)
+    defaults::DEFAULT_BLOCKS_FREEZER_TABLE_INITIAL_SIZE
 }
 
 fn default_finalized_freezer_table_initial_size() -> u32 {
-    2u32.pow(21)
+    defaults::DEFAULT_FINALIZED_FREEZER_TABLE_INITIAL_SIZE
 }
 
 fn default_buffer_pool_page_size() -> usize {
-    4_096
+    defaults::DEFAULT_BUFFER_POOL_PAGE_SIZE
 }
 
 fn default_buffer_pool_capacity() -> usize {
-    32_768
+    defaults::DEFAULT_BUFFER_POOL_CAPACITY
+}
+
+fn default_prunable_items_per_section() -> u64 {
+    defaults::DEFAULT_PRUNABLE_ITEMS_PER_SECTION
+}
+
+fn default_immutable_items_per_section() -> u64 {
+    defaults::DEFAULT_IMMUTABLE_ITEMS_PER_SECTION
+}
+
+fn default_freezer_table_resize_frequency() -> u8 {
+    defaults::DEFAULT_FREEZER_TABLE_RESIZE_FREQUENCY
+}
+
+fn default_freezer_table_resize_chunk_size() -> u32 {
+    defaults::DEFAULT_FREEZER_TABLE_RESIZE_CHUNK_SIZE
+}
+
+fn default_freezer_journal_target_size() -> u64 {
+    defaults::DEFAULT_FREEZER_JOURNAL_TARGET_SIZE
+}
+
+fn default_freezer_journal_compression() -> Option<u8> {
+    defaults::DEFAULT_FREEZER_JOURNAL_COMPRESSION
+}
+
+fn default_mmr_items_per_blob() -> u64 {
+    defaults::DEFAULT_MMR_ITEMS_PER_BLOB
+}
+
+fn default_log_items_per_section() -> u64 {
+    defaults::DEFAULT_LOG_ITEMS_PER_SECTION
+}
+
+fn default_locations_items_per_blob() -> u64 {
+    defaults::DEFAULT_LOCATIONS_ITEMS_PER_BLOB
+}
+
+fn default_certificates_items_per_blob() -> u64 {
+    defaults::DEFAULT_CERTIFICATES_ITEMS_PER_BLOB
+}
+
+fn default_cache_items_per_blob() -> u64 {
+    defaults::DEFAULT_CACHE_ITEMS_PER_BLOB
+}
+
+fn default_replay_buffer_bytes() -> usize {
+    defaults::DEFAULT_REPLAY_BUFFER_BYTES
+}
+
+fn default_write_buffer_bytes() -> usize {
+    defaults::DEFAULT_WRITE_BUFFER_BYTES
+}
+
+fn default_max_repair() -> u64 {
+    defaults::DEFAULT_MAX_REPAIR
+}
+
+fn default_prune_interval() -> u64 {
+    defaults::DEFAULT_PRUNE_INTERVAL
+}
+
+fn default_ancestry_cache_entries() -> usize {
+    defaults::DEFAULT_ANCESTRY_CACHE_ENTRIES
+}
+
+fn default_proof_queue_size() -> usize {
+    defaults::DEFAULT_PROOF_QUEUE_SIZE
 }
 
 fn default_pending_rate_per_second() -> u32 {
-    128
+    defaults::DEFAULT_PENDING_RATE_PER_SECOND
 }
 
 fn default_recovered_rate_per_second() -> u32 {
-    128
+    defaults::DEFAULT_RECOVERED_RATE_PER_SECOND
 }
 
 fn default_resolver_rate_per_second() -> u32 {
-    128
+    defaults::DEFAULT_RESOLVER_RATE_PER_SECOND
 }
 
 fn default_broadcaster_rate_per_second() -> u32 {
-    32
+    defaults::DEFAULT_BROADCASTER_RATE_PER_SECOND
 }
 
 fn default_backfill_rate_per_second() -> u32 {
-    8
+    defaults::DEFAULT_BACKFILL_RATE_PER_SECOND
 }
 
 fn default_aggregation_rate_per_second() -> u32 {
-    128
+    defaults::DEFAULT_AGGREGATION_RATE_PER_SECOND
 }
 
 fn default_fetch_rate_per_peer_per_second() -> u32 {
-    128
+    defaults::DEFAULT_FETCH_RATE_PER_PEER_PER_SECOND
 }
 
 fn redact_value(field: &'static str, value: String) -> String {
@@ -448,6 +600,10 @@ fn nonzero_u32(field: &'static str, value: u32) -> Result<NonZeroU32, ConfigErro
         field,
         value: value as usize,
     })
+}
+
+fn nonzero_u64(field: &'static str, value: u64) -> Result<NonZeroU64, ConfigError> {
+    NonZeroU64::new(value).ok_or(ConfigError::InvalidNonZero { field, value: 0 })
 }
 
 fn validate_http_url(field: &'static str, value: &str) -> Result<(), ConfigError> {
@@ -537,6 +693,44 @@ impl Config {
             nonzero_usize("buffer_pool_page_size", self.buffer_pool_page_size)?;
         let buffer_pool_capacity =
             nonzero_usize("buffer_pool_capacity", self.buffer_pool_capacity)?;
+        let prunable_items_per_section =
+            nonzero_u64("prunable_items_per_section", self.prunable_items_per_section)?;
+        let immutable_items_per_section =
+            nonzero_u64("immutable_items_per_section", self.immutable_items_per_section)?;
+        if self.freezer_table_resize_frequency == 0 {
+            return Err(ConfigError::InvalidNonZero {
+                field: "freezer_table_resize_frequency",
+                value: 0,
+            });
+        }
+        if self.freezer_table_resize_chunk_size == 0 {
+            return Err(ConfigError::InvalidNonZero {
+                field: "freezer_table_resize_chunk_size",
+                value: 0,
+            });
+        }
+        ensure_nonzero_u64(
+            "freezer_journal_target_size",
+            self.freezer_journal_target_size,
+        )?;
+        let mmr_items_per_blob =
+            nonzero_u64("mmr_items_per_blob", self.mmr_items_per_blob)?;
+        let log_items_per_section =
+            nonzero_u64("log_items_per_section", self.log_items_per_section)?;
+        let locations_items_per_blob =
+            nonzero_u64("locations_items_per_blob", self.locations_items_per_blob)?;
+        let certificates_items_per_blob =
+            nonzero_u64("certificates_items_per_blob", self.certificates_items_per_blob)?;
+        let cache_items_per_blob =
+            nonzero_u64("cache_items_per_blob", self.cache_items_per_blob)?;
+        let replay_buffer_bytes =
+            nonzero_usize("replay_buffer_bytes", self.replay_buffer_bytes)?;
+        let write_buffer_bytes =
+            nonzero_usize("write_buffer_bytes", self.write_buffer_bytes)?;
+        ensure_nonzero_u64("max_repair", self.max_repair)?;
+        ensure_nonzero_u64("prune_interval", self.prune_interval)?;
+        ensure_nonzero("ancestry_cache_entries", self.ancestry_cache_entries)?;
+        ensure_nonzero("proof_queue_size", self.proof_queue_size)?;
         let pending_rate_per_second =
             nonzero_u32("pending_rate_per_second", self.pending_rate_per_second)?;
         let recovered_rate_per_second =
@@ -625,6 +819,23 @@ impl Config {
             finalized_freezer_table_initial_size: self.finalized_freezer_table_initial_size,
             buffer_pool_page_size,
             buffer_pool_capacity,
+            prunable_items_per_section,
+            immutable_items_per_section,
+            freezer_table_resize_frequency: self.freezer_table_resize_frequency,
+            freezer_table_resize_chunk_size: self.freezer_table_resize_chunk_size,
+            freezer_journal_target_size: self.freezer_journal_target_size,
+            freezer_journal_compression: self.freezer_journal_compression,
+            mmr_items_per_blob,
+            log_items_per_section,
+            locations_items_per_blob,
+            certificates_items_per_blob,
+            cache_items_per_blob,
+            replay_buffer_bytes,
+            write_buffer_bytes,
+            max_repair: self.max_repair,
+            prune_interval: self.prune_interval,
+            ancestry_cache_entries: self.ancestry_cache_entries,
+            proof_queue_size: self.proof_queue_size,
             pending_rate_per_second,
             recovered_rate_per_second,
             resolver_rate_per_second,

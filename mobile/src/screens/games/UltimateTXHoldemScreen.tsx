@@ -2,7 +2,7 @@
  * Ultimate Texas Hold'em Game Screen - Jony Ive Redesigned
  * Multi-street betting with progressive Play bet options
  */
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, InteractionManager, Pressable } from 'react-native';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import Animated, { FadeIn, SlideInUp, SlideInDown } from 'react-native-reanimated';
 import { Card } from '../../components/casino';
@@ -12,9 +12,10 @@ import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SPRING } from '../../constants/theme';
+import { decodeCardList, decodeStateBytes, parseNumeric, parseUltimateHoldemState } from '../../utils';
 import { useGameStore } from '../../stores/gameStore';
 import type { ChipValue, TutorialStep, PokerHand, Card as CardType } from '../../types';
-import type { UltimateTXMessage } from '@nullspace/protocol/mobile';
+import type { GameMessage } from '@nullspace/protocol/mobile';
 
 type GamePhase = 'betting' | 'preflop' | 'flop' | 'river' | 'showdown' | 'result';
 
@@ -70,7 +71,7 @@ const HAND_NAMES: Record<PokerHand, string> = {
 
 export function UltimateTXHoldemScreen() {
   // Shared hook for connection (UTH has multi-bet so keeps custom bet state)
-  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<UltimateTXMessage>();
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<GameMessage>();
   const { balance } = useGameStore();
 
   const [state, setState] = useState<UltimateTXState>({
@@ -95,39 +96,59 @@ export function UltimateTXHoldemScreen() {
     hasChecked: false,
   });
   const [selectedChip, setSelectedChip] = useState<ChipValue>(25);
+  const [activeBetType, setActiveBetType] = useState<'main' | 'trips'>('main');
   const [showTutorial, setShowTutorial] = useState(false);
 
   useEffect(() => {
     if (!lastMessage) return;
 
-    if (lastMessage.type === 'cards_dealt') {
-      haptics.cardDeal();
-      setState((prev) => ({
-        ...prev,
-        playerCards: lastMessage.playerCards ?? [],
-        dealerCards: lastMessage.dealerCards ?? [],
-        phase: 'preflop',
-        message: 'Bet 4x or Check',
-        hasChecked: false,
-      }));
-    }
-
-    if (lastMessage.type === 'community_dealt') {
-      haptics.cardDeal();
-      setState((prev) => ({
-        ...prev,
-        communityCards: lastMessage.communityCards ?? [],
-        phase: lastMessage.phase ?? prev.phase,
-        message: lastMessage.phase === 'flop'
-          ? 'Bet 2x or Check'
-          : 'Bet 1x or Fold',
-      }));
+    if (lastMessage.type === 'game_started' || lastMessage.type === 'game_move') {
+      const stateBytes = decodeStateBytes((lastMessage as { state?: unknown }).state);
+      if (!stateBytes) return;
+      InteractionManager.runAfterInteractions(() => {
+        const parsed = parseUltimateHoldemState(stateBytes);
+        if (!parsed) return;
+        setState((prev) => ({
+          ...prev,
+          playerCards: parsed.playerCards.length > 0 ? parsed.playerCards : prev.playerCards,
+          communityCards: parsed.communityCards.length > 0 ? parsed.communityCards : prev.communityCards,
+          dealerCards: parsed.dealerCards.length > 0 ? parsed.dealerCards : prev.dealerCards,
+          tripsBet: parsed.tripsBet > 0 ? parsed.tripsBet : prev.tripsBet,
+          dealerRevealed: parsed.stage === 'showdown' || parsed.stage === 'result',
+          phase: parsed.stage,
+          message: parsed.stage === 'preflop'
+            ? 'Bet 4x or Check'
+            : parsed.stage === 'flop'
+              ? 'Bet 2x or Check'
+              : parsed.stage === 'river'
+                ? 'Bet 1x or Fold'
+                : parsed.stage === 'showdown'
+                  ? 'Revealing dealer...'
+                  : parsed.stage === 'result'
+                    ? 'Round complete'
+                    : 'Place Ante & Blind',
+        }));
+      });
+      return;
     }
 
     if (lastMessage.type === 'game_result') {
-      const payout = lastMessage.payout ?? 0;
+      const payload = lastMessage as Record<string, unknown>;
+      const payout = parseNumeric(payload.totalReturn ?? payload.payout) ?? 0;
+      const player = payload.player as { cards?: number[]; rank?: PokerHand } | undefined;
+      const dealer = payload.dealer as { cards?: number[]; rank?: PokerHand; qualifies?: boolean } | undefined;
+      const community = Array.isArray(payload.community) ? payload.community as number[] : null;
+      const anteReturn = parseNumeric(payload.anteReturn) ?? 0;
+      const anteBet = parseNumeric(payload.anteBet) ?? state.anteBet;
+      const blindReturn = parseNumeric(payload.blindReturn) ?? 0;
+      const blindBet = parseNumeric(payload.blindBet) ?? state.blindBet;
+      const playReturn = parseNumeric(payload.playReturn) ?? 0;
+      const playBet = parseNumeric(payload.playBet) ?? state.playBet;
+      const tripsReturn = parseNumeric(payload.tripsReturn) ?? 0;
+      const tripsBet = parseNumeric(payload.tripsBet) ?? state.tripsBet;
+
       if (payout > 0) {
-        if (lastMessage.playerHand === 'ROYAL_FLUSH') {
+        if (player?.rank === 'ROYAL_FLUSH') {
           haptics.jackpot();
         } else {
           haptics.win();
@@ -138,42 +159,22 @@ export function UltimateTXHoldemScreen() {
 
       setState((prev) => ({
         ...prev,
-        communityCards: lastMessage.communityCards ?? prev.communityCards,
-        dealerCards: lastMessage.dealerCards ?? prev.dealerCards,
+        communityCards: community ? decodeCardList(community) : prev.communityCards,
+        dealerCards: dealer?.cards ? decodeCardList(dealer.cards) : prev.dealerCards,
         dealerRevealed: true,
-        playerHand: lastMessage.playerHand ?? null,
-        dealerHand: lastMessage.dealerHand ?? null,
-        dealerQualifies: lastMessage.dealerQualifies ?? false,
+        playerHand: player?.rank ?? prev.playerHand,
+        dealerHand: dealer?.rank ?? prev.dealerHand,
+        dealerQualifies: dealer?.qualifies ?? prev.dealerQualifies,
         phase: 'result',
-        anteResult: lastMessage.anteResult ?? null,
-        blindResult: lastMessage.blindResult ?? null,
-        playResult: lastMessage.playResult ?? null,
-        tripsResult: lastMessage.tripsResult ?? null,
+        anteResult: anteReturn > anteBet ? 'win' : anteReturn === anteBet ? 'push' : 'loss',
+        blindResult: blindReturn > blindBet ? 'win' : blindReturn === blindBet ? 'push' : 'loss',
+        playResult: playBet > 0 ? (playReturn > playBet ? 'win' : playReturn === playBet ? 'push' : 'loss') : prev.playResult,
+        tripsResult: tripsBet > 0 ? (tripsReturn > tripsBet ? 'win' : 'loss') : null,
         payout,
-        message: lastMessage.message ?? (payout > 0 ? 'You win!' : 'Dealer wins'),
+        message: typeof payload.message === 'string' ? payload.message : payout > 0 ? 'You win!' : 'Dealer wins',
       }));
     }
-  }, [lastMessage]);
-
-  const handleChipPlace = useCallback((value: ChipValue) => {
-    if (state.phase !== 'betting') return;
-
-    // Calculate current total bet (ante + blind are placed together, so 2x value)
-    const currentTotalBet = state.anteBet + state.blindBet + state.tripsBet;
-    if (currentTotalBet + (value * 2) > balance) {
-      haptics.error();
-      return;
-    }
-
-    haptics.chipPlace();
-
-    // Ante and Blind are always equal
-    setState((prev) => ({
-      ...prev,
-      anteBet: prev.anteBet + value,
-      blindBet: prev.blindBet + value,
-    }));
-  }, [state.phase, state.anteBet, state.blindBet, state.tripsBet, balance]);
+  }, [lastMessage, state.anteBet, state.blindBet, state.playBet, state.tripsBet]);
 
   const handleTripsChip = useCallback((value: ChipValue) => {
     if (state.phase !== 'betting') return;
@@ -192,6 +193,30 @@ export function UltimateTXHoldemScreen() {
       tripsBet: prev.tripsBet + value,
     }));
   }, [state.phase, state.anteBet, state.blindBet, state.tripsBet, balance]);
+
+  const handleChipPlace = useCallback((value: ChipValue) => {
+    if (activeBetType === 'trips') {
+      handleTripsChip(value);
+      return;
+    }
+    if (state.phase !== 'betting') return;
+
+    // Calculate current total bet (ante + blind are placed together, so 2x value)
+    const currentTotalBet = state.anteBet + state.blindBet + state.tripsBet;
+    if (currentTotalBet + (value * 2) > balance) {
+      haptics.error();
+      return;
+    }
+
+    haptics.chipPlace();
+
+    // Ante and Blind are always equal
+    setState((prev) => ({
+      ...prev,
+      anteBet: prev.anteBet + value,
+      blindBet: prev.blindBet + value,
+    }));
+  }, [activeBetType, handleTripsChip, state.phase, state.anteBet, state.blindBet, state.tripsBet, balance]);
 
   const handleDeal = useCallback(async () => {
     if (state.anteBet === 0) return;
@@ -275,6 +300,7 @@ export function UltimateTXHoldemScreen() {
       payout: 0,
       hasChecked: false,
     });
+    setActiveBetType('main');
   }, []);
 
   const getMultiplier = () => {
@@ -518,13 +544,43 @@ export function UltimateTXHoldemScreen() {
 
       {/* Chip Selector */}
       {state.phase === 'betting' && (
-        <View style={styles.chipArea}>
-          <View style={styles.chipLabels}>
-            <Text style={styles.chipLabel}>Ante/Blind</Text>
-            <Text style={styles.chipLabelAlt}>Trips (Optional)</Text>
-          </View>
-          <ChipSelector
-            selectedValue={selectedChip}
+      <View style={styles.chipArea}>
+        <View style={styles.chipLabels}>
+          <Pressable
+            onPress={() => setActiveBetType('main')}
+            style={[
+              styles.chipLabelButton,
+              activeBetType === 'main' && styles.chipLabelButtonActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.chipLabel,
+                activeBetType === 'main' && styles.chipLabelTextActive,
+              ]}
+            >
+              Ante/Blind
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setActiveBetType('trips')}
+            style={[
+              styles.chipLabelButton,
+              activeBetType === 'trips' && styles.chipLabelButtonActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.chipLabelAlt,
+                activeBetType === 'trips' && styles.chipLabelTextActive,
+              ]}
+            >
+              Trips (Optional)
+            </Text>
+          </Pressable>
+        </View>
+        <ChipSelector
+          selectedValue={selectedChip}
             onSelect={setSelectedChip}
             onChipPlace={handleChipPlace}
           />
@@ -666,6 +722,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     marginBottom: SPACING.xs,
   },
+  chipLabelButton: {
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: RADIUS.sm,
+  },
+  chipLabelButtonActive: {
+    backgroundColor: COLORS.surface,
+  },
   chipLabel: {
     color: COLORS.textSecondary,
     ...TYPOGRAPHY.caption,
@@ -673,5 +737,8 @@ const styles = StyleSheet.create({
   chipLabelAlt: {
     color: COLORS.textMuted,
     ...TYPOGRAPHY.caption,
+  },
+  chipLabelTextActive: {
+    color: COLORS.textPrimary,
   },
 });

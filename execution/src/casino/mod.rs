@@ -20,6 +20,7 @@ pub mod craps;
 pub mod hilo;
 #[cfg(test)]
 mod integration_tests;
+pub mod limits;
 pub(crate) mod payload;
 pub mod roulette;
 pub mod sic_bo;
@@ -158,7 +159,10 @@ impl GameRng {
 
     /// Create a shuffled deck of 52 cards.
     pub fn create_deck(&mut self) -> Vec<u8> {
-        let mut deck: Vec<u8> = (0..52).collect();
+        let mut deck = Vec::with_capacity(52);
+        for card in 0..52u8 {
+            deck.push(card);
+        }
         self.shuffle(&mut deck);
         deck
     }
@@ -214,7 +218,13 @@ impl GameRng {
         }
 
         // Collect remaining cards
-        let mut deck: Vec<u8> = (0..52).filter(|&c| used & (1u64 << c) == 0).collect();
+        let capacity = 52usize.saturating_sub(used.count_ones() as usize);
+        let mut deck = Vec::with_capacity(capacity);
+        for card in 0..52u8 {
+            if used & (1u64 << card) == 0 {
+                deck.push(card);
+            }
+        }
 
         self.shuffle(&mut deck);
         deck

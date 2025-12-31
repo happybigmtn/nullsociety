@@ -12,9 +12,10 @@ import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SPRING } from '../../constants/theme';
+import { decodeCardList } from '../../utils';
 import { useGameStore } from '../../stores/gameStore';
 import type { ChipValue, TutorialStep, BaccaratBetType, Card as CardType } from '../../types';
-import type { BaccaratMessage } from '@nullspace/protocol/mobile';
+import type { GameMessage } from '@nullspace/protocol/mobile';
 
 interface BaccaratBet {
   type: BaccaratBetType;
@@ -77,7 +78,7 @@ const TUTORIAL_STEPS: TutorialStep[] = [
 
 export function BaccaratScreen() {
   // Shared hook for connection (Baccarat has multi-bet so keeps custom bet state)
-  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<BaccaratMessage>();
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<GameMessage>();
   const { balance } = useGameStore();
 
   const [state, setState] = useState<BaccaratState>({
@@ -97,20 +98,12 @@ export function BaccaratScreen() {
 
   useEffect(() => {
     if (!lastMessage) return;
-
-    if (lastMessage.type === 'cards_dealt') {
-      haptics.cardDeal();
-      setState((prev) => ({
-        ...prev,
-        playerCards: lastMessage.playerCards ?? [],
-        bankerCards: lastMessage.bankerCards ?? [],
-        playerTotal: lastMessage.playerTotal ?? 0,
-        bankerTotal: lastMessage.bankerTotal ?? 0,
-      }));
-    }
-
     if (lastMessage.type === 'game_result') {
-      const winner = lastMessage.winner;
+      const payload = lastMessage as Record<string, unknown>;
+      const player = payload.player as { cards?: number[]; total?: number } | undefined;
+      const banker = payload.banker as { cards?: number[]; total?: number } | undefined;
+      const winner = payload.winner as 'PLAYER' | 'BANKER' | 'TIE' | undefined;
+
       const betOnWinner = winner
         && ((winner === 'TIE' && state.sideBets.some((b) => b.type === 'TIE' && b.amount > 0))
           || (winner !== 'TIE' && state.selection === winner && state.mainBet > 0));
@@ -124,12 +117,12 @@ export function BaccaratScreen() {
       setState((prev) => ({
         ...prev,
         phase: 'result',
-        playerCards: lastMessage.playerCards ?? prev.playerCards,
-        bankerCards: lastMessage.bankerCards ?? prev.bankerCards,
-        playerTotal: lastMessage.playerTotal ?? prev.playerTotal,
-        bankerTotal: lastMessage.bankerTotal ?? prev.bankerTotal,
+        playerCards: player?.cards ? decodeCardList(player.cards) : prev.playerCards,
+        bankerCards: banker?.cards ? decodeCardList(banker.cards) : prev.bankerCards,
+        playerTotal: typeof player?.total === 'number' ? player.total : prev.playerTotal,
+        bankerTotal: typeof banker?.total === 'number' ? banker.total : prev.bankerTotal,
         winner: winner ?? null,
-        message: lastMessage.message ?? `${winner} wins!`,
+        message: typeof payload.message === 'string' ? payload.message : winner ? `${winner} wins!` : 'Round complete',
       }));
     }
   }, [lastMessage, state.mainBet, state.selection, state.sideBets]);
@@ -168,9 +161,13 @@ export function BaccaratScreen() {
       const existingIndex = prev.sideBets.findIndex((bet) => bet.type === type);
       if (existingIndex >= 0) {
         const next = [...prev.sideBets];
+        const existing = next[existingIndex];
+        if (!existing) {
+          return prev;
+        }
         next[existingIndex] = {
           type,
-          amount: next[existingIndex].amount + selectedChip,
+          amount: existing.amount + selectedChip,
         };
         return { ...prev, sideBets: next };
       }
@@ -219,7 +216,9 @@ export function BaccaratScreen() {
     addMainBet();
   }, [addMainBet]);
 
-  const totalBet = state.mainBet + state.sideBets.reduce((sum, bet) => sum + bet.amount, 0);
+  const totalBet = useMemo(() => (
+    state.mainBet + state.sideBets.reduce((sum, bet) => sum + bet.amount, 0)
+  ), [state.mainBet, state.sideBets]);
 
   const handleClearBets = useCallback(() => {
     if (state.phase !== 'betting') return;

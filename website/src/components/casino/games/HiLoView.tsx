@@ -1,14 +1,12 @@
 
-import React, { useCallback, useMemo } from 'react';
-import { GameState, Card } from '../../../types';
+import React, { useMemo } from 'react';
+import { GameState } from '../../../types';
 import { Hand } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
 import { GameControlBar } from '../GameControlBar';
-import { getHiLoRank } from '../../../utils/gameUtils';
 
 interface HiLoViewProps {
     gameState: GameState;
-    deck: Card[];
     actions?: {
         deal?: () => void;
         toggleShield?: () => void;
@@ -18,44 +16,27 @@ interface HiLoViewProps {
     };
 }
 
-export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, deck, actions, lastWin, playMode }) => {
-    // Keep the prop for compatibility (other games use the shared deck), but HiLo projections
-    // must not depend on the local deck (on-chain play doesn't have a local deck).
-    void deck;
-
+export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
     const currentCard = gameState.playerCards[gameState.playerCards.length - 1];
-    const currentRank = currentCard ? getHiLoRank(currentCard) : 7; // 1..13, default to middle
-    const isAtAce = currentRank === 1;
-    const isAtKing = currentRank === 13;
+    const nextMultipliers = gameState.hiloNextMultipliers;
+    const lowerMultiplier = nextMultipliers?.lower ?? 0;
+    const higherMultiplier = nextMultipliers?.higher ?? 0;
+    const sameMultiplier = nextMultipliers?.same ?? 0;
+    const showLower = lowerMultiplier > 0;
+    const showHigher = higherMultiplier > 0;
+    const showSame = sameMultiplier > 0;
 
-    const nextGuessMultiplier = useCallback(
-        (guess: 'HIGHER' | 'LOWER' | 'SAME') => {
-            if (!currentCard) return '0.00x';
-
-            // Match on-chain hilo.rs `calculate_multiplier`:
-            // - Same (at edges): 1 rank wins = 13x
-            // - Higher: strictly higher wins, same = push
-            // - Lower: strictly lower wins, same = push
-            const rank = currentRank;
-            let winningRanks: number;
-
-            if (guess === 'SAME') {
-                winningRanks = 1; // 13x
-            } else if (guess === 'HIGHER') {
-                if (rank === 13) return '—'; // Invalid at King
-                winningRanks = 13 - rank; // Strictly higher
-            } else {
-                // LOWER
-                if (rank === 1) return '—'; // Invalid at Ace
-                winningRanks = rank - 1; // Strictly lower
-            }
-
-            if (winningRanks <= 0) return '—';
-            const bps = Math.floor((13 * 10_000) / winningRanks);
-            return (bps / 10_000).toFixed(2) + 'x';
-        },
-        [currentCard, currentRank]
+    const formatMultiplier = (bps: number) => (
+        bps > 0 ? `${(bps / 10_000).toFixed(2)}x` : '—'
     );
+
+    const options = useMemo(() => {
+        const list: Array<{ id: 'LOWER' | 'SAME' | 'HIGHER'; label: string; key: string; multiplier: number; tone: 'destructive' | 'primary' | 'success' }> = [];
+        if (showLower) list.push({ id: 'LOWER', label: 'LOWER', key: 'L', multiplier: lowerMultiplier, tone: 'destructive' });
+        if (showSame) list.push({ id: 'SAME', label: 'SAME', key: 'S', multiplier: sameMultiplier, tone: 'primary' });
+        if (showHigher) list.push({ id: 'HIGHER', label: 'HIGHER', key: 'H', multiplier: higherMultiplier, tone: 'success' });
+        return list;
+    }, [showLower, showSame, showHigher, lowerMultiplier, sameMultiplier, higherMultiplier]);
 
     return (
         <>
@@ -95,28 +76,36 @@ export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number; playMode?
                         <div className="flex flex-col gap-2 items-center">
                             <span className="text-xs uppercase tracking-widest text-gray-500">CURRENT CARD</span>
                             <div className="flex items-center gap-4">
-                                {/* LEFT PROJECTION: Lower (normal/King) or Same (Ace) */}
-                                <div className="text-right opacity-80">
+                                {/* LEFT PROJECTION */}
+                                <div className="text-right opacity-80 min-w-[56px]">
                                     <div className="text-[10px] text-gray-500 uppercase tracking-wider font-mono">
-                                        {isAtAce ? 'SAME' : 'LOWER'}
+                                        {showLower ? 'LOWER' : showSame && !showHigher ? 'SAME' : '—'}
                                     </div>
                                     <div className="text-action-success font-mono font-bold text-sm">
-                                        {isAtAce ? nextGuessMultiplier('SAME') : nextGuessMultiplier('LOWER')}
+                                        {showLower ? formatMultiplier(lowerMultiplier) : showSame && !showHigher ? formatMultiplier(sameMultiplier) : '—'}
                                     </div>
                                 </div>
 
                                 <Hand cards={[gameState.playerCards[gameState.playerCards.length - 1]]} />
 
-                                {/* RIGHT PROJECTION: Higher (normal/Ace) or Same (King) */}
-                                <div className="text-left opacity-80">
+                                {/* RIGHT PROJECTION */}
+                                <div className="text-left opacity-80 min-w-[56px]">
                                     <div className="text-[10px] text-gray-500 uppercase tracking-wider font-mono">
-                                        {isAtKing ? 'SAME' : 'HIGHER'}
+                                        {showHigher ? 'HIGHER' : showSame && !showLower ? 'SAME' : '—'}
                                     </div>
                                     <div className="text-action-success font-mono font-bold text-sm">
-                                        {isAtKing ? nextGuessMultiplier('SAME') : nextGuessMultiplier('HIGHER')}
+                                        {showHigher ? formatMultiplier(higherMultiplier) : showSame && !showLower ? formatMultiplier(sameMultiplier) : '—'}
                                     </div>
                                 </div>
                             </div>
+                            {showSame && showLower && showHigher && (
+                                <div className="text-center opacity-80">
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wider font-mono">SAME</div>
+                                    <div className="text-action-primary font-mono font-bold text-sm">
+                                        {formatMultiplier(sameMultiplier)}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -166,33 +155,35 @@ export const HiLoView = React.memo<HiLoViewProps & { lastWin?: number; playMode?
                     >
                         <span className="ns-keycap">C</span> CASHOUT · LOCK POT
                     </button>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                        {/* LEFT BUTTON: Lower (normal/King) or Same (Ace) */}
-                        <button
-                            type="button"
-                            onClick={() => actions?.hiloPlay?.(isAtAce ? 'SAME' : 'LOWER')}
-                            className="h-16 rounded border-2 border-action-destructive bg-black/50 hover:bg-action-destructive/10 transition-all flex flex-col items-center justify-center"
-                        >
-                            <div className="text-[10px] text-gray-400 tracking-widest uppercase font-mono">
-                                <span className="ns-keycap text-action-destructive font-bold">{isAtAce ? 'S' : 'L'}</span> {isAtAce ? 'SAME' : 'LOWER'}
-                            </div>
-                            <div className="text-action-destructive font-mono font-bold text-sm">
-                                {isAtAce ? nextGuessMultiplier('SAME') : nextGuessMultiplier('LOWER')}
-                            </div>
-                        </button>
-                        {/* RIGHT BUTTON: Higher (normal/Ace) or Same (King) */}
-                        <button
-                            type="button"
-                            onClick={() => actions?.hiloPlay?.(isAtKing ? 'SAME' : 'HIGHER')}
-                            className="h-16 rounded border-2 border-action-success bg-black/50 hover:bg-action-success/10 transition-all flex flex-col items-center justify-center"
-                        >
-                            <div className="text-[10px] text-gray-400 tracking-widest uppercase font-mono">
-                                <span className="ns-keycap text-action-success font-bold">{isAtKing ? 'S' : 'H'}</span> {isAtKing ? 'SAME' : 'HIGHER'}
-                            </div>
-                            <div className="text-action-success font-mono font-bold text-sm">
-                                {isAtKing ? nextGuessMultiplier('SAME') : nextGuessMultiplier('HIGHER')}
-                            </div>
-                        </button>
+                    <div className={`mt-2 grid ${options.length === 3 ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
+                        {options.map((option) => {
+                            const toneClass = option.tone === 'destructive'
+                                ? 'border-action-destructive text-action-destructive hover:bg-action-destructive/10'
+                                : option.tone === 'success'
+                                    ? 'border-action-success text-action-success hover:bg-action-success/10'
+                                    : 'border-action-primary text-action-primary hover:bg-action-primary/10';
+                            const keycapClass = option.tone === 'destructive'
+                                ? 'text-action-destructive'
+                                : option.tone === 'success'
+                                    ? 'text-action-success'
+                                    : 'text-action-primary';
+
+                            return (
+                                <button
+                                    key={option.id}
+                                    type="button"
+                                    onClick={() => actions?.hiloPlay?.(option.id)}
+                                    className={`h-16 rounded border-2 bg-black/50 transition-all flex flex-col items-center justify-center ${toneClass}`}
+                                >
+                                    <div className="text-[10px] text-gray-400 tracking-widest uppercase font-mono">
+                                        <span className={`ns-keycap font-bold ${keycapClass}`}>{option.key}</span> {option.label}
+                                    </div>
+                                    <div className={`font-mono font-bold text-sm ${keycapClass}`}>
+                                        {formatMultiplier(option.multiplier)}
+                                    </div>
+                                </button>
+                            );
+                        })}
                     </div>
                 </GameControlBar>
             )}

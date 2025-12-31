@@ -111,6 +111,21 @@ fn render_prometheus_metrics(simulator: &Simulator) -> String {
         "nullspace_simulator_http_query_seed_latency_ms",
         &http.query_seed,
     );
+    append_counter(
+        &mut out,
+        "nullspace_simulator_http_reject_origin_total",
+        http.reject_origin,
+    );
+    append_counter(
+        &mut out,
+        "nullspace_simulator_http_reject_rate_limit_total",
+        http.reject_rate_limit,
+    );
+    append_counter(
+        &mut out,
+        "nullspace_simulator_http_reject_body_limit_total",
+        http.reject_body_limit,
+    );
     append_histogram(
         &mut out,
         "nullspace_simulator_update_index_proof_latency_ms",
@@ -156,6 +171,16 @@ fn render_prometheus_metrics(simulator: &Simulator) -> String {
         &mut out,
         "nullspace_simulator_ws_mempool_send_timeouts_total",
         ws.mempool_send_timeouts,
+    );
+    append_counter(
+        &mut out,
+        "nullspace_simulator_ws_connection_reject_global_total",
+        ws.connection_reject_global,
+    );
+    append_counter(
+        &mut out,
+        "nullspace_simulator_ws_connection_reject_per_ip_total",
+        ws.connection_reject_per_ip,
     );
 
     append_gauge(
@@ -203,6 +228,47 @@ fn render_prometheus_metrics(simulator: &Simulator) -> String {
         &mut out,
         "nullspace_simulator_explorer_persistence_prune_errors_total",
         explorer.persistence_prune_errors,
+    );
+
+    append_counter(
+        &mut out,
+        "nullspace_simulator_casino_games_started_total",
+        explorer.casino_games_started,
+    );
+    append_counter(
+        &mut out,
+        "nullspace_simulator_casino_games_completed_total",
+        explorer.casino_games_completed,
+    );
+    append_counter(
+        &mut out,
+        "nullspace_simulator_casino_games_moved_total",
+        explorer.casino_games_moved,
+    );
+    append_counter(
+        &mut out,
+        "nullspace_simulator_casino_errors_total",
+        explorer.casino_errors,
+    );
+    append_counter(
+        &mut out,
+        "nullspace_simulator_casino_leaderboard_updates_total",
+        explorer.casino_leaderboard_updates,
+    );
+    append_counter(
+        &mut out,
+        "nullspace_simulator_tournament_started_total",
+        explorer.tournament_started,
+    );
+    append_counter(
+        &mut out,
+        "nullspace_simulator_tournament_ended_total",
+        explorer.tournament_ended,
+    );
+    append_gauge(
+        &mut out,
+        "nullspace_simulator_casino_active_sessions",
+        explorer.active_casino_sessions,
     );
 
     append_gauge(

@@ -63,6 +63,21 @@ pub enum Hand {
     RoyalFlush = 9,
 }
 
+fn hand_label(hand: Hand) -> &'static str {
+    match hand {
+        Hand::HighCard => "HIGH_CARD",
+        Hand::JacksOrBetter => "JACKS_OR_BETTER",
+        Hand::TwoPair => "TWO_PAIR",
+        Hand::ThreeOfAKind => "THREE_OF_A_KIND",
+        Hand::Straight => "STRAIGHT",
+        Hand::Flush => "FLUSH",
+        Hand::FullHouse => "FULL_HOUSE",
+        Hand::FourOfAKind => "FOUR_OF_A_KIND",
+        Hand::StraightFlush => "STRAIGHT_FLUSH",
+        Hand::RoyalFlush => "ROYAL_FLUSH",
+    }
+}
+
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum VideoPokerPaytable {
@@ -242,8 +257,14 @@ fn parse_state(state: &[u8]) -> Option<VideoPokerState> {
     if state.len() < 6 {
         return None;
     }
+    if state.len() != 6 && state.len() != 7 {
+        return None;
+    }
     let stage = Stage::try_from(state[0]).ok()?;
     let cards = [state[1], state[2], state[3], state[4], state[5]];
+    if cards.iter().any(|&card| card >= 52) {
+        return None;
+    }
     let rules = if state.len() >= 7 {
         VideoPokerRules::from_byte(state[6])?
     } else {
@@ -253,15 +274,11 @@ fn parse_state(state: &[u8]) -> Option<VideoPokerState> {
 }
 
 fn serialize_state(stage: Stage, cards: &[u8; 5], rules: VideoPokerRules) -> Vec<u8> {
-    vec![
-        stage as u8,
-        cards[0],
-        cards[1],
-        cards[2],
-        cards[3],
-        cards[4],
-        rules.to_byte(),
-    ]
+    let mut out = Vec::with_capacity(7);
+    out.push(stage as u8);
+    out.extend_from_slice(cards);
+    out.push(rules.to_byte());
+    out
 }
 
 pub struct VideoPoker;
@@ -334,23 +351,44 @@ impl CasinoGame for VideoPoker {
         let hand = evaluate_hand(&state.cards);
         let multiplier = payout_multiplier(hand, state.rules.paytable);
 
-        // Generate completion logs for frontend display
-        let logs = vec![format!("RESULT:{}:{}", hand as u8, multiplier)];
-
-        if multiplier > 0 {
-            // Pay tables are expressed "to 1" (winnings). Our executor expects TOTAL RETURN.
-            let base_winnings = session.bet.saturating_mul(multiplier.saturating_add(1));
-            // Apply super mode multipliers if active
-            let final_winnings = if session.super_mode.is_active {
+        // Pay tables are expressed "to 1" (winnings). Our executor expects TOTAL RETURN.
+        let base_return = session.bet.saturating_mul(multiplier.saturating_add(1));
+        let total_return = if multiplier > 0 {
+            if session.super_mode.is_active {
                 apply_super_multiplier_cards(
                     &state.cards,
                     &session.super_mode.multipliers,
-                    base_winnings,
+                    base_return,
                 )
             } else {
-                base_winnings
-            };
-            Ok(GameResult::Win(final_winnings, logs))
+                base_return
+            }
+        } else {
+            0
+        };
+
+        let clamp_i64 = |value: i128| -> i64 {
+            value
+                .clamp(i64::MIN as i128, i64::MAX as i128) as i64
+        };
+        let hand_name = hand_label(hand);
+        let hand_summary = hand_name.replace('_', " ");
+        let net_pnl = clamp_i64(i128::from(total_return) - i128::from(session.bet));
+        let resolved_bets = format!(r#"{{"label":"HAND","pnl":{}}}"#, net_pnl);
+        // Generate completion logs for frontend display
+        let logs = vec![format!(
+            r#"{{"summary":"Hand: {}","netPnl":{},"resolvedBets":[{}],"hand":"{}","handId":{},"multiplier":{},"totalReturn":{}}}"#,
+            hand_summary,
+            net_pnl,
+            resolved_bets,
+            hand_name,
+            hand as u8,
+            multiplier,
+            total_return
+        )];
+
+        if total_return > 0 {
+            Ok(GameResult::Win(total_return, logs))
         } else {
             Ok(GameResult::Loss(logs))
         }
@@ -358,10 +396,12 @@ impl CasinoGame for VideoPoker {
 }
 
 #[cfg(test)]
+#[allow(unused_must_use)]
 mod tests {
     use super::*;
     use crate::mocks::{create_account_keypair, create_network_keypair, create_seed};
     use nullspace_types::casino::GameType;
+    use rand::{rngs::StdRng, Rng, SeedableRng};
 
     fn create_test_seed() -> nullspace_types::Seed {
         let (network_secret, _) = create_network_keypair();
@@ -419,6 +459,17 @@ mod tests {
         // Four Aces
         let cards = [0, 13, 26, 39, 1]; // A-A-A-A-2
         assert_eq!(evaluate_hand(&cards), Hand::FourOfAKind);
+    }
+
+    #[test]
+    fn test_state_blob_fuzz_does_not_panic() {
+        let mut rng = StdRng::seed_from_u64(0x5eed_70b1);
+        for _ in 0..1_000 {
+            let len = rng.gen_range(0..=128);
+            let mut blob = vec![0u8; len];
+            rng.fill(&mut blob[..]);
+            let _ = parse_state(&blob);
+        }
     }
 
     #[test]
@@ -564,5 +615,12 @@ mod tests {
         // A-2-3-4-5 (wheel)
         let cards = [0, 1, 2, 3, 4]; // A-2-3-4-5 of spades
         assert_eq!(evaluate_hand(&cards), Hand::StraightFlush); // All same suit
+    }
+
+    #[test]
+    fn test_ace_low_straight_non_flush() {
+        // A-2-3-4-5 across suits should be a straight, not a flush.
+        let cards = [0, 14, 28, 42, 4]; // A♠ 2♥ 3♦ 4♣ 5♠
+        assert_eq!(evaluate_hand(&cards), Hand::Straight);
     }
 }

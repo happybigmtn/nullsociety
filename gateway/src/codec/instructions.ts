@@ -5,6 +5,7 @@
  * Note: This module encodes higher-level casino instructions (CasinoStartGame, CasinoGameMove).
  * Game-specific payloads should defer to @nullspace/protocol where possible.
  */
+import { HiLoMove } from '@nullspace/constants';
 import { InstructionTag, GameType, PlayerAction } from './constants.js';
 import { encodeBlackjackMove, type BlackjackMoveAction } from '@nullspace/protocol/encode';
 
@@ -121,7 +122,7 @@ export function buildBlackjackPayload(move: BlackjackMoveAction): Uint8Array {
  * Single byte: 0=higher, 1=lower, 2=cashout, 3=same
  */
 export function buildHiLoPayload(guess: 'higher' | 'lower' | 'same'): Uint8Array {
-  const guessMap = { higher: 0, lower: 1, same: 3 };
+  const guessMap = { higher: HiLoMove.Higher, lower: HiLoMove.Lower, same: HiLoMove.Same };
   return new Uint8Array([guessMap[guess]]);
 }
 

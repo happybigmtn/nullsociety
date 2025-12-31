@@ -14,7 +14,7 @@ pub(crate) fn parse_u64_be(payload: &[u8], offset: usize) -> Result<u64, GameErr
 /// Parse the common table-game bet placement payload:
 /// `[0, bet_type:u8, number:u8, amount:u64 BE]`.
 pub(crate) fn parse_place_bet_payload(payload: &[u8]) -> Result<(u8, u8, u64), GameError> {
-    if payload.len() < 11 || payload[0] != 0 {
+    if payload.len() != 11 || payload[0] != 0 {
         return Err(GameError::InvalidPayload);
     }
     let bet_type = payload[1];

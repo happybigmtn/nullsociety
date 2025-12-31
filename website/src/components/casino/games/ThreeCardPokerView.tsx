@@ -1,8 +1,7 @@
 
 import React, { useMemo } from 'react';
-import { GameState, Card } from '../../../types';
+import { GameState } from '../../../types';
 import { Hand } from '../GameComponents';
-import { getVisibleHandValue, evaluateThreeCardHand } from '../../../utils/gameUtils';
 import { MobileDrawer } from '../MobileDrawer';
 import { SideBetMenu } from './SideBetMenu';
 
@@ -11,12 +10,6 @@ interface ThreeCardPokerViewProps {
     actions: any;
 }
 
-// Use canonical hand evaluation from gameUtils to avoid flush detection bugs
-const getHandRankName = (cards: Card[]): string => {
-    if (cards.length !== 3) return '';
-    return evaluateThreeCardHand(cards).rank;
-};
-
 const BONUS_BETS = [
     { key: 'P', action: 'PAIR_PLUS', label: 'PAIR+' },
     { key: '6', action: 'SIX_CARD', label: '6-CARD' },
@@ -24,21 +17,11 @@ const BONUS_BETS = [
 ];
 
 export const ThreeCardPokerView = React.memo<ThreeCardPokerViewProps & { lastWin?: number; playMode?: 'CASH' | 'FREEROLL' | null }>(({ gameState, actions, lastWin, playMode }) => {
-    const playerRank = useMemo(() =>
-        gameState.playerCards.length === 3 ? getHandRankName(gameState.playerCards) : '',
-        [gameState.playerCards]
-    );
-
-    const dealerRank = useMemo(() =>
-        gameState.dealerCards.length === 3 && !gameState.dealerCards.some(c => c && c.isHidden)
-            ? getHandRankName(gameState.dealerCards) : '',
-        [gameState.dealerCards]
-    );
-
-    const dealerQualifies = useMemo(() =>
-        gameState.dealerCards.every(c => c && !c.isHidden) &&
-        getVisibleHandValue(gameState.dealerCards.slice(0, 1)) >= 10,
-        [gameState.dealerCards]
+    const playerRank = useMemo(() => gameState.threeCardPlayerRank ?? '', [gameState.threeCardPlayerRank]);
+    const dealerRank = useMemo(() => gameState.threeCardDealerRank ?? '', [gameState.threeCardDealerRank]);
+    const dealerQualifies = useMemo(
+        () => gameState.threeCardDealerQualifies === true,
+        [gameState.threeCardDealerQualifies]
     );
 
     const totalBet = useMemo(

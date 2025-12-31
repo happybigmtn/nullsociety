@@ -17,12 +17,13 @@ import { ChipSelector } from '../../components/casino';
 import { GameLayout } from '../../components/game';
 import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
-import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
-import { COLORS, SPACING, TYPOGRAPHY, RADIUS, GAME_COLORS, GAME_DETAIL_COLORS, SPRING } from '../../constants/theme';
+import { useGameKeyboard, KEY_ACTIONS, useGameConnection, useModalBackHandler } from '../../hooks';
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, GAME_DETAIL_COLORS, SPRING } from '../../constants/theme';
+import { decodeStateBytes, parseCrapsState, parseNumeric } from '../../utils';
 import { useGameStore } from '../../stores/gameStore';
 import { getDieFace } from '../../utils/dice';
 import type { ChipValue, TutorialStep, CrapsBetType } from '../../types';
-import type { CrapsMessage } from '@nullspace/protocol/mobile';
+import type { GameMessage } from '@nullspace/protocol/mobile';
 
 interface CrapsBet {
   type: CrapsBetType;
@@ -62,7 +63,7 @@ const HARDWAY_TARGETS = [4, 6, 8, 10];
 
 export function CrapsScreen() {
   // Shared hook for connection (Craps has multi-bet array so keeps custom bet state)
-  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<CrapsMessage>();
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<GameMessage>();
   const { balance } = useGameStore();
 
   const [state, setState] = useState<CrapsState>({
@@ -78,6 +79,8 @@ export function CrapsScreen() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  useModalBackHandler(showAdvanced, () => setShowAdvanced(false));
+
   const die1Rotation = useSharedValue(0);
   const die2Rotation = useSharedValue(0);
   const die1OffsetX = useSharedValue(0);
@@ -87,15 +90,26 @@ export function CrapsScreen() {
 
   useEffect(() => {
     if (!lastMessage) return;
+    const payload = lastMessage as Record<string, unknown>;
+    const stateBytes = decodeStateBytes(payload.state);
+    const parsedState = stateBytes ? parseCrapsState(stateBytes) : null;
+    const dice = Array.isArray(payload.dice) && payload.dice.length === 2
+      ? payload.dice as [number, number]
+      : parsedState?.dice ?? null;
+    const point = typeof payload.point === 'number'
+      ? payload.point
+      : parsedState?.point ?? null;
 
-    if (lastMessage.type === 'dice_roll') {
+    const shouldAnimateDice = dice !== null;
+
+    if (shouldAnimateDice) {
       // Animate dice - Reset then spin with physics settle
       die1Rotation.value = 0;
       die1Rotation.value = withSequence(
         withTiming(720, { duration: 300 }),
         withSpring(1080, SPRING.diceTumble)
       );
-      
+
       die2Rotation.value = 0;
       die2Rotation.value = withSequence(
         withTiming(-720, { duration: 300 }),
@@ -121,16 +135,33 @@ export function CrapsScreen() {
         withSpring(0, SPRING.diceTumble)
       );
       haptics.diceRoll();
+    }
 
-      setState((prev) => ({
-        ...prev,
-        dice: lastMessage.dice ?? null,
-        point: lastMessage.point ?? prev.point,
-      }));
+    if (lastMessage.type === 'game_move') {
+      const phaseLabel = typeof payload.phase === 'string' ? payload.phase : null;
+      setState((prev) => {
+        const phase = phaseLabel === 'POINT'
+          ? 'point'
+          : phaseLabel === 'COME_OUT'
+            ? 'comeout'
+            : parsedState?.phase ?? prev.phase;
+        return {
+          ...prev,
+          dice,
+          point,
+          phase,
+          message: phase === 'point' ? 'Point is set' : 'Come out roll',
+        };
+      });
+      return;
     }
 
     if (lastMessage.type === 'game_result') {
-      const won = lastMessage.won ?? false;
+      const totalReturn = parseNumeric(payload.totalReturn ?? payload.payout) ?? 0;
+      const totalWagered = parseNumeric(payload.totalWagered) ?? 0;
+      const winAmount = Math.max(0, totalReturn - totalWagered);
+      const won = winAmount > 0;
+
       if (won) {
         haptics.win();
       } else {
@@ -139,13 +170,23 @@ export function CrapsScreen() {
 
       setState((prev) => ({
         ...prev,
+        dice,
+        point,
         phase: 'result',
-        winAmount: lastMessage.winAmount ?? 0,
+        winAmount,
         lastResult: won ? 'win' : 'loss',
-        message: lastMessage.message ?? (won ? 'Winner!' : 'Seven out!'),
+        message: typeof payload.message === 'string' ? payload.message : won ? 'Winner!' : 'Seven out!',
       }));
     }
-  }, [lastMessage]); // die1Rotation, die2Rotation are SharedValues (stable refs) - must not be in deps
+  }, [
+    lastMessage,
+    die1Rotation,
+    die2Rotation,
+    die1OffsetX,
+    die1OffsetY,
+    die2OffsetX,
+    die2OffsetY,
+  ]);
 
   const die1Style = useAnimatedStyle(() => ({
     transform: [
@@ -231,7 +272,7 @@ export function CrapsScreen() {
     addBet('PASS');
   }, [addBet]);
 
-  const totalBet = state.bets.reduce((sum, b) => sum + b.amount, 0);
+  const totalBet = useMemo(() => state.bets.reduce((sum, b) => sum + b.amount, 0), [state.bets]);
 
   const handleClearBets = useCallback(() => {
     if (state.phase === 'rolling') return;

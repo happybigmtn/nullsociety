@@ -1,3 +1,4 @@
+#![cfg(test)]
 use crate::api::{Query, UpdatesFilter};
 use crate::execution::{Instruction, Transaction};
 use commonware_codec::Encode;

@@ -17,6 +17,8 @@ const PORT = parseInt(process.env.GATEWAY_PORT || '9010', 10);
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
 const MAX_CONNECTIONS_PER_IP = parseInt(process.env.MAX_CONNECTIONS_PER_IP || '5', 10);
 const MAX_TOTAL_SESSIONS = parseInt(process.env.MAX_TOTAL_SESSIONS || '1000', 10);
+const DEFAULT_FAUCET_AMOUNT = 1000n;
+const FAUCET_COOLDOWN_MS = 60_000;
 
 // Core services
 const nonceManager = new NonceManager();
@@ -139,15 +141,45 @@ async function handleMessage(ws: WebSocket, rawData: Buffer): Promise<void> {
   if (msgType === 'get_balance') {
     const session = sessionManager.getSession(ws);
     if (session) {
+      await sessionManager.refreshBalance(session);
       send(ws, {
         type: 'balance',
         registered: session.registered,
         hasBalance: session.hasBalance,
         publicKey: session.publicKeyHex,
+        balance: session.balance.toString(),
       });
     } else {
       sendError(ws, ErrorCodes.SESSION_EXPIRED, 'No active session');
     }
+    return;
+  }
+
+  if (msgType === 'faucet_claim') {
+    const session = sessionManager.getSession(ws);
+    if (!session) {
+      sendError(ws, ErrorCodes.SESSION_EXPIRED, 'No active session');
+      return;
+    }
+
+    const amountRaw = typeof msg.amount === 'number' ? msg.amount : null;
+    const amount = amountRaw && amountRaw > 0 ? BigInt(Math.floor(amountRaw)) : DEFAULT_FAUCET_AMOUNT;
+
+    const result = await sessionManager.requestFaucet(session, amount, FAUCET_COOLDOWN_MS);
+    if (!result.success) {
+      sendError(ws, ErrorCodes.INVALID_MESSAGE, result.error ?? 'Faucet claim failed');
+      return;
+    }
+
+    await sessionManager.refreshBalance(session);
+    send(ws, {
+      type: 'balance',
+      registered: session.registered,
+      hasBalance: session.hasBalance,
+      publicKey: session.publicKeyHex,
+      balance: session.balance.toString(),
+      message: 'FAUCET_CLAIMED',
+    });
     return;
   }
 

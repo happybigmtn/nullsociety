@@ -1,7 +1,8 @@
 use commonware_cryptography::ed25519::PublicKey;
 use commonware_runtime::Metrics;
 use nullspace_types::execution::Transaction;
-use prometheus_client::metrics::gauge::Gauge;
+use prometheus_client::metrics::{counter::Counter, gauge::Gauge};
+use std::sync::atomic::AtomicU64;
 use std::collections::{BTreeMap, HashMap};
 
 /// The maximum number of transactions a single account can have in the mempool.
@@ -34,6 +35,8 @@ pub struct Mempool {
 
     unique: Gauge,
     accounts: Gauge,
+    rejected_total: Counter<u64, AtomicU64>,
+    trimmed_total: Counter<u64, AtomicU64>,
 }
 
 impl Mempool {
@@ -51,6 +54,8 @@ impl Mempool {
         // Initialize metrics
         let unique = Gauge::default();
         let accounts = Gauge::default();
+        let rejected_total: Counter<u64, AtomicU64> = Counter::default();
+        let trimmed_total: Counter<u64, AtomicU64> = Counter::default();
         context.register(
             "transactions",
             "Number of transactions in the mempool",
@@ -60,6 +65,16 @@ impl Mempool {
             "accounts",
             "Number of accounts in the mempool",
             accounts.clone(),
+        );
+        context.register(
+            "rejected_total",
+            "Number of transactions rejected due to mempool limits",
+            rejected_total.clone(),
+        );
+        context.register(
+            "trimmed_total",
+            "Number of transactions trimmed due to per-account backlog limits",
+            trimmed_total.clone(),
         );
 
         // Initialize mempool
@@ -74,6 +89,8 @@ impl Mempool {
 
             unique,
             accounts,
+            rejected_total,
+            trimmed_total,
         }
     }
 
@@ -115,6 +132,7 @@ impl Mempool {
     pub fn add(&mut self, tx: Transaction) {
         // If there are too many transactions, ignore
         if self.total_transactions >= self.max_transactions {
+            self.rejected_total.inc();
             return;
         }
 
@@ -141,6 +159,7 @@ impl Mempool {
             if entry.len() > self.max_backlog {
                 entry.pop_last();
                 self.total_transactions = self.total_transactions.saturating_sub(1);
+                self.trimmed_total.inc();
             }
 
             (was_empty, entry.len())
@@ -198,6 +217,7 @@ impl Mempool {
     /// Get the next transaction to process from the mempool (destructive).
     /// Note: This removes the transaction from the mempool. For non-destructive
     /// iteration, use `peek_batch` instead.
+    #[allow(dead_code)]
     pub fn next(&mut self) -> Option<Transaction> {
         loop {
             // Fast-path for empty mempool.

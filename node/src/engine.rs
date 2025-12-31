@@ -25,14 +25,14 @@ use commonware_p2p::{Blocker, Receiver, Sender};
 use commonware_runtime::{
     buffer::PoolRef, signal::Signal, Clock, Handle, Metrics, Spawner, Storage,
 };
-use commonware_utils::{NZDuration, NZUsize, NZU64};
+use commonware_utils::{NZDuration, NZU64};
 use governor::clock::Clock as GClock;
 use governor::Quota;
 use nullspace_types::{Activity, Block, Evaluation, NAMESPACE};
 use rand::{CryptoRng, Rng};
 use std::{
     future::Future,
-    num::{NonZero, NonZeroUsize},
+    num::{NonZeroU64, NonZeroUsize},
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -45,34 +45,6 @@ type Reporter = Reporters<Activity, marshal::Mailbox<MinSig, Block>, seeder::Mai
 /// To better support peers near tip during network instability, we multiply
 /// the consensus activity timeout by this factor.
 const SYNCER_ACTIVITY_TIMEOUT_MULTIPLIER: u64 = 10;
-
-// Storage sizing defaults.
-//
-// These constants tune `commonware-storage` components which segment data into blobs/sections and
-// use in-memory buffers to amortize IO.
-//
-// Tradeoffs:
-// - Larger `*_ITEMS_PER_*` values reduce metadata overhead but increase replay/prune granularity.
-// - Larger `*_BUFFER` values reduce write amplification but increase memory footprint.
-// - Freezer table resize parameters control on-disk hash table growth work per `sync()`.
-const PRUNABLE_ITEMS_PER_SECTION: NonZero<u64> = NZU64!(4_096);
-const IMMUTABLE_ITEMS_PER_SECTION: NonZero<u64> = NZU64!(262_144);
-// Triggers a table resize when 50% of entries have seen this many insertions since the last resize.
-const FREEZER_TABLE_RESIZE_FREQUENCY: u8 = 4;
-// Number of table entries processed per `sync()` during a resize (larger = fewer syncs, more work per sync).
-const FREEZER_TABLE_RESIZE_CHUNK_SIZE: u32 = 2u32.pow(16);
-// Target size of the freezer journal before rotation/compaction.
-const FREEZER_JOURNAL_TARGET_SIZE: u64 = 1024 * 1024 * 1024; // 1 GiB
-                                                             // zstd compression level; must remain `Some` if any existing data was written compressed.
-const FREEZER_JOURNAL_COMPRESSION: Option<u8> = Some(3);
-const MMR_ITEMS_PER_BLOB: NonZero<u64> = NZU64!(128_000);
-const LOG_ITEMS_PER_SECTION: NonZero<u64> = NZU64!(64_000);
-const LOCATIONS_ITEMS_PER_BLOB: NonZero<u64> = NZU64!(128_000);
-const CERTIFICATES_ITEMS_PER_BLOB: NonZero<u64> = NZU64!(128_000);
-const CACHE_ITEMS_PER_BLOB: NonZero<u64> = NZU64!(256);
-const REPLAY_BUFFER: NonZero<usize> = NZUsize!(8 * 1024 * 1024); // 8MB
-const WRITE_BUFFER: NonZero<usize> = NZUsize!(1024 * 1024); // 1MB
-const MAX_REPAIR: u64 = 20;
 
 enum TaskCompletion<T>
 where
@@ -164,6 +136,20 @@ pub struct StorageConfig {
     pub finalized_freezer_table_initial_size: u32,
     pub buffer_pool_page_size: NonZeroUsize,
     pub buffer_pool_capacity: NonZeroUsize,
+    pub prunable_items_per_section: NonZeroU64,
+    pub immutable_items_per_section: NonZeroU64,
+    pub freezer_table_resize_frequency: u8,
+    pub freezer_table_resize_chunk_size: u32,
+    pub freezer_journal_target_size: u64,
+    pub freezer_journal_compression: Option<u8>,
+    pub mmr_items_per_blob: NonZeroU64,
+    pub log_items_per_section: NonZeroU64,
+    pub locations_items_per_blob: NonZeroU64,
+    pub certificates_items_per_blob: NonZeroU64,
+    pub cache_items_per_blob: NonZeroU64,
+    pub replay_buffer: NonZeroUsize,
+    pub write_buffer: NonZeroUsize,
+    pub max_repair: u64,
 }
 
 pub struct ConsensusConfig {
@@ -193,6 +179,9 @@ pub struct ApplicationConfig<I: Indexer> {
     pub mempool_stream_buffer_size: usize,
     pub nonce_cache_capacity: usize,
     pub nonce_cache_ttl: Duration,
+    pub prune_interval: u64,
+    pub ancestry_cache_entries: usize,
+    pub proof_queue_size: usize,
 }
 
 pub struct Config<B: Blocker<PublicKey = PublicKey>, I: Indexer> {
@@ -272,11 +261,11 @@ impl<
                     share: cfg.identity.share.clone(),
                     mailbox_size: cfg.consensus.mailbox_size,
                     partition_prefix: format!("{}-application", cfg.storage.partition_prefix),
-                    mmr_items_per_blob: MMR_ITEMS_PER_BLOB,
-                    mmr_write_buffer: WRITE_BUFFER,
-                    log_items_per_section: LOG_ITEMS_PER_SECTION,
-                    log_write_buffer: WRITE_BUFFER,
-                    locations_items_per_blob: LOCATIONS_ITEMS_PER_BLOB,
+                    mmr_items_per_blob: cfg.storage.mmr_items_per_blob,
+                    mmr_write_buffer: cfg.storage.write_buffer,
+                    log_items_per_section: cfg.storage.log_items_per_section,
+                    log_write_buffer: cfg.storage.write_buffer,
+                    locations_items_per_blob: cfg.storage.locations_items_per_blob,
                     buffer_pool: buffer_pool.clone(),
                     indexer: cfg.application.indexer.clone(),
                     execution_concurrency: cfg.application.execution_concurrency,
@@ -285,6 +274,9 @@ impl<
                     mempool_stream_buffer_size: cfg.application.mempool_stream_buffer_size,
                     nonce_cache_capacity: cfg.application.nonce_cache_capacity,
                     nonce_cache_ttl: cfg.application.nonce_cache_ttl,
+                    prune_interval: cfg.application.prune_interval,
+                    ancestry_cache_entries: cfg.application.ancestry_cache_entries,
+                    proof_queue_size: cfg.application.proof_queue_size,
                 },
             );
 
@@ -300,9 +292,9 @@ impl<
                 backfill_quota: cfg.consensus.backfill_quota,
                 mailbox_size: cfg.consensus.mailbox_size,
                 partition_prefix: format!("{}-seeder", cfg.storage.partition_prefix),
-                items_per_blob: MMR_ITEMS_PER_BLOB,
-                write_buffer: WRITE_BUFFER,
-                replay_buffer: REPLAY_BUFFER,
+                items_per_blob: cfg.storage.mmr_items_per_blob,
+                write_buffer: cfg.storage.write_buffer,
+                replay_buffer: cfg.storage.replay_buffer,
                 max_uploads_outstanding: cfg.application.max_uploads_outstanding,
                 max_pending_seed_listeners: cfg.application.max_pending_seed_listeners,
             },
@@ -320,10 +312,10 @@ impl<
                 mailbox_size: cfg.consensus.mailbox_size,
                 partition: format!("{}-aggregator", cfg.storage.partition_prefix),
                 buffer_pool: buffer_pool.clone(),
-                prunable_items_per_blob: CACHE_ITEMS_PER_BLOB,
-                persistent_items_per_blob: CERTIFICATES_ITEMS_PER_BLOB,
-                write_buffer: WRITE_BUFFER,
-                replay_buffer: REPLAY_BUFFER,
+                prunable_items_per_blob: cfg.storage.cache_items_per_blob,
+                persistent_items_per_blob: cfg.storage.certificates_items_per_blob,
+                write_buffer: cfg.storage.write_buffer,
+                replay_buffer: cfg.storage.replay_buffer,
                 indexer: cfg.application.indexer.clone(),
                 max_uploads_outstanding: cfg.application.max_uploads_outstanding,
             },
@@ -357,18 +349,18 @@ impl<
                         .activity_timeout
                         .saturating_mul(SYNCER_ACTIVITY_TIMEOUT_MULTIPLIER),
                     namespace: NAMESPACE.to_vec(),
-                    prunable_items_per_section: PRUNABLE_ITEMS_PER_SECTION,
-                    immutable_items_per_section: IMMUTABLE_ITEMS_PER_SECTION,
+                    prunable_items_per_section: cfg.storage.prunable_items_per_section,
+                    immutable_items_per_section: cfg.storage.immutable_items_per_section,
                     freezer_table_initial_size: cfg.storage.blocks_freezer_table_initial_size,
-                    freezer_table_resize_frequency: FREEZER_TABLE_RESIZE_FREQUENCY,
-                    freezer_table_resize_chunk_size: FREEZER_TABLE_RESIZE_CHUNK_SIZE,
-                    freezer_journal_target_size: FREEZER_JOURNAL_TARGET_SIZE,
-                    freezer_journal_compression: FREEZER_JOURNAL_COMPRESSION,
-                    replay_buffer: REPLAY_BUFFER,
-                    write_buffer: WRITE_BUFFER,
+                    freezer_table_resize_frequency: cfg.storage.freezer_table_resize_frequency,
+                    freezer_table_resize_chunk_size: cfg.storage.freezer_table_resize_chunk_size,
+                    freezer_journal_target_size: cfg.storage.freezer_journal_target_size,
+                    freezer_journal_compression: cfg.storage.freezer_journal_compression,
+                    replay_buffer: cfg.storage.replay_buffer,
+                    write_buffer: cfg.storage.write_buffer,
                     freezer_journal_buffer_pool: buffer_pool.clone(),
                     codec_config: (),
-                    max_repair: MAX_REPAIR,
+                    max_repair: cfg.storage.max_repair,
                 },
             )
             .await;
@@ -397,8 +389,8 @@ impl<
                 max_fetch_count: cfg.consensus.max_fetch_count,
                 fetch_concurrent: cfg.consensus.fetch_concurrent,
                 fetch_rate_per_peer: cfg.consensus.fetch_rate_per_peer,
-                replay_buffer: REPLAY_BUFFER,
-                write_buffer: WRITE_BUFFER,
+                replay_buffer: cfg.storage.replay_buffer,
+                write_buffer: cfg.storage.write_buffer,
                 buffer_pool: buffer_pool.clone(),
                 blocker: cfg.blocker.clone(),
             },
@@ -420,8 +412,8 @@ impl<
                 window: NZU64!(16),
                 activity_timeout: cfg.consensus.activity_timeout,
                 journal_partition: format!("{}-aggregation", cfg.storage.partition_prefix),
-                journal_write_buffer: WRITE_BUFFER,
-                journal_replay_buffer: REPLAY_BUFFER,
+                journal_write_buffer: cfg.storage.write_buffer,
+                journal_replay_buffer: cfg.storage.replay_buffer,
                 journal_heights_per_section: NZU64!(16_384),
                 journal_compression: None,
                 journal_buffer_pool: buffer_pool,
@@ -597,11 +589,9 @@ impl<
             TaskCompletion::Actor { name, result } => match result {
                 Ok(()) => {
                     warn!(actor = name, "engine actor exited");
-                    panic!("engine actor exited: {name}");
                 }
                 Err(err) => {
                     error!(?err, actor = name, "engine actor failed");
-                    panic!("engine actor failed: {name}: {err:?}");
                 }
             },
         }

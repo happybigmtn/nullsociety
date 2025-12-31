@@ -27,6 +27,10 @@
     "./casino": {
       "types": "./dist/casino.d.ts",
       "import": "./dist/casino.js"
+    },
+    "./casino-state": {
+      "types": "./dist/casino-state.d.ts",
+      "import": "./dist/casino-state.js"
     }
   },
   "scripts": {

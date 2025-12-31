@@ -1067,8 +1067,18 @@ impl Block {
     }
 
     pub fn new(parent: Digest, view: View, height: u64, transactions: Vec<Transaction>) -> Self {
-        Self::try_new(parent, view, height, transactions)
-            .expect("block transaction count is within MAX_BLOCK_TRANSACTIONS")
+        let mut transactions = transactions;
+        if transactions.len() > MAX_BLOCK_TRANSACTIONS {
+            transactions.truncate(MAX_BLOCK_TRANSACTIONS);
+        }
+        let digest = Self::compute_digest(&parent, view, height, &transactions);
+        Self {
+            parent,
+            view,
+            height,
+            transactions,
+            digest,
+        }
     }
 
     pub fn try_new(

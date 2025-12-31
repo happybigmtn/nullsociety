@@ -9,3 +9,6 @@ export { useAppState } from './useAppState';
 
 export { useGameConnection } from './useGameConnection';
 export { useChipBetting } from './useChipBetting';
+export { useGatewaySession } from './useGatewaySession';
+export { useModalBackHandler } from './useModalBackHandler';
+export { useWebSocketReconnectOnForeground } from './useWebSocketReconnectOnForeground';

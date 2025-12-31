@@ -15,11 +15,46 @@
 use super::super_mode::apply_super_multiplier_cards;
 use super::{cards, CasinoGame, GameError, GameResult, GameRng};
 use nullspace_types::casino::GameSession;
+use std::fmt::Write;
 
 const STATE_VERSION: u8 = 1;
 const HIDDEN_CARD: u8 = 0xFF;
 /// WoO: Casino War is played with six decks.
 const CASINO_WAR_DECKS: u8 = 6;
+
+fn format_card_label(card: u8) -> String {
+    if !cards::is_valid_card(card) {
+        return "?".to_string();
+    }
+    let rank = cards::card_rank_one_based(card);
+    let rank_label = match rank {
+        1 => "A".to_string(),
+        11 => "J".to_string(),
+        12 => "Q".to_string(),
+        13 => "K".to_string(),
+        10 => "10".to_string(),
+        _ => rank.to_string(),
+    };
+    let suit = match cards::card_suit(card) {
+        0 => "S",
+        1 => "H",
+        2 => "D",
+        3 => "C",
+        _ => "?",
+    };
+    format!("{}{}", rank_label, suit)
+}
+
+fn clamp_i64(value: i128) -> i64 {
+    value.clamp(i64::MIN as i128, i64::MAX as i128) as i64
+}
+
+fn push_resolved_entry(out: &mut String, label: &str, pnl: i64) {
+    if !out.is_empty() {
+        out.push(',');
+    }
+    let _ = write!(out, r#"{{"label":"{}","pnl":{}}}"#, label, pnl);
+}
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -142,9 +177,18 @@ fn parse_state(state: &[u8]) -> Option<CasinoWarState> {
     if state.len() < 12 || state[0] != STATE_VERSION {
         return None;
     }
+    if state.len() != 12 && state.len() != 13 {
+        return None;
+    }
     let stage = Stage::try_from(state[1]).ok()?;
     let player_card = state[2];
     let dealer_card = state[3];
+    if !matches!(player_card, HIDDEN_CARD) && player_card >= 52 {
+        return None;
+    }
+    if !matches!(dealer_card, HIDDEN_CARD) && dealer_card >= 52 {
+        return None;
+    }
     let tie_bet = u64::from_be_bytes(state[4..12].try_into().ok()?);
     let rules = if state.len() > 12 {
         CasinoWarRules::from_byte(state[12])?
@@ -290,9 +334,40 @@ impl CasinoGame for CasinoWar {
                         } else {
                             base_winnings
                         };
+                        let summary = format!(
+                            "Deal: P {} D {}",
+                            format_card_label(player_card),
+                            format_card_label(dealer_card)
+                        );
+                        let mut resolved_entries = String::new();
+                        let mut resolved_sum: i128 = 0;
+                        let main_pnl =
+                            clamp_i64(i128::from(base_winnings) - i128::from(session.bet));
+                        push_resolved_entry(&mut resolved_entries, "MAIN", main_pnl);
+                        resolved_sum = resolved_sum.saturating_add(i128::from(main_pnl));
+                        if state.tie_bet > 0 {
+                            let tie_pnl = -(state.tie_bet as i64);
+                            push_resolved_entry(&mut resolved_entries, "TIE", tie_pnl);
+                            resolved_sum = resolved_sum.saturating_add(i128::from(tie_pnl));
+                        }
+                        let net_pnl = clamp_i64(
+                            i128::from(final_winnings)
+                                .saturating_sub(i128::from(session.bet))
+                                .saturating_sub(i128::from(state.tie_bet)),
+                        );
+                        let diff = i128::from(net_pnl).saturating_sub(resolved_sum);
+                        if diff != 0 {
+                            push_resolved_entry(&mut resolved_entries, "ADJUSTMENT", clamp_i64(diff));
+                        }
                         let logs = vec![format!(
-                            r#"{{"stage":"DEAL","playerCard":{},"dealerCard":{},"outcome":"PLAYER_WIN","tieBet":{},"payout":{}}}"#,
-                            player_card, dealer_card, state.tie_bet, final_winnings
+                            r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"stage":"DEAL","playerCard":{},"dealerCard":{},"outcome":"PLAYER_WIN","tieBet":{},"payout":{}}}"#,
+                            summary,
+                            net_pnl,
+                            resolved_entries,
+                            player_card,
+                            dealer_card,
+                            state.tie_bet,
+                            final_winnings
                         )];
                         Ok(GameResult::Win(final_winnings, logs))
                     } else if player_rank < dealer_rank {
@@ -302,9 +377,36 @@ impl CasinoGame for CasinoWar {
                         state.dealer_card = dealer_card;
                         session.state_blob = serialize_state(&state);
                         session.is_complete = true;
+                        let summary = format!(
+                            "Deal: P {} D {}",
+                            format_card_label(player_card),
+                            format_card_label(dealer_card)
+                        );
+                        let mut resolved_entries = String::new();
+                        let mut resolved_sum: i128 = 0;
+                        let main_pnl = -(session.bet as i64);
+                        push_resolved_entry(&mut resolved_entries, "MAIN", main_pnl);
+                        resolved_sum = resolved_sum.saturating_add(i128::from(main_pnl));
+                        if state.tie_bet > 0 {
+                            let tie_pnl = -(state.tie_bet as i64);
+                            push_resolved_entry(&mut resolved_entries, "TIE", tie_pnl);
+                            resolved_sum = resolved_sum.saturating_add(i128::from(tie_pnl));
+                        }
+                        let net_pnl = clamp_i64(
+                            -(i128::from(session.bet) + i128::from(state.tie_bet)),
+                        );
+                        let diff = i128::from(net_pnl).saturating_sub(resolved_sum);
+                        if diff != 0 {
+                            push_resolved_entry(&mut resolved_entries, "ADJUSTMENT", clamp_i64(diff));
+                        }
                         let logs = vec![format!(
-                            r#"{{"stage":"DEAL","playerCard":{},"dealerCard":{},"outcome":"DEALER_WIN","tieBet":{},"payout":0}}"#,
-                            player_card, dealer_card, state.tie_bet
+                            r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"stage":"DEAL","playerCard":{},"dealerCard":{},"outcome":"DEALER_WIN","tieBet":{},"payout":0}}"#,
+                            summary,
+                            net_pnl,
+                            resolved_entries,
+                            player_card,
+                            dealer_card,
+                            state.tie_bet
                         )];
                         Ok(GameResult::Loss(logs))
                     } else {
@@ -314,9 +416,36 @@ impl CasinoGame for CasinoWar {
                         state.dealer_card = dealer_card;
                         session.state_blob = serialize_state(&state);
 
+                        let summary = format!(
+                            "Deal: P {} D {} (TIE)",
+                            format_card_label(player_card),
+                            format_card_label(dealer_card)
+                        );
+                        let mut resolved_entries = String::new();
+                        let mut resolved_sum: i128 = 0;
+                        if state.tie_bet > 0 {
+                            let tie_pnl = clamp_i64(
+                                i128::from(tie_bet_return) - i128::from(state.tie_bet),
+                            );
+                            push_resolved_entry(&mut resolved_entries, "TIE", tie_pnl);
+                            resolved_sum = resolved_sum.saturating_add(i128::from(tie_pnl));
+                        }
+                        let net_pnl = clamp_i64(
+                            i128::from(tie_bet_return) - i128::from(state.tie_bet),
+                        );
+                        let diff = i128::from(net_pnl).saturating_sub(resolved_sum);
+                        if diff != 0 {
+                            push_resolved_entry(&mut resolved_entries, "ADJUSTMENT", clamp_i64(diff));
+                        }
                         let logs = vec![format!(
-                            r#"{{"stage":"DEAL","playerCard":{},"dealerCard":{},"outcome":"TIE","tieBet":{},"tieBetPayout":{}}}"#,
-                            player_card, dealer_card, state.tie_bet, tie_bet_return
+                            r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"stage":"DEAL","playerCard":{},"dealerCard":{},"outcome":"TIE","tieBet":{},"tieBetPayout":{}}}"#,
+                            summary,
+                            net_pnl,
+                            resolved_entries,
+                            player_card,
+                            dealer_card,
+                            state.tie_bet,
+                            tie_bet_return
                         )];
                         if tie_bet_return != 0 {
                             Ok(GameResult::ContinueWithUpdate {
@@ -400,9 +529,44 @@ impl CasinoGame for CasinoWar {
                                     base_payout
                                 };
 
+                                let summary = format!(
+                                    "Deal: P {} D {}",
+                                    format_card_label(player_card),
+                                    format_card_label(dealer_card)
+                                );
+                                let mut resolved_entries = String::new();
+                                let mut resolved_sum: i128 = 0;
+                                let main_pnl =
+                                    clamp_i64(i128::from(base_payout) - i128::from(session.bet));
+                                push_resolved_entry(&mut resolved_entries, "MAIN", main_pnl);
+                                resolved_sum = resolved_sum.saturating_add(i128::from(main_pnl));
+                                if state.tie_bet > 0 {
+                                    let tie_pnl = -(state.tie_bet as i64);
+                                    push_resolved_entry(&mut resolved_entries, "TIE", tie_pnl);
+                                    resolved_sum = resolved_sum.saturating_add(i128::from(tie_pnl));
+                                }
+                                let net_pnl = clamp_i64(
+                                    i128::from(final_payout)
+                                        .saturating_sub(i128::from(session.bet))
+                                        .saturating_sub(i128::from(state.tie_bet)),
+                                );
+                                let diff = i128::from(net_pnl).saturating_sub(resolved_sum);
+                                if diff != 0 {
+                                    push_resolved_entry(
+                                        &mut resolved_entries,
+                                        "ADJUSTMENT",
+                                        clamp_i64(diff),
+                                    );
+                                }
                                 let logs = vec![format!(
-                                    r#"{{"stage":"DEAL","playerCard":{},"dealerCard":{},"outcome":"PLAYER_WIN","tieBet":{},"payout":{}}}"#,
-                                    player_card, dealer_card, state.tie_bet, final_payout
+                                    r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"stage":"DEAL","playerCard":{},"dealerCard":{},"outcome":"PLAYER_WIN","tieBet":{},"payout":{}}}"#,
+                                    summary,
+                                    net_pnl,
+                                    resolved_entries,
+                                    player_card,
+                                    dealer_card,
+                                    state.tie_bet,
+                                    final_payout
                                 )];
                                 if total_payout != 0 {
                                     Ok(GameResult::ContinueWithUpdate {
@@ -420,9 +584,36 @@ impl CasinoGame for CasinoWar {
                                 session.is_complete = true;
                                 session.move_count += 1;
 
+                                let summary = format!(
+                                    "Deal: P {} D {}",
+                                    format_card_label(player_card),
+                                    format_card_label(dealer_card)
+                                );
+                                let mut resolved_entries = String::new();
+                                let mut resolved_sum: i128 = 0;
+                                let main_pnl = -(session.bet as i64);
+                                push_resolved_entry(&mut resolved_entries, "MAIN", main_pnl);
+                                resolved_sum = resolved_sum.saturating_add(i128::from(main_pnl));
+                                if state.tie_bet > 0 {
+                                    let tie_pnl = -(state.tie_bet as i64);
+                                    push_resolved_entry(&mut resolved_entries, "TIE", tie_pnl);
+                                    resolved_sum = resolved_sum.saturating_add(i128::from(tie_pnl));
+                                }
+                                let net_pnl = clamp_i64(
+                                    -(i128::from(session.bet) + i128::from(state.tie_bet)),
+                                );
+                                let diff = i128::from(net_pnl).saturating_sub(resolved_sum);
+                                if diff != 0 {
+                                    push_resolved_entry(&mut resolved_entries, "ADJUSTMENT", clamp_i64(diff));
+                                }
                                 let logs = vec![format!(
-                                    r#"{{"stage":"DEAL","playerCard":{},"dealerCard":{},"outcome":"DEALER_WIN","tieBet":{},"payout":0}}"#,
-                                    player_card, dealer_card, state.tie_bet
+                                    r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"stage":"DEAL","playerCard":{},"dealerCard":{},"outcome":"DEALER_WIN","tieBet":{},"payout":0}}"#,
+                                    summary,
+                                    net_pnl,
+                                    resolved_entries,
+                                    player_card,
+                                    dealer_card,
+                                    state.tie_bet
                                 )];
                                 if total_payout != 0 {
                                     Ok(GameResult::ContinueWithUpdate {
@@ -439,9 +630,36 @@ impl CasinoGame for CasinoWar {
                                 session.state_blob = serialize_state(&state);
                                 session.move_count += 1;
 
+                                let summary = format!(
+                                    "Deal: P {} D {} (TIE)",
+                                    format_card_label(player_card),
+                                    format_card_label(dealer_card)
+                                );
+                                let mut resolved_entries = String::new();
+                                let mut resolved_sum: i128 = 0;
+                                if state.tie_bet > 0 {
+                                    let tie_pnl = clamp_i64(
+                                        i128::from(tie_bet_return) - i128::from(state.tie_bet),
+                                    );
+                                    push_resolved_entry(&mut resolved_entries, "TIE", tie_pnl);
+                                    resolved_sum = resolved_sum.saturating_add(i128::from(tie_pnl));
+                                }
+                                let net_pnl = clamp_i64(
+                                    i128::from(tie_bet_return) - i128::from(state.tie_bet),
+                                );
+                                let diff = i128::from(net_pnl).saturating_sub(resolved_sum);
+                                if diff != 0 {
+                                    push_resolved_entry(&mut resolved_entries, "ADJUSTMENT", clamp_i64(diff));
+                                }
                                 let logs = vec![format!(
-                                    r#"{{"stage":"DEAL","playerCard":{},"dealerCard":{},"outcome":"TIE","tieBet":{},"tieBetPayout":{}}}"#,
-                                    player_card, dealer_card, state.tie_bet, tie_bet_return
+                                    r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"stage":"DEAL","playerCard":{},"dealerCard":{},"outcome":"TIE","tieBet":{},"tieBetPayout":{}}}"#,
+                                    summary,
+                                    net_pnl,
+                                    resolved_entries,
+                                    player_card,
+                                    dealer_card,
+                                    state.tie_bet,
+                                    tie_bet_return
                                 )];
                                 if total_payout != 0 {
                                     Ok(GameResult::ContinueWithUpdate {
@@ -466,9 +684,49 @@ impl CasinoGame for CasinoWar {
                     // CasinoStartGame already deducted the ante, so refund half to realize a
                     // half-loss outcome.
                     let refund = session.bet / 2;
+                    let summary = format!(
+                        "Surrender: P {} D {}",
+                        format_card_label(state.player_card),
+                        format_card_label(state.dealer_card)
+                    );
+                    let tie_bet_return = if state.tie_bet > 0 {
+                        let credited = state
+                            .tie_bet
+                            .saturating_mul(state.rules.tie_bet_multiplier().saturating_add(1));
+                        i64::try_from(credited).unwrap_or(0)
+                    } else {
+                        0
+                    };
+                    let mut resolved_entries = String::new();
+                    let mut resolved_sum: i128 = 0;
+                    let main_pnl = clamp_i64(i128::from(refund) - i128::from(session.bet));
+                    push_resolved_entry(&mut resolved_entries, "MAIN", main_pnl);
+                    resolved_sum = resolved_sum.saturating_add(i128::from(main_pnl));
+                    if state.tie_bet > 0 {
+                        let tie_pnl = clamp_i64(
+                            i128::from(tie_bet_return) - i128::from(state.tie_bet),
+                        );
+                        push_resolved_entry(&mut resolved_entries, "TIE", tie_pnl);
+                        resolved_sum = resolved_sum.saturating_add(i128::from(tie_pnl));
+                    }
+                    let net_pnl = clamp_i64(
+                        i128::from(refund)
+                            .saturating_sub(i128::from(session.bet))
+                            .saturating_sub(i128::from(state.tie_bet))
+                            .saturating_add(i128::from(tie_bet_return)),
+                    );
+                    let diff = i128::from(net_pnl).saturating_sub(resolved_sum);
+                    if diff != 0 {
+                        push_resolved_entry(&mut resolved_entries, "ADJUSTMENT", clamp_i64(diff));
+                    }
                     let logs = vec![format!(
-                        r#"{{"stage":"SURRENDER","playerCard":{},"dealerCard":{},"outcome":"SURRENDER","payout":{}}}"#,
-                        state.player_card, state.dealer_card, refund
+                        r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"stage":"SURRENDER","playerCard":{},"dealerCard":{},"outcome":"SURRENDER","payout":{}}}"#,
+                        summary,
+                        net_pnl,
+                        resolved_entries,
+                        state.player_card,
+                        state.dealer_card,
+                        refund
                     )];
                     Ok(GameResult::Win(refund, logs))
                 }
@@ -500,6 +758,15 @@ impl CasinoGame for CasinoWar {
                     session.state_blob = serialize_state(&state);
                     session.is_complete = true;
 
+                    let tie_bet_return = if state.tie_bet > 0 {
+                        let credited = state
+                            .tie_bet
+                            .saturating_mul(state.rules.tie_bet_multiplier().saturating_add(1));
+                        i64::try_from(credited).unwrap_or(0)
+                    } else {
+                        0
+                    };
+
                     if new_player_rank >= new_dealer_rank {
                         // WoO "bonus" variant: tie-after-tie awards a bonus equal to the ante.
                         // https://wizardofodds.com/games/casino-war/
@@ -523,16 +790,89 @@ impl CasinoGame for CasinoWar {
                             base_winnings
                         };
                         let outcome = if is_tie_after_tie { "TIE_AFTER_TIE" } else { "PLAYER_WIN" };
+                        let summary = format!(
+                            "War: P {} D {}",
+                            format_card_label(new_player_card),
+                            format_card_label(new_dealer_card)
+                        );
+                        let mut resolved_entries = String::new();
+                        let mut resolved_sum: i128 = 0;
+                        let main_pnl =
+                            clamp_i64(i128::from(base_winnings) - i128::from(session.bet));
+                        push_resolved_entry(&mut resolved_entries, "MAIN", main_pnl);
+                        resolved_sum = resolved_sum.saturating_add(i128::from(main_pnl));
+                        if state.tie_bet > 0 {
+                            let tie_pnl = clamp_i64(
+                                i128::from(tie_bet_return) - i128::from(state.tie_bet),
+                            );
+                            push_resolved_entry(&mut resolved_entries, "TIE", tie_pnl);
+                            resolved_sum = resolved_sum.saturating_add(i128::from(tie_pnl));
+                        }
+                        let net_pnl = clamp_i64(
+                            i128::from(final_winnings)
+                                .saturating_sub(i128::from(session.bet))
+                                .saturating_sub(i128::from(state.tie_bet))
+                                .saturating_add(i128::from(tie_bet_return)),
+                        );
+                        let diff = i128::from(net_pnl).saturating_sub(resolved_sum);
+                        if diff != 0 {
+                            push_resolved_entry(&mut resolved_entries, "ADJUSTMENT", clamp_i64(diff));
+                        }
                         let logs = vec![format!(
-                            r#"{{"stage":"WAR","originalPlayerCard":{},"originalDealerCard":{},"warPlayerCard":{},"warDealerCard":{},"outcome":"{}","payout":{}}}"#,
-                            original_player_card, original_dealer_card, new_player_card, new_dealer_card, outcome, final_winnings
+                            r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"stage":"WAR","originalPlayerCard":{},"originalDealerCard":{},"warPlayerCard":{},"warDealerCard":{},"outcome":"{}","payout":{}}}"#,
+                            summary,
+                            net_pnl,
+                            resolved_entries,
+                            original_player_card,
+                            original_dealer_card,
+                            new_player_card,
+                            new_dealer_card,
+                            outcome,
+                            final_winnings
                         )];
                         Ok(GameResult::Win(final_winnings, logs))
                     } else {
                         // Lose both bets (ante + war bet).
+                        let summary = format!(
+                            "War: P {} D {}",
+                            format_card_label(new_player_card),
+                            format_card_label(new_dealer_card)
+                        );
+                        let mut resolved_entries = String::new();
+                        let mut resolved_sum: i128 = 0;
+                        let main_pnl = -(session.bet as i64);
+                        let war_pnl = -(war_bet as i64);
+                        push_resolved_entry(&mut resolved_entries, "MAIN", main_pnl);
+                        push_resolved_entry(&mut resolved_entries, "WAR", war_pnl);
+                        resolved_sum = resolved_sum
+                            .saturating_add(i128::from(main_pnl))
+                            .saturating_add(i128::from(war_pnl));
+                        if state.tie_bet > 0 {
+                            let tie_pnl = clamp_i64(
+                                i128::from(tie_bet_return) - i128::from(state.tie_bet),
+                            );
+                            push_resolved_entry(&mut resolved_entries, "TIE", tie_pnl);
+                            resolved_sum = resolved_sum.saturating_add(i128::from(tie_pnl));
+                        }
+                        let net_pnl = clamp_i64(
+                            -(i128::from(session.bet)
+                                + i128::from(war_bet)
+                                + i128::from(state.tie_bet))
+                                .saturating_add(i128::from(tie_bet_return)),
+                        );
+                        let diff = i128::from(net_pnl).saturating_sub(resolved_sum);
+                        if diff != 0 {
+                            push_resolved_entry(&mut resolved_entries, "ADJUSTMENT", clamp_i64(diff));
+                        }
                         let logs = vec![format!(
-                            r#"{{"stage":"WAR","originalPlayerCard":{},"originalDealerCard":{},"warPlayerCard":{},"warDealerCard":{},"outcome":"DEALER_WIN","payout":0}}"#,
-                            original_player_card, original_dealer_card, new_player_card, new_dealer_card
+                            r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"stage":"WAR","originalPlayerCard":{},"originalDealerCard":{},"warPlayerCard":{},"warDealerCard":{},"outcome":"DEALER_WIN","payout":0}}"#,
+                            summary,
+                            net_pnl,
+                            resolved_entries,
+                            original_player_card,
+                            original_dealer_card,
+                            new_player_card,
+                            new_dealer_card
                         )];
                         Ok(GameResult::LossWithExtraDeduction(war_bet, logs))
                     }
@@ -545,10 +885,12 @@ impl CasinoGame for CasinoWar {
 }
 
 #[cfg(test)]
+#[allow(unused_must_use)]
 mod tests {
     use super::*;
     use crate::mocks::{create_account_keypair, create_network_keypair, create_seed};
     use nullspace_types::casino::GameType;
+    use rand::{rngs::StdRng, Rng, SeedableRng};
 
     fn create_test_seed() -> nullspace_types::Seed {
         let (network_secret, _) = create_network_keypair();
@@ -647,6 +989,29 @@ mod tests {
     }
 
     #[test]
+    fn test_surrender_refunds_half_bet() {
+        let seed = create_test_seed();
+        let mut session = create_test_session(100);
+        let state = CasinoWarState {
+            player_card: 12,
+            dealer_card: 25,
+            stage: Stage::War,
+            tie_bet: 0,
+            rules: CasinoWarRules::default(),
+        };
+        session.state_blob = serialize_state(&state);
+
+        let mut rng = GameRng::new(&seed, session.id, 1);
+        let result =
+            CasinoWar::process_move(&mut session, &[Move::Surrender as u8], &mut rng).unwrap();
+
+        assert!(matches!(result, GameResult::Win(50, _)));
+        assert!(session.is_complete);
+        let parsed = parse_state(&session.state_blob).expect("parse state");
+        assert_eq!(parsed.stage, Stage::Complete);
+    }
+
+    #[test]
     fn test_tie_after_tie_awards_bonus() {
         let seed = create_test_seed();
 
@@ -683,5 +1048,16 @@ mod tests {
         }
 
         panic!("failed to find a tie-after-tie in 10,000 trials");
+    }
+
+    #[test]
+    fn test_state_blob_fuzz_does_not_panic() {
+        let mut rng = StdRng::seed_from_u64(0x5eed_cafe);
+        for _ in 0..1_000 {
+            let len = rng.gen_range(0..=128);
+            let mut blob = vec![0u8; len];
+            rng.fill(&mut blob[..]);
+            let _ = parse_state(&blob);
+        }
     }
 }

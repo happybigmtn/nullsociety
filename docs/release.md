@@ -6,6 +6,8 @@
 - Run E2E scripts before each release:
   - `website/scripts/e2e-auth-billing.mjs`
   - `website/scripts/layout-smoke.mjs`
+  - If running WebKit layout smoke on Arch, use `website/scripts/setup-webkit-libs.sh` and set `PW_WEBKIT_LIB_PATH`.
+  - Set `PW_FIREFOX_PATH`/`PW_WEBKIT_PATH` only if Playwright binaries are not in `~/.cache/ms-playwright`.
 - Run load tests against staging before major releases.
 
 ## Security Scanning

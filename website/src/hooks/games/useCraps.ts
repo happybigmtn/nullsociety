@@ -3,48 +3,13 @@ import { GameState, CrapsBet, PlayerStats, GameType, AutoPlayDraft } from '../..
 import { canPlaceCrapsBonusBets, crapsBetCost, CRAPS_MAX_BETS } from '../../utils/gameUtils';
 import { CasinoChainService } from '../../services/CasinoChainService';
 import { CrapsMove } from '@nullspace/constants';
-import { encodeCrapsBet, type CrapsBetName } from '@nullspace/constants/bet-types';
-
-const CRAPS_BONUS_BET_TYPES = new Set<CrapsBet['type']>([
-  'FIRE',
-  'ATS_SMALL',
-  'ATS_TALL',
-  'ATS_ALL',
-  'MUGGSY',
-  'DIFF_DOUBLES',
-  'RIDE_LINE',
-  'REPLAY',
-  'HOT_ROLLER',
-]);
-
-const getEncodedBet = (bet: CrapsBet): { betType: number; target: number } => {
-  return encodeCrapsBet(bet.type as CrapsBetName, bet.target);
-};
-
-const getBetTypeNum = (bet: CrapsBet): number => getEncodedBet(bet).betType;
-
-const getTargetForBackend = (bet: CrapsBet): number => getEncodedBet(bet).target;
-
-const isValidCrapsTarget = (type: CrapsBet['type'], target?: number): boolean => {
-  if (type === 'YES' || type === 'NO') {
-    return target !== undefined && target >= 2 && target <= 12 && target !== 7;
-  }
-  if (type === 'NEXT') {
-    return target !== undefined && target >= 2 && target <= 12;
-  }
-  if (type === 'HARDWAY') {
-    return target === 4 || target === 6 || target === 8 || target === 10;
-  }
-  return true;
-};
-
-const invalidTargetMessage = (type: CrapsBet['type']): string => {
-  if (type === 'YES') return 'SELECT YES NUMBER (2-12, NOT 7)';
-  if (type === 'NO') return 'SELECT NO NUMBER (2-12, NOT 7)';
-  if (type === 'NEXT') return 'SELECT NEXT NUMBER (2-12)';
-  if (type === 'HARDWAY') return 'SELECT HARDWAY (4/6/8/10)';
-  return 'INVALID TARGET';
-};
+import {
+  CRAPS_BONUS_BET_TYPES,
+  getBetTypeNum,
+  getTargetForBackend,
+  invalidTargetMessage,
+  isValidCrapsTarget,
+} from './crapsHelpers';
 
 interface UseCrapsProps {
   gameState: GameState;
@@ -304,19 +269,6 @@ export const useCraps = ({
        const hasSession = !!currentSessionIdRef.current;
        const stagedLocalBets = gameState.crapsBets.filter(b => b.local === true);
 
-       // Debug: Log full state at start of rollCraps
-       console.log('[useCraps] rollCraps invoked:', {
-         hasSession,
-         sessionId: currentSessionIdRef.current?.toString(),
-         stagedLocalBetsCount: stagedLocalBets.length,
-         stagedLocalBets: stagedLocalBets.map(b => ({ type: b.type, target: b.target, amount: b.amount })),
-         allBetsCount: gameState.crapsBets.length,
-         onChainBetsCount: gameState.crapsBets.filter(b => !b.local).length,
-         crapsPoint: gameState.crapsPoint,
-         isPending: isPendingRef.current,
-         isOnChain,
-       });
-
        // No auto-rebet - only use explicitly staged bets
        const betsToPlace = stagedLocalBets;
        const invalidBet = betsToPlace.find(b => !isValidCrapsTarget(b.type, b.target));
@@ -339,7 +291,6 @@ export const useCraps = ({
          }
 
          autoPlayDraftRef.current = { type: GameType.CRAPS, crapsBets: betsToPlace };
-         console.log('[useCraps] rollCraps - No active session, starting new craps game (auto-roll queued)');
          setGameState(prev => ({ ...prev, message: 'STARTING NEW SESSION...' }));
          startGame(GameType.CRAPS);
          return;
@@ -356,7 +307,6 @@ export const useCraps = ({
              // This prevents using a stale session that completed after a seven-out
              const isActive = await chainService.isSessionActive(currentSessionIdRef.current!);
              if (isActive === false) {
-               console.log('[useCraps] Session is complete, starting new session');
                currentSessionIdRef.current = null;
                isPendingRef.current = false;
                autoPlayDraftRef.current = { type: GameType.CRAPS, crapsBets: stagedLocalBets };
@@ -377,19 +327,8 @@ export const useCraps = ({
                payload[2] = targetToSend;
                new DataView(payload.buffer).setBigUint64(3, BigInt(bet.amount), false);
 
-               console.log('[useCraps] Placing bet:', {
-                 betType: bet.type,
-                 betTypeNum,
-                 target: bet.target,
-                 targetToSend,
-                 amount: bet.amount,
-                 payload: Array.from(payload),
-                 sessionId: currentSessionIdRef.current?.toString(),
-               });
-
                try {
                  const betResult = await chainService.sendMove(currentSessionIdRef.current!, payload);
-                 console.log('[useCraps] Bet placement result:', betResult);
                  if (betResult.txHash) setLastTxSig(betResult.txHash);
                } catch (err) {
                  console.error('[useCraps] Bet placement error:', err);

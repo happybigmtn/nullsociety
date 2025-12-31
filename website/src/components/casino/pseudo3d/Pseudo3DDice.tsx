@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { useSpring, animated } from '@react-spring/web';
 import { springConfig } from '../../../utils/motion';
 
@@ -23,7 +23,8 @@ export const Pseudo3DDice: React.FC<Pseudo3DDiceProps> = ({
 }) => {
   const prevRollingRef = useRef(false);
   const isMountedRef = useRef(false);
-  const diceConfig = springConfig('diceTumble');
+  const diceConfig = useMemo(() => springConfig('diceTumble'), []);
+  const successConfig = useMemo(() => springConfig('success'), []);
 
   // Animation spring for rotation and scale during rolling
   const [{ rotation, scale, blur }, api] = useSpring(() => ({
@@ -36,7 +37,7 @@ export const Pseudo3DDice: React.FC<Pseudo3DDiceProps> = ({
   // Dot visibility - hidden during roll, visible on settle
   const { dotOpacity } = useSpring({
     dotOpacity: rolling ? 0 : 1,
-    config: springConfig('success'),
+    config: successConfig,
     delay: rolling ? 0 : 200,
   });
 

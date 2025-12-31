@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { GameState, GameType, Card, RouletteBet, SicBoBet, CrapsBet } from '../../types';
+import { GameState, GameType, RouletteBet, SicBoBet, CrapsBet } from '../../types';
 import { calculateCrapsExposure, calculateRouletteExposure, calculateSicBoOutcomeExposure, ROULETTE_DOUBLE_ZERO } from '../../utils/gameUtils';
 import { BlackjackView } from './games/BlackjackView';
 import { CrapsView } from './games/CrapsView';
@@ -75,10 +75,10 @@ const SICBO_COMBOS: number[][] = (() => {
   return combos;
 })();
 
-const getRouletteMaxWin = (bets: RouletteBet[]) => {
+const getRouletteMaxWin = (bets: RouletteBet[], maxOutcome: number) => {
   if (!bets.length) return 0;
   let max = -Infinity;
-  for (let outcome = 0; outcome <= ROULETTE_DOUBLE_ZERO; outcome += 1) {
+  for (let outcome = 0; outcome <= maxOutcome; outcome += 1) {
     max = Math.max(max, calculateRouletteExposure(outcome, bets));
   }
   return Math.max(0, max);
@@ -185,7 +185,6 @@ const SuperModeDisplay: React.FC<SuperModeDisplayProps> = ({ multipliers, reduce
 
 interface ActiveGameProps {
   gameState: GameState;
-  deck: Card[];
   numberInput: string;
   onToggleHold: (index: number) => void;
   aiAdvice: string | null;
@@ -198,7 +197,7 @@ interface ActiveGameProps {
   onBetChange?: (bet: number) => void;
 }
 
-export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberInput, onToggleHold, aiAdvice, actions, onOpenCommandPalette, reducedMotion = false, chips, playMode, currentBet, onBetChange }) => {
+export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, numberInput, onToggleHold, aiAdvice, actions, onOpenCommandPalette, reducedMotion = false, chips, playMode, currentBet, onBetChange }) => {
   if (gameState.type === GameType.NONE) {
      const handleOpen = () => onOpenCommandPalette?.();
      return (
@@ -280,7 +279,10 @@ export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberI
   const maxWin = React.useMemo(() => {
     switch (gameState.type) {
       case GameType.ROULETTE:
-        return getRouletteMaxWin(gameState.rouletteBets);
+        return getRouletteMaxWin(
+          gameState.rouletteBets,
+          gameState.rouletteZeroRule === 'AMERICAN' ? ROULETTE_DOUBLE_ZERO : 36,
+        );
       case GameType.SIC_BO:
         return getSicBoMaxWin(gameState.sicBoBets);
       case GameType.CRAPS:
@@ -357,7 +359,7 @@ export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, deck, numberI
             {gameState.type === GameType.BACCARAT && <BaccaratView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} />}
             {gameState.type === GameType.ROULETTE && <RouletteView gameState={gameState} numberInput={numberInput} actions={actions} lastWin={displayWin} playMode={playMode} />}
             {gameState.type === GameType.SIC_BO && <SicBoView gameState={gameState} numberInput={numberInput} actions={actions} lastWin={displayWin} playMode={playMode} />}
-            {gameState.type === GameType.HILO && <HiLoView gameState={gameState} deck={deck} actions={actions} lastWin={displayWin} playMode={playMode} />}
+            {gameState.type === GameType.HILO && <HiLoView gameState={gameState} actions={actions} lastWin={displayWin} playMode={playMode} />}
             {gameState.type === GameType.VIDEO_POKER && (
                 <VideoPokerView gameState={gameState} onToggleHold={onToggleHold} actions={actions} lastWin={displayWin} playMode={playMode} />
             )}

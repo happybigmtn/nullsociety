@@ -136,6 +136,9 @@ export const STORAGE_KEYS = {
   CACHED_BALANCE: 'cache.balance',
   LAST_SYNC: 'cache.last_sync',
 
+  // Notifications
+  PUSH_TOKEN: 'notifications.push_token',
+
   // Rewards
   REWARDS_LAST_CLAIM: 'rewards.last_claim',
   REWARDS_STREAK: 'rewards.streak',

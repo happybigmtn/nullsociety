@@ -24,6 +24,8 @@ jobs:
       uses: ./.github/actions/setup
     - name: Lint
       run: cargo clippy --all-targets --all-features -- -D warnings
+    - name: Check for panics/unwraps
+      run: ./scripts/check-no-panics.sh
     - name: Fmt
       run: cargo fmt --all -- --check
     - name: Check docs

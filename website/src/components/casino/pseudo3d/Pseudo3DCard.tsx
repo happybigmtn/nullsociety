@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useSpring, animated } from '@react-spring/web';
 import { springConfig } from '../../../utils/motion';
 
@@ -47,11 +47,13 @@ export const Pseudo3DCard: React.FC<Pseudo3DCardProps> = ({
     setFlipped(!faceUp);
   }, [faceUp]);
 
+  const cardFlipConfig = useMemo(() => springConfig('cardFlip'), []);
+
   const { transform, opacity } = useSpring({
     opacity: 1,
     transform: `perspective(1200px) rotateY(${isFlipped ? 180 : 0}deg) translateY(0px)`,
     from: { opacity: 0, transform: `perspective(1200px) rotateY(180deg) translateY(-40px)` },
-    config: springConfig('cardFlip'),
+    config: cardFlipConfig,
     delay: index * 80,
   });
 

@@ -2,7 +2,7 @@
  * Three Card Poker Game Screen - Jony Ive Redesigned
  * Ante/Play with optional Pair Plus side bet
  */
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, InteractionManager } from 'react-native';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import Animated, { FadeIn, SlideInUp } from 'react-native-reanimated';
 import { Card } from '../../components/casino';
@@ -12,9 +12,10 @@ import { TutorialOverlay, PrimaryButton } from '../../components/ui';
 import { haptics } from '../../services/haptics';
 import { useGameKeyboard, KEY_ACTIONS, useGameConnection } from '../../hooks';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, SPRING } from '../../constants/theme';
+import { decodeCardList, decodeStateBytes, parseThreeCardState, parseNumeric } from '../../utils';
 import { useGameStore } from '../../stores/gameStore';
 import type { ChipValue, TutorialStep, ThreeCardPokerHand, Card as CardType } from '../../types';
-import type { ThreeCardPokerMessage } from '@nullspace/protocol/mobile';
+import type { GameMessage } from '@nullspace/protocol/mobile';
 
 interface ThreeCardPokerState {
   anteBet: number;
@@ -56,18 +57,9 @@ const HAND_NAMES: Record<ThreeCardPokerHand, string> = {
   HIGH_CARD: 'High Card',
 };
 
-const PAIR_PLUS_PAYOUTS: Record<ThreeCardPokerHand, number> = {
-  STRAIGHT_FLUSH: 40,
-  THREE_OF_A_KIND: 30,
-  STRAIGHT: 6,
-  FLUSH: 3,
-  PAIR: 1,
-  HIGH_CARD: 0,
-};
-
 export function ThreeCardPokerScreen() {
   // Shared hook for connection (ThreeCardPoker has multi-bet so keeps custom bet state)
-  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<ThreeCardPokerMessage>();
+  const { isDisconnected, send, lastMessage, connectionStatusProps } = useGameConnection<GameMessage>();
   const { balance } = useGameStore();
 
   const [state, setState] = useState<ThreeCardPokerState>({
@@ -92,22 +84,49 @@ export function ThreeCardPokerScreen() {
   useEffect(() => {
     if (!lastMessage) return;
 
-    if (lastMessage.type === 'cards_dealt') {
-      haptics.cardDeal();
-      setState((prev) => ({
-        ...prev,
-        playerCards: lastMessage.playerCards ?? [],
-        dealerCards: lastMessage.dealerCards ?? [],
-        playerHand: lastMessage.playerHand ?? null,
-        phase: 'dealt',
-        message: 'Play or Fold?',
-      }));
+    if (lastMessage.type === 'game_started' || lastMessage.type === 'game_move') {
+      const stateBytes = decodeStateBytes((lastMessage as { state?: unknown }).state);
+      if (!stateBytes) return;
+      InteractionManager.runAfterInteractions(() => {
+        const parsed = parseThreeCardState(stateBytes);
+        if (!parsed) return;
+        setState((prev) => ({
+          ...prev,
+          playerCards: parsed.playerCards.length > 0 ? parsed.playerCards : prev.playerCards,
+          dealerCards: parsed.dealerCards.length > 0 ? parsed.dealerCards : prev.dealerCards,
+          pairPlusBet: parsed.pairPlusBet > 0 ? parsed.pairPlusBet : prev.pairPlusBet,
+          dealerRevealed: parsed.stage === 'awaiting' || parsed.stage === 'complete',
+          phase: parsed.stage === 'decision'
+            ? 'dealt'
+            : parsed.stage === 'awaiting'
+              ? 'showdown'
+              : parsed.stage === 'complete'
+                ? 'result'
+                : 'betting',
+          message: parsed.stage === 'decision'
+            ? 'Play or Fold?'
+            : parsed.stage === 'awaiting'
+              ? 'Revealing dealer...'
+              : parsed.stage === 'complete'
+                ? 'Round complete'
+                : 'Place your Ante',
+        }));
+      });
+      return;
     }
 
     if (lastMessage.type === 'game_result') {
-      const payout = lastMessage.payout ?? 0;
+      const payload = lastMessage as Record<string, unknown>;
+      const payout = parseNumeric(payload.totalReturn ?? payload.payout) ?? 0;
+      const player = payload.player as { cards?: number[]; rank?: ThreeCardPokerHand } | undefined;
+      const dealer = payload.dealer as { cards?: number[]; rank?: ThreeCardPokerHand; qualifies?: boolean } | undefined;
+      const anteReturn = parseNumeric(payload.anteReturn) ?? 0;
+      const anteBet = parseNumeric(payload.anteBet) ?? state.anteBet;
+      const pairPlusReturn = parseNumeric(payload.pairplusReturn) ?? 0;
+      const pairPlusBet = parseNumeric(payload.pairplusBet) ?? state.pairPlusBet;
+
       if (payout > 0) {
-        if (lastMessage.playerHand === 'STRAIGHT_FLUSH') {
+        if (player?.rank === 'STRAIGHT_FLUSH') {
           haptics.jackpot();
         } else {
           haptics.win();
@@ -118,18 +137,20 @@ export function ThreeCardPokerScreen() {
 
       setState((prev) => ({
         ...prev,
-        dealerCards: lastMessage.dealerCards ?? prev.dealerCards,
+        playerCards: player?.cards ? decodeCardList(player.cards) : prev.playerCards,
+        dealerCards: dealer?.cards ? decodeCardList(dealer.cards) : prev.dealerCards,
         dealerRevealed: true,
-        dealerHand: lastMessage.dealerHand ?? null,
-        dealerQualifies: lastMessage.dealerQualifies ?? false,
+        playerHand: player?.rank ?? prev.playerHand,
+        dealerHand: dealer?.rank ?? prev.dealerHand,
+        dealerQualifies: dealer?.qualifies ?? prev.dealerQualifies,
         phase: 'result',
-        anteResult: lastMessage.anteResult ?? null,
-        pairPlusResult: lastMessage.pairPlusResult ?? null,
+        anteResult: anteReturn > anteBet ? 'win' : anteReturn === anteBet ? 'push' : 'loss',
+        pairPlusResult: pairPlusBet > 0 ? (pairPlusReturn > pairPlusBet ? 'win' : 'loss') : null,
         payout,
-        message: lastMessage.message ?? (payout > 0 ? 'You win!' : 'Dealer wins'),
+        message: typeof payload.message === 'string' ? payload.message : payout > 0 ? 'You win!' : 'Dealer wins',
       }));
     }
-  }, [lastMessage]);
+  }, [lastMessage, state.anteBet, state.pairPlusBet]);
 
   const handleChipPlace = useCallback((value: ChipValue) => {
     if (state.phase !== 'betting') return;
@@ -213,8 +234,6 @@ export function ThreeCardPokerScreen() {
     });
     setActiveBetType('ante');
   }, []);
-
-  const totalBet = state.anteBet + state.pairPlusBet;
 
   const handleClearBets = useCallback(() => {
     if (state.phase !== 'betting') return;

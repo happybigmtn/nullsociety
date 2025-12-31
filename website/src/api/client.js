@@ -2,6 +2,7 @@ import { WasmWrapper } from './wasm.js';
 import { NonceManager } from './nonceManager.js';
 import { snakeToCamel } from '../utils/caseNormalizer.js';
 import { getUnlockedVault } from '../security/vaultRuntime';
+import { logDebug } from '../utils/logger.js';
 
 // Delay between fetch retries
 const FETCH_RETRY_DELAY_MS = 1000;
@@ -257,15 +258,15 @@ export class CasinoClient {
     }
 
     // First, try to fetch an existing seed via REST API
-    console.log('Checking for existing seed via REST API...');
+    logDebug('Checking for existing seed via REST API...');
     const result = await this.queryLatestSeed();
     if (result.found) {
-      console.log('Found existing seed via REST API, view:', result.seed.view);
+      logDebug('Found existing seed via REST API, view:', result.seed.view);
       this.latestSeed = result.seed;
       return;
     }
 
-    console.log('No existing seed found, waiting for WebSocket event...');
+    logDebug('No existing seed found, waiting for WebSocket event...');
     // Fall back to waiting for WebSocket event
     return new Promise((resolve) => {
       // Set up a one-time handler for the first seed
@@ -304,7 +305,7 @@ export class CasinoClient {
       }
 
       // Retry on any other status
-      console.log(`State query returned ${response.status}, retrying...`);
+      logDebug(`State query returned ${response.status}, retrying...`);
       await new Promise(resolve => setTimeout(resolve, FETCH_RETRY_DELAY_MS));
     }
 
@@ -355,7 +356,7 @@ export class CasinoClient {
       }
 
       // Retry on any other status
-      console.log(`Seed query returned ${response.status}, retrying...`);
+      logDebug(`Seed query returned ${response.status}, retrying...`);
       await new Promise(resolve => setTimeout(resolve, FETCH_RETRY_DELAY_MS));
     }
 
@@ -385,7 +386,7 @@ export class CasinoClient {
     }
 
     if (response.status !== 200) {
-      console.log(`Latest seed query returned ${response.status}`);
+      logDebug(`Latest seed query returned ${response.status}`);
       return { found: false };
     }
 
@@ -430,12 +431,12 @@ export class CasinoClient {
 
       const connectAt = (index) => {
         const wsUrl = candidates[index];
-        console.log('Connecting to Updates WebSocket at:', wsUrl, 'with filter:', publicKey ? 'account' : 'all');
+        logDebug('Connecting to Updates WebSocket at:', wsUrl, 'with filter:', publicKey ? 'account' : 'all');
         const ws = new WebSocket(wsUrl);
         this.updatesWs = ws;
 
         ws.onopen = () => {
-          console.log('Updates WebSocket connected successfully');
+          logDebug('Updates WebSocket connected successfully');
           this.updatesStatus.connected = true;
           this.updatesStatus.lastOpenAt = Date.now();
           resolve();
@@ -464,7 +465,7 @@ export class CasinoClient {
         };
 
         this.updatesWs.onmessage = async (event) => {
-          console.log('[WebSocket] Received message, data type:', typeof event.data, event.data instanceof Blob ? 'Blob' : 'not Blob');
+          logDebug('[WebSocket] Received message, data type:', typeof event.data, event.data instanceof Blob ? 'Blob' : 'not Blob');
           try {
             const now = Date.now();
             this.updatesStatus.lastMessageAt = now;
@@ -487,7 +488,7 @@ export class CasinoClient {
             // Now we have binary data in bytes, decode it
             try {
               const decodedUpdate = this.wasm.decodeUpdate(bytes);
-              console.log('[WebSocket] Decoded update type:', decodedUpdate.type, decodedUpdate.type === 'Events' ? `(${decodedUpdate.events?.length} events)` : '');
+              logDebug('[WebSocket] Decoded update type:', decodedUpdate.type, decodedUpdate.type === 'Events' ? `(${decodedUpdate.events?.length} events)` : '');
 
               // Check if it's a Seed or Events/FilteredEvents update
               if (decodedUpdate.type === 'Seed') {
@@ -498,7 +499,7 @@ export class CasinoClient {
                 this.updatesStatus.lastEventAt = now;
                 // Process each event from the array - treat FilteredEvents the same as Events
                 for (const eventData of decodedUpdate.events) {
-                  console.log('[WebSocket] Event type:', eventData.type, 'data:', eventData);
+                  logDebug('[WebSocket] Event type:', eventData.type, 'data:', eventData);
                   // Normalize snake_case to camelCase
                   const normalizedEvent = snakeToCamel(eventData);
                   // Check if this is a transaction from our account
@@ -513,7 +514,7 @@ export class CasinoClient {
               }
             } catch (decodeError) {
               console.error('Failed to decode update:', decodeError);
-              console.log('Full raw bytes:', this.wasm.bytesToHex(bytes).match(/.{2}/g).join(' '));
+              logDebug('Full raw bytes:', this.wasm.bytesToHex(bytes).match(/.{2}/g).join(' '));
             }
           } catch (e) {
             console.error('Failed to process WebSocket message:', e);
@@ -521,7 +522,7 @@ export class CasinoClient {
         };
 
         this.updatesWs.onclose = (event) => {
-          console.log('Updates WebSocket disconnected, code:', event.code, 'reason:', event.reason);
+          logDebug('Updates WebSocket disconnected, code:', event.code, 'reason:', event.reason);
           this.updatesStatus.connected = false;
           this.updatesStatus.lastCloseAt = Date.now();
           this.handleReconnect('updatesWs', () => this.connectUpdates(this.currentUpdateFilter));
@@ -590,12 +591,12 @@ export class CasinoClient {
 
       const connectAt = (index) => {
         const wsUrl = candidates[index];
-        console.log('Connecting to Session Updates WebSocket at:', wsUrl, 'session:', sessionValue.toString());
+        logDebug('Connecting to Session Updates WebSocket at:', wsUrl, 'session:', sessionValue.toString());
         const ws = new WebSocket(wsUrl);
         this.sessionWs = ws;
 
         ws.onopen = () => {
-          console.log('Session Updates WebSocket connected successfully');
+          logDebug('Session Updates WebSocket connected successfully');
           this.sessionStatus.connected = true;
           this.sessionStatus.lastOpenAt = Date.now();
           resolve();
@@ -656,7 +657,7 @@ export class CasinoClient {
         };
 
         this.sessionWs.onclose = (event) => {
-          console.log('Session Updates WebSocket disconnected, code:', event.code, 'reason:', event.reason);
+          logDebug('Session Updates WebSocket disconnected, code:', event.code, 'reason:', event.reason);
           this.sessionStatus.connected = false;
           this.sessionStatus.lastCloseAt = Date.now();
           if (this.currentSessionFilter === null || this.currentSessionFilter === undefined) {
@@ -751,7 +752,7 @@ export class CasinoClient {
     const jitter = Math.random() * 0.3 * baseDelay; // 30% jitter
     const delay = baseDelay + jitter;
 
-    console.log(`Reconnecting ${wsType} in ${Math.round(delay)}ms (attempt ${config.attempts})`);
+    logDebug(`Reconnecting ${wsType} in ${Math.round(delay)}ms (attempt ${config.attempts})`);
 
     config.timer = setTimeout(async () => {
       // Check if we've been destroyed while waiting
@@ -764,7 +765,7 @@ export class CasinoClient {
         await connectFn();
         // Reset on successful connection
         config.attempts = 0;
-        console.log(`Successfully reconnected ${wsType}`);
+        logDebug(`Successfully reconnected ${wsType}`);
       } catch (error) {
         console.error(`Failed to reconnect ${wsType}:`, error.message);
         config.reconnecting = false;
@@ -793,7 +794,7 @@ export class CasinoClient {
       if (result.value.type === 'Account') {
         return result.value;
       } else {
-        console.log('Value is not an Account type:', result.value.type);
+        logDebug('Value is not an Account type:', result.value.type);
         return null;
       }
     }
@@ -807,26 +808,26 @@ export class CasinoClient {
    * @returns {Promise<Object|null>} CasinoPlayer data or null if not found
    */
   async getCasinoPlayer(publicKeyBytes) {
-    console.log('[Client] getCasinoPlayer called with publicKeyBytes:', publicKeyBytes?.length, 'bytes');
+    logDebug('[Client] getCasinoPlayer called with publicKeyBytes:', publicKeyBytes?.length, 'bytes');
     const keyBytes = this.wasm.encodeCasinoPlayerKey(publicKeyBytes);
-    console.log('[Client] Encoded player key:', keyBytes?.length, 'bytes');
+    logDebug('[Client] Encoded player key:', keyBytes?.length, 'bytes');
     const result = await this.queryState(keyBytes);
-    console.log('[Client] queryState result:', result);
+    logDebug('[Client] queryState result:', result);
 
     if (result.found && result.value) {
       // Value is already a plain object from WASM
       if (result.value.type === 'CasinoPlayer') {
         // Normalize snake_case to camelCase for frontend consistency
         const normalized = snakeToCamel(result.value);
-        console.log('[Client] Found CasinoPlayer:', normalized);
+        logDebug('[Client] Found CasinoPlayer:', normalized);
         return normalized;
       } else {
-        console.log('[Client] Value is not a CasinoPlayer type:', result.value.type);
+        logDebug('[Client] Value is not a CasinoPlayer type:', result.value.type);
         return null;
       }
     }
 
-    console.log('[Client] Player not found on-chain');
+    logDebug('[Client] Player not found on-chain');
     return null;
   }
 
@@ -843,7 +844,7 @@ export class CasinoClient {
       if (result.value.type === 'CasinoSession') {
         return result.value;
       } else {
-        console.log('Value is not a CasinoSession type:', result.value.type);
+        logDebug('Value is not a CasinoSession type:', result.value.type);
         return null;
       }
     }
@@ -863,7 +864,7 @@ export class CasinoClient {
       if (result.value.type === 'CasinoLeaderboard') {
         return result.value;
       } else {
-        console.log('Value is not a CasinoLeaderboard type:', result.value.type);
+        logDebug('Value is not a CasinoLeaderboard type:', result.value.type);
         return null;
       }
     }
@@ -885,7 +886,7 @@ export class CasinoClient {
         // Normalize snake_case to camelCase for frontend consistency
         return snakeToCamel(result.value);
       } else {
-        console.log('Value is not a Tournament type:', result.value.type);
+        logDebug('Value is not a Tournament type:', result.value.type);
         return null;
       }
     }
@@ -1217,7 +1218,7 @@ export class CasinoClient {
 
     if (unlockedVault?.nullspaceEd25519PrivateKey) {
       this.wasm.createKeypair(unlockedVault.nullspaceEd25519PrivateKey);
-      console.log('Loaded keypair from passkey vault');
+      logDebug('Loaded keypair from passkey vault');
     } else {
       if (!allowLegacyKeys) {
         removeStoredPrivateKey();
@@ -1235,7 +1236,7 @@ export class CasinoClient {
       if (storedPrivateKeyBytes) {
         try {
           this.wasm.createKeypair(storedPrivateKeyBytes);
-          console.log('Loaded keypair from storage');
+          logDebug('Loaded keypair from storage');
         } catch (e) {
           console.warn('[CasinoClient] Failed to load stored keypair, regenerating:', e);
           removeStoredPrivateKey();
@@ -1263,7 +1264,7 @@ export class CasinoClient {
           try {
             this.wasm.createKeypair(bytes);
             localStorage.setItem('casino_private_key', this.wasm.bytesToHex(bytes));
-            console.log('Generated new keypair and saved to localStorage');
+            logDebug('Generated new keypair and saved to localStorage');
           } catch (e) {
             console.warn('[CasinoClient] Failed to initialize keypair from bytes, falling back:', e);
             try {
@@ -1275,7 +1276,7 @@ export class CasinoClient {
         } else {
           // Fallback: let WASM generate a keypair (non-persistent).
           this.wasm.createKeypair();
-          console.log('Generated new keypair (non-persistent)');
+          logDebug('Generated new keypair (non-persistent)');
         }
       }
     }
@@ -1292,7 +1293,7 @@ export class CasinoClient {
       // ignore
     }
 
-    console.log('Using keypair with public key:', keypair.publicKeyHex);
+    logDebug('Using keypair with public key:', keypair.publicKeyHex);
 
     return keypair;
   }

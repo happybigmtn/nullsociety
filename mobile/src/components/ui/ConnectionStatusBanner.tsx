@@ -41,7 +41,7 @@ export function ConnectionStatusBanner({
     } else {
       pulseOpacity.value = 1;
     }
-  }, [connectionState]);
+  }, [connectionState, pulseOpacity]);
 
   const pulseStyle = useAnimatedStyle(() => ({
     opacity: pulseOpacity.value,

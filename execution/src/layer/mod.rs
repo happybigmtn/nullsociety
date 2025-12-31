@@ -620,7 +620,7 @@ mod tests {
     use crate::mocks::{create_account_keypair, create_network_keypair, create_seed};
     use commonware_runtime::deterministic::Runner;
     use commonware_runtime::Runner as _;
-    use nullspace_types::casino::GameType;
+    use nullspace_types::casino::{GameType, TournamentPhase};
 
     const TEST_NAMESPACE: &[u8] = b"test-namespace";
 
@@ -723,6 +723,113 @@ mod tests {
             {
                 assert_eq!(player.profile.name, "Alice");
                 assert_eq!(player.balances.chips, 1000); // Initial chips
+            } else {
+                panic!("Player not found");
+            }
+
+            let _ = layer.commit();
+        });
+    }
+
+    #[test]
+    fn test_tournament_join_start_end_flow() {
+        let executor = Runner::default();
+        executor.start(|_| async move {
+            let state = MockState::new();
+            let (network_secret, master_public) = create_network_keypair();
+            let seed = create_seed(&network_secret, 1);
+            let mut layer = Layer::new(&state, master_public, TEST_NAMESPACE, seed);
+
+            let (signer, public) = create_account_keypair(1);
+
+            let register = Transaction::sign(
+                &signer,
+                0,
+                Instruction::CasinoRegister {
+                    name: "Alice".to_string(),
+                },
+            );
+            assert!(layer.prepare(&register).await.is_ok());
+            let _ = layer.apply(&register).await.unwrap();
+
+            let tournament_id = 42;
+            let join = Transaction::sign(
+                &signer,
+                1,
+                Instruction::CasinoJoinTournament { tournament_id },
+            );
+            assert!(layer.prepare(&join).await.is_ok());
+            let events = layer.apply(&join).await.unwrap();
+            assert!(matches!(
+                events.get(0),
+                Some(Event::PlayerJoined { tournament_id: id, player }) if *id == tournament_id && player == &public
+            ));
+
+            let start_time_ms = 1_700_000_000_000;
+            let expected_duration_ms =
+                nullspace_types::casino::TOURNAMENT_DURATION_SECS.saturating_mul(1000);
+            let start = Transaction::sign(
+                &signer,
+                2,
+                Instruction::CasinoStartTournament {
+                    tournament_id,
+                    start_time_ms,
+                    end_time_ms: start_time_ms + expected_duration_ms,
+                },
+            );
+            assert!(layer.prepare(&start).await.is_ok());
+            let events = layer.apply(&start).await.unwrap();
+            assert!(events.iter().any(|event| matches!(
+                event,
+                Event::TournamentStarted { id, .. } if *id == tournament_id
+            )));
+
+            if let Some(Value::Tournament(tournament)) =
+                layer.get(&Key::Tournament(tournament_id)).await.unwrap()
+            {
+                assert!(matches!(tournament.phase, TournamentPhase::Active));
+                assert!(tournament.players.contains(&public));
+            } else {
+                panic!("Tournament not found");
+            }
+
+            if let Some(Value::CasinoPlayer(player)) =
+                layer.get(&Key::CasinoPlayer(public.clone())).await.unwrap()
+            {
+                assert_eq!(
+                    player.tournament.chips,
+                    nullspace_types::casino::STARTING_CHIPS
+                );
+                assert_eq!(player.tournament.active_tournament, Some(tournament_id));
+            } else {
+                panic!("Player not found");
+            }
+
+            let end = Transaction::sign(
+                &signer,
+                3,
+                Instruction::CasinoEndTournament { tournament_id },
+            );
+            assert!(layer.prepare(&end).await.is_ok());
+            let events = layer.apply(&end).await.unwrap();
+            assert!(events.iter().any(|event| matches!(
+                event,
+                Event::TournamentEnded { id, .. } if *id == tournament_id
+            )));
+
+            if let Some(Value::Tournament(tournament)) =
+                layer.get(&Key::Tournament(tournament_id)).await.unwrap()
+            {
+                assert!(matches!(tournament.phase, TournamentPhase::Complete));
+            } else {
+                panic!("Tournament not found");
+            }
+
+            if let Some(Value::CasinoPlayer(player)) =
+                layer.get(&Key::CasinoPlayer(public)).await.unwrap()
+            {
+                assert_eq!(player.tournament.active_tournament, None);
+                assert_eq!(player.tournament.chips, 0);
             } else {
                 panic!("Player not found");
             }

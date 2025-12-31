@@ -3,7 +3,7 @@
  */
 import { View, Text, StyleSheet, Pressable, Modal } from 'react-native';
 import { useState, useEffect } from 'react';
-import Animated, { FadeIn, FadeOut, SlideInDown } from 'react-native-reanimated';
+import Animated, { FadeOut, SlideInDown } from 'react-native-reanimated';
 import { haptics } from '../../services/haptics';
 import { isTutorialCompleted, markTutorialCompleted } from '../../services/storage';
 import { COLORS, SPACING, RADIUS, TYPOGRAPHY } from '../../constants/theme';

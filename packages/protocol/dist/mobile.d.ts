@@ -37,19 +37,25 @@ export declare const StateUpdateMessageSchema: z.ZodObject<{} & {
 export declare const GameResultMessageSchema: z.ZodObject<{} & {
     type: z.ZodLiteral<"game_result">;
     won: z.ZodBoolean;
-    payout: z.ZodNumber;
+    payout: z.ZodUnion<[z.ZodNumber, z.ZodString]>;
     message: z.ZodOptional<z.ZodString>;
-}, "strip", z.ZodTypeAny, {
-    type: "game_result";
-    won: boolean;
-    payout: number;
-    message?: string | undefined;
-}, {
-    type: "game_result";
-    won: boolean;
-    payout: number;
-    message?: string | undefined;
-}>;
+    finalChips: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, "passthrough", z.ZodTypeAny, z.objectOutputType<{} & {
+    type: z.ZodLiteral<"game_result">;
+    won: z.ZodBoolean;
+    payout: z.ZodUnion<[z.ZodNumber, z.ZodString]>;
+    message: z.ZodOptional<z.ZodString>;
+    finalChips: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">, z.objectInputType<{} & {
+    type: z.ZodLiteral<"game_result">;
+    won: z.ZodBoolean;
+    payout: z.ZodUnion<[z.ZodNumber, z.ZodString]>;
+    message: z.ZodOptional<z.ZodString>;
+    finalChips: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">>;
 export declare const ErrorMessageSchema: z.ZodObject<{} & {
     type: z.ZodLiteral<"error">;
     code: z.ZodString;
@@ -63,7 +69,204 @@ export declare const ErrorMessageSchema: z.ZodObject<{} & {
     code: string;
     message: string;
 }>;
+export declare const SessionReadyMessageSchema: z.ZodObject<{} & {
+    type: z.ZodLiteral<"session_ready">;
+    sessionId: z.ZodString;
+    publicKey: z.ZodString;
+    registered: z.ZodBoolean;
+    hasBalance: z.ZodBoolean;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, "passthrough", z.ZodTypeAny, z.objectOutputType<{} & {
+    type: z.ZodLiteral<"session_ready">;
+    sessionId: z.ZodString;
+    publicKey: z.ZodString;
+    registered: z.ZodBoolean;
+    hasBalance: z.ZodBoolean;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">, z.objectInputType<{} & {
+    type: z.ZodLiteral<"session_ready">;
+    sessionId: z.ZodString;
+    publicKey: z.ZodString;
+    registered: z.ZodBoolean;
+    hasBalance: z.ZodBoolean;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">>;
+export declare const BalanceMessageSchema: z.ZodObject<{} & {
+    type: z.ZodLiteral<"balance">;
+    registered: z.ZodBoolean;
+    hasBalance: z.ZodBoolean;
+    publicKey: z.ZodString;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    message: z.ZodOptional<z.ZodString>;
+}, "passthrough", z.ZodTypeAny, z.objectOutputType<{} & {
+    type: z.ZodLiteral<"balance">;
+    registered: z.ZodBoolean;
+    hasBalance: z.ZodBoolean;
+    publicKey: z.ZodString;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    message: z.ZodOptional<z.ZodString>;
+}, z.ZodTypeAny, "passthrough">, z.objectInputType<{} & {
+    type: z.ZodLiteral<"balance">;
+    registered: z.ZodBoolean;
+    hasBalance: z.ZodBoolean;
+    publicKey: z.ZodString;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    message: z.ZodOptional<z.ZodString>;
+}, z.ZodTypeAny, "passthrough">>;
+export declare const GameStartedMessageSchema: z.ZodObject<{} & {
+    type: z.ZodLiteral<"game_started">;
+    gameType: z.ZodOptional<z.ZodNumber>;
+    sessionId: z.ZodString;
+    bet: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    state: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+    initialState: z.ZodOptional<z.ZodUnknown>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, "passthrough", z.ZodTypeAny, z.objectOutputType<{} & {
+    type: z.ZodLiteral<"game_started">;
+    gameType: z.ZodOptional<z.ZodNumber>;
+    sessionId: z.ZodString;
+    bet: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    state: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+    initialState: z.ZodOptional<z.ZodUnknown>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">, z.objectInputType<{} & {
+    type: z.ZodLiteral<"game_started">;
+    gameType: z.ZodOptional<z.ZodNumber>;
+    sessionId: z.ZodString;
+    bet: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    state: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+    initialState: z.ZodOptional<z.ZodUnknown>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">>;
+export declare const GameMoveMessageSchema: z.ZodObject<{} & {
+    type: z.ZodLiteral<"game_move">;
+    sessionId: z.ZodString;
+    moveNumber: z.ZodOptional<z.ZodNumber>;
+    gameType: z.ZodOptional<z.ZodNumber>;
+    state: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, "passthrough", z.ZodTypeAny, z.objectOutputType<{} & {
+    type: z.ZodLiteral<"game_move">;
+    sessionId: z.ZodString;
+    moveNumber: z.ZodOptional<z.ZodNumber>;
+    gameType: z.ZodOptional<z.ZodNumber>;
+    state: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">, z.objectInputType<{} & {
+    type: z.ZodLiteral<"game_move">;
+    sessionId: z.ZodString;
+    moveNumber: z.ZodOptional<z.ZodNumber>;
+    gameType: z.ZodOptional<z.ZodNumber>;
+    state: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">>;
+export declare const MoveAcceptedMessageSchema: z.ZodObject<{} & {
+    type: z.ZodLiteral<"move_accepted">;
+    sessionId: z.ZodString;
+}, "passthrough", z.ZodTypeAny, z.objectOutputType<{} & {
+    type: z.ZodLiteral<"move_accepted">;
+    sessionId: z.ZodString;
+}, z.ZodTypeAny, "passthrough">, z.objectInputType<{} & {
+    type: z.ZodLiteral<"move_accepted">;
+    sessionId: z.ZodString;
+}, z.ZodTypeAny, "passthrough">>;
 export declare const GameMessageSchema: z.ZodDiscriminatedUnion<"type", [z.ZodObject<{} & {
+    type: z.ZodLiteral<"session_ready">;
+    sessionId: z.ZodString;
+    publicKey: z.ZodString;
+    registered: z.ZodBoolean;
+    hasBalance: z.ZodBoolean;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, "passthrough", z.ZodTypeAny, z.objectOutputType<{} & {
+    type: z.ZodLiteral<"session_ready">;
+    sessionId: z.ZodString;
+    publicKey: z.ZodString;
+    registered: z.ZodBoolean;
+    hasBalance: z.ZodBoolean;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">, z.objectInputType<{} & {
+    type: z.ZodLiteral<"session_ready">;
+    sessionId: z.ZodString;
+    publicKey: z.ZodString;
+    registered: z.ZodBoolean;
+    hasBalance: z.ZodBoolean;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">>, z.ZodObject<{} & {
+    type: z.ZodLiteral<"balance">;
+    registered: z.ZodBoolean;
+    hasBalance: z.ZodBoolean;
+    publicKey: z.ZodString;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    message: z.ZodOptional<z.ZodString>;
+}, "passthrough", z.ZodTypeAny, z.objectOutputType<{} & {
+    type: z.ZodLiteral<"balance">;
+    registered: z.ZodBoolean;
+    hasBalance: z.ZodBoolean;
+    publicKey: z.ZodString;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    message: z.ZodOptional<z.ZodString>;
+}, z.ZodTypeAny, "passthrough">, z.objectInputType<{} & {
+    type: z.ZodLiteral<"balance">;
+    registered: z.ZodBoolean;
+    hasBalance: z.ZodBoolean;
+    publicKey: z.ZodString;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    message: z.ZodOptional<z.ZodString>;
+}, z.ZodTypeAny, "passthrough">>, z.ZodObject<{} & {
+    type: z.ZodLiteral<"game_started">;
+    gameType: z.ZodOptional<z.ZodNumber>;
+    sessionId: z.ZodString;
+    bet: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    state: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+    initialState: z.ZodOptional<z.ZodUnknown>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, "passthrough", z.ZodTypeAny, z.objectOutputType<{} & {
+    type: z.ZodLiteral<"game_started">;
+    gameType: z.ZodOptional<z.ZodNumber>;
+    sessionId: z.ZodString;
+    bet: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    state: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+    initialState: z.ZodOptional<z.ZodUnknown>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">, z.objectInputType<{} & {
+    type: z.ZodLiteral<"game_started">;
+    gameType: z.ZodOptional<z.ZodNumber>;
+    sessionId: z.ZodString;
+    bet: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    state: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+    initialState: z.ZodOptional<z.ZodUnknown>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">>, z.ZodObject<{} & {
+    type: z.ZodLiteral<"game_move">;
+    sessionId: z.ZodString;
+    moveNumber: z.ZodOptional<z.ZodNumber>;
+    gameType: z.ZodOptional<z.ZodNumber>;
+    state: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, "passthrough", z.ZodTypeAny, z.objectOutputType<{} & {
+    type: z.ZodLiteral<"game_move">;
+    sessionId: z.ZodString;
+    moveNumber: z.ZodOptional<z.ZodNumber>;
+    gameType: z.ZodOptional<z.ZodNumber>;
+    state: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">, z.objectInputType<{} & {
+    type: z.ZodLiteral<"game_move">;
+    sessionId: z.ZodString;
+    moveNumber: z.ZodOptional<z.ZodNumber>;
+    gameType: z.ZodOptional<z.ZodNumber>;
+    state: z.ZodOptional<z.ZodArray<z.ZodNumber, "many">>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">>, z.ZodObject<{} & {
+    type: z.ZodLiteral<"move_accepted">;
+    sessionId: z.ZodString;
+}, "passthrough", z.ZodTypeAny, z.objectOutputType<{} & {
+    type: z.ZodLiteral<"move_accepted">;
+    sessionId: z.ZodString;
+}, z.ZodTypeAny, "passthrough">, z.objectInputType<{} & {
+    type: z.ZodLiteral<"move_accepted">;
+    sessionId: z.ZodString;
+}, z.ZodTypeAny, "passthrough">>, z.ZodObject<{} & {
     type: z.ZodLiteral<"state_update">;
     balance: z.ZodOptional<z.ZodNumber>;
     phase: z.ZodOptional<z.ZodEnum<["betting", "playing", "waiting", "result"]>>;
@@ -78,19 +281,25 @@ export declare const GameMessageSchema: z.ZodDiscriminatedUnion<"type", [z.ZodOb
 }>, z.ZodObject<{} & {
     type: z.ZodLiteral<"game_result">;
     won: z.ZodBoolean;
-    payout: z.ZodNumber;
+    payout: z.ZodUnion<[z.ZodNumber, z.ZodString]>;
     message: z.ZodOptional<z.ZodString>;
-}, "strip", z.ZodTypeAny, {
-    type: "game_result";
-    won: boolean;
-    payout: number;
-    message?: string | undefined;
-}, {
-    type: "game_result";
-    won: boolean;
-    payout: number;
-    message?: string | undefined;
-}>, z.ZodObject<{} & {
+    finalChips: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, "passthrough", z.ZodTypeAny, z.objectOutputType<{} & {
+    type: z.ZodLiteral<"game_result">;
+    won: z.ZodBoolean;
+    payout: z.ZodUnion<[z.ZodNumber, z.ZodString]>;
+    message: z.ZodOptional<z.ZodString>;
+    finalChips: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">, z.objectInputType<{} & {
+    type: z.ZodLiteral<"game_result">;
+    won: z.ZodBoolean;
+    payout: z.ZodUnion<[z.ZodNumber, z.ZodString]>;
+    message: z.ZodOptional<z.ZodString>;
+    finalChips: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+    balance: z.ZodOptional<z.ZodUnion<[z.ZodNumber, z.ZodString]>>;
+}, z.ZodTypeAny, "passthrough">>, z.ZodObject<{} & {
     type: z.ZodLiteral<"error">;
     code: z.ZodString;
     message: z.ZodString;
@@ -572,6 +781,11 @@ export declare const UltimateTXMessageSchema: z.ZodObject<{} & {
     }[] | undefined;
 }>;
 export type GameMessage = z.infer<typeof GameMessageSchema>;
+export type SessionReadyMessage = z.infer<typeof SessionReadyMessageSchema>;
+export type BalanceMessage = z.infer<typeof BalanceMessageSchema>;
+export type GameStartedMessage = z.infer<typeof GameStartedMessageSchema>;
+export type GameMoveMessage = z.infer<typeof GameMoveMessageSchema>;
+export type MoveAcceptedMessage = z.infer<typeof MoveAcceptedMessageSchema>;
 export type BlackjackMessage = z.infer<typeof BlackjackMessageSchema>;
 export type RouletteMessage = z.infer<typeof RouletteMessageSchema>;
 export type HiLoMessage = z.infer<typeof HiLoMessageSchema>;
@@ -1121,6 +1335,16 @@ export declare const UltimateTXLegacyFoldRequestSchema: z.ZodObject<{} & {
 }, {
     type: "ultimateholdem_fold";
 }>;
+export declare const FaucetClaimRequestSchema: z.ZodObject<{
+    type: z.ZodLiteral<"faucet_claim">;
+    amount: z.ZodOptional<z.ZodNumber>;
+}, "strip", z.ZodTypeAny, {
+    type: "faucet_claim";
+    amount?: number | undefined;
+}, {
+    type: "faucet_claim";
+    amount?: number | undefined;
+}>;
 export declare const OutboundMessageSchema: z.ZodDiscriminatedUnion<"type", [z.ZodObject<{
     type: z.ZodLiteral<"blackjack_deal">;
     amount: z.ZodNumber;
@@ -1561,6 +1785,15 @@ export declare const OutboundMessageSchema: z.ZodDiscriminatedUnion<"type", [z.Z
     type: "ultimateholdem_fold";
 }, {
     type: "ultimateholdem_fold";
+}>, z.ZodObject<{
+    type: z.ZodLiteral<"faucet_claim">;
+    amount: z.ZodOptional<z.ZodNumber>;
+}, "strip", z.ZodTypeAny, {
+    type: "faucet_claim";
+    amount?: number | undefined;
+}, {
+    type: "faucet_claim";
+    amount?: number | undefined;
 }>]>;
 export type BlackjackDealRequest = z.infer<typeof BlackjackDealRequestSchema>;
 export type BlackjackHitRequest = z.infer<typeof BlackjackHitRequestSchema>;
@@ -1591,6 +1824,7 @@ export type UltimateTXDealRequest = z.infer<typeof UltimateTXDealRequestSchema>;
 export type UltimateTXBetRequest = z.infer<typeof UltimateTXBetRequestSchema>;
 export type UltimateTXCheckRequest = z.infer<typeof UltimateTXCheckRequestSchema>;
 export type UltimateTXFoldRequest = z.infer<typeof UltimateTXFoldRequestSchema>;
+export type FaucetClaimRequest = z.infer<typeof FaucetClaimRequestSchema>;
 export type OutboundMessage = z.infer<typeof OutboundMessageSchema>;
 /**
  * Validates a raw WebSocket message and returns the parsed result or null

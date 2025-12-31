@@ -3,7 +3,7 @@
  */
 import { Pressable, Text, StyleSheet } from 'react-native';
 import { haptics } from '../../services/haptics';
-import { COLORS, SPACING, RADIUS } from '../../constants/theme';
+import { COLORS, RADIUS } from '../../constants/theme';
 
 interface HelpButtonProps {
   onPress: () => void;

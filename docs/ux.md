@@ -42,9 +42,9 @@ Date: 2025-12-29
 - `website/src/components/casino/shared/BetSlip.tsx`: now supports a max-win readout for transparent outcomes.
 
 ### Mobile surfaces
-- `mobile/src/screens/LobbyScreen.tsx`: primary entry point for rewards + optional club join (no modal stack).
-- `mobile/src/components/game/GameLayout.tsx` + `GameHeader.tsx`: consolidated session delta + weekly event badge for in-play clarity.
-- `mobile/src/services/storage.ts`: lightweight persistence for daily bonus streaks and club membership.
+- `mobile/src/screens/LobbyScreen.tsx`: primary entry point for testnet status + faucet claim (no modal stack).
+- `mobile/src/components/game/GameLayout.tsx` + `GameHeader.tsx`: consolidated session delta + network badge for in-play clarity.
+- `mobile/src/services/storage.ts`: lightweight persistence for auth session, cached balance, and tutorial completion.
 
 ## Competitive research: leading social casino apps
 Sources consulted (marketing sites):
@@ -117,7 +117,7 @@ Clutter sources to avoid:
 - Standardize "bet slip" placement across games (total bet, max win, odds) so it is predictable and calm.
 - Collapse side bets and advanced options into a single "More bets" drawer with state memory.
 - Reduce redundant navigation: for web, choose either header tabs or top bar, not both.
-- In mobile, keep the lobby grid minimal but introduce a single "session status" tile (balance + streak) instead of multiple banners.
+- In mobile, keep the lobby grid minimal but introduce a single "session status" tile (balance + network + faucet status) instead of multiple banners.
 
 ### Transparency (trust and clarity)
 - Show odds and house edge where bets are placed (ex: "35:1, house edge 2.7%") to build long-term trust.
@@ -141,9 +141,8 @@ Clutter sources to avoid:
 
 ## Priority actions
 ### Implemented (current pass)
-- Rewards hub (drawer) with daily bonus, streak, and three simple missions.
-- Minimal clubs lane (join once, show weekly goal progress).
-- Event cadence as a single weekly focus chip with countdown.
+- Testnet faucet card on mobile lobby with status + cooldown messaging.
+- Network + wallet badge in the mobile game header.
 - Economy clarity widget (balance + session delta) in the web header and mobile game header.
 - Bet slip transparency (max win for roulette/sic bo/craps) + first-hand prompt.
 

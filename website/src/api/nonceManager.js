@@ -1,3 +1,4 @@
+import { logDebug } from '../utils/logger.js';
 /**
  * Manages transaction nonces and pending transactions for a Casino account.
  * Handles automatic nonce synchronization, transaction resubmission, and cleanup.
@@ -37,9 +38,9 @@ export class NonceManager {
     const storedIdentity = localStorage.getItem(identityKey);
 
     if (storedIdentity && storedIdentity !== currentIdentity) {
-      console.log('Network identity changed - resetting nonce and clearing pending transactions');
-      console.log('Previous identity:', storedIdentity);
-      console.log('Current identity:', currentIdentity);
+      logDebug('Network identity changed - resetting nonce and clearing pending transactions');
+      logDebug('Previous identity:', storedIdentity);
+      logDebug('Current identity:', currentIdentity);
 
       // Reset nonce and clear pending transactions
       this.resetNonce();
@@ -52,7 +53,7 @@ export class NonceManager {
     // Log initial state
     const pendingTxs = this.getPendingTransactions();
     if (pendingTxs.length > 0) {
-      console.log(`Found ${pendingTxs.length} pending transactions`);
+      logDebug(`Found ${pendingTxs.length} pending transactions`);
     }
 
     // Do initial sync with provided account
@@ -108,7 +109,7 @@ export class NonceManager {
       const pendingTxs = this.getPendingTransactions();
 
       if (localNonce > 0 || pendingTxs.length > 0) {
-        console.log(`Account not found on chain - resetting state (localNonce=${localNonce}, pendingTxs=${pendingTxs.length})`);
+        logDebug(`Account not found on chain - resetting state (localNonce=${localNonce}, pendingTxs=${pendingTxs.length})`);
         this.resetNonce();
         this.cleanupAllTransactions();
       }
@@ -124,8 +125,8 @@ export class NonceManager {
       const firstPendingNonce = pendingTxs[0].nonce;
 
       if (firstPendingNonce > serverNonce) {
-        console.log(`Gap detected during account load: server nonce ${serverNonce}, first pending nonce ${firstPendingNonce}`);
-        console.log('Resetting nonce and clearing pending transactions');
+        logDebug(`Gap detected during account load: server nonce ${serverNonce}, first pending nonce ${firstPendingNonce}`);
+        logDebug('Resetting nonce and clearing pending transactions');
 
         // Reset local nonce to server nonce
         this.setNonce(serverNonce);
@@ -146,11 +147,11 @@ export class NonceManager {
     // Always sync local nonce to match server - chain is source of truth
     if (serverNonce !== localNonce) {
       if (localNonce > serverNonce) {
-        console.log(`Local nonce (${localNonce}) is ahead of server (${serverNonce}) - resetting to server nonce`);
+        logDebug(`Local nonce (${localNonce}) is ahead of server (${serverNonce}) - resetting to server nonce`);
         // Also clear stale pending transactions when resetting backwards
         this.cleanupAllTransactions();
       } else {
-        console.log(`Advancing local nonce from ${localNonce} to ${serverNonce}`);
+        logDebug(`Advancing local nonce from ${localNonce} to ${serverNonce}`);
       }
       this.setNonce(serverNonce);
     }
@@ -278,7 +279,7 @@ export class NonceManager {
     });
 
     if (keysToRemove.length > 0) {
-      console.log(`Cleaned up ${keysToRemove.length} pending transactions`);
+      logDebug(`Cleaned up ${keysToRemove.length} pending transactions`);
     }
   }
 
@@ -335,7 +336,7 @@ export class NonceManager {
       // This can happen if the server was reset but the client still has old pending transactions
       const staleTxs = pendingTxs.filter(tx => tx.nonce >= currentNonce);
       if (staleTxs.length > 0) {
-        console.log(`Found ${staleTxs.length} stale pending transactions with nonces >= ${currentNonce}, clearing them`);
+        logDebug(`Found ${staleTxs.length} stale pending transactions with nonces >= ${currentNonce}, clearing them`);
         for (const tx of staleTxs) {
           const key = `${this.TX_STORAGE_PREFIX}${tx.nonce}`;
           localStorage.removeItem(key);
@@ -385,7 +386,7 @@ export class NonceManager {
       const nonce = this.getNextNonce();
 
       try {
-        console.log('[NonceManager] submit', { txType, nonce, publicKey: this.publicKeyHex });
+        logDebug('[NonceManager] submit', { txType, nonce, publicKey: this.publicKeyHex });
         // Create the transaction with the nonce
         const txData = createTxFn(nonce);
 
@@ -406,7 +407,7 @@ export class NonceManager {
         const result = await this.client.submitTransaction(txData);
 
         if (result.status === 'accepted') {
-          console.log('[NonceManager] accepted', { txType, nonce, publicKey: this.publicKeyHex });
+          logDebug('[NonceManager] accepted', { txType, nonce, publicKey: this.publicKeyHex });
           // Increment nonce for next transaction
           this.incrementNonce();
         } else {

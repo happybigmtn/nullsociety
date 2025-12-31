@@ -15,6 +15,8 @@ pub mod api;
 pub mod casino;
 pub mod execution;
 pub mod token;
+#[cfg(feature = "ts")]
+pub mod casino_state;
 
 #[cfg(feature = "root-reexports")]
 pub use api::*;

@@ -9,6 +9,8 @@ type WalletPillProps = {
   credits?: number | bigint | string | null;
   creditsLocked?: number | bigint | string | null;
   pubkeyHex?: string | null;
+  networkLabel?: string;
+  networkStatus?: 'online' | 'offline';
   className?: string;
 };
 
@@ -30,7 +32,16 @@ function shortHex(hex: string, start = 10, end = 6): string {
   return `${s.slice(0, start)}…${s.slice(-end)}`;
 }
 
-export const WalletPill: React.FC<WalletPillProps> = ({ rng, vusdt, credits, creditsLocked, pubkeyHex, className }) => {
+export const WalletPill: React.FC<WalletPillProps> = ({
+  rng,
+  vusdt,
+  credits,
+  creditsLocked,
+  pubkeyHex,
+  networkLabel,
+  networkStatus,
+  className,
+}) => {
   const [vaultStatus, setVaultStatus] = useState(() => getVaultStatusSync());
 
   useEffect(() => subscribeVault(() => setVaultStatus(getVaultStatusSync())), []);
@@ -47,6 +58,10 @@ export const WalletPill: React.FC<WalletPillProps> = ({ rng, vusdt, credits, cre
     }
     return { label: 'Locked', className: 'text-action-destructive' };
   }, [vaultStatus.enabled, vaultStatus.supported, vaultStatus.unlocked]);
+
+  const networkTone = networkStatus === 'offline' ? 'text-action-destructive' : 'text-action-success';
+  const networkText =
+    networkLabel && networkStatus === 'offline' ? `${networkLabel} · OFFLINE` : networkLabel;
 
   const effectivePubkey = pubkeyHex ?? vaultStatus.nullspacePublicKeyHex;
 
@@ -72,6 +87,15 @@ export const WalletPill: React.FC<WalletPillProps> = ({ rng, vusdt, credits, cre
           <div className="h-3 w-px bg-titanium-200 dark:bg-titanium-800" />
         </>
       )}
+
+      {networkText ? (
+        <>
+          <span className={`text-[10px] font-bold uppercase tracking-widest ${networkTone}`}>
+            {networkText}
+          </span>
+          <div className="h-3 w-px bg-titanium-200 dark:bg-titanium-800" />
+        </>
+      ) : null}
 
       <div className="flex items-center gap-4 text-[10px] tracking-widest uppercase font-bold text-titanium-400 whitespace-nowrap">
         <span>

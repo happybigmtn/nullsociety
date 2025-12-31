@@ -6,11 +6,19 @@ fn casino_error(
     error_code: u8,
     message: impl Into<String>,
 ) -> Event {
+    let message = message.into();
+    tracing::warn!(
+        player = ?player,
+        session_id,
+        error_code,
+        message = %message,
+        "casino error"
+    );
     Event::CasinoError {
         player: player.clone(),
         session_id,
         error_code,
-        message: message.into(),
+        message,
     }
 }
 

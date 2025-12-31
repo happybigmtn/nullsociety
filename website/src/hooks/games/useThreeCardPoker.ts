@@ -108,7 +108,6 @@ export const useThreeCardPoker = ({
       if (isOnChain && chainService && currentSessionIdRef.current) {
         // Guard against duplicate submissions
         if (isPendingRef.current) {
-          console.log('[useThreeCardPoker] Three Card Play blocked - transaction pending');
           return;
         }
 
@@ -144,7 +143,6 @@ export const useThreeCardPoker = ({
       if (isOnChain && chainService && currentSessionIdRef.current) {
         // Guard against duplicate submissions
         if (isPendingRef.current) {
-          console.log('[useThreeCardPoker] Three Card Fold blocked - transaction pending');
           return;
         }
 

@@ -2,36 +2,7 @@ import { Dispatch, SetStateAction, MutableRefObject, useCallback } from 'react';
 import { GameState, RouletteBet, PlayerStats, GameType, AutoPlayDraft } from '../../types';
 import { CasinoChainService } from '../../services/CasinoChainService';
 import { RouletteMove } from '@nullspace/constants';
-import { encodeRouletteBet, type RouletteBetName } from '@nullspace/constants/bet-types';
-
-const MAX_GRAPH_POINTS = 100;
-
-/**
- * Convert RouletteBet to numeric format for serialization
- */
-const rouletteBetToNumeric = (bet: RouletteBet): {betType: number, number: number, amount: number} => {
-  const encoded = encodeRouletteBet(bet.type as RouletteBetName, bet.target);
-  return { betType: encoded.type, number: encoded.value, amount: bet.amount };
-};
-
-/**
- * Serialize Roulette atomic batch: [4, bet_count, bets...]
- * Each bet is 10 bytes: [bet_type:u8] [number:u8] [amount:u64 BE]
- */
-const serializeRouletteAtomicBatch = (bets: RouletteBet[]): Uint8Array => {
-  const numericBets = bets.map(rouletteBetToNumeric);
-  const payload = new Uint8Array(2 + numericBets.length * 10);
-  payload[0] = RouletteMove.AtomicBatch;
-  payload[1] = numericBets.length;
-  const view = new DataView(payload.buffer);
-  numericBets.forEach((b, i) => {
-    const offset = 2 + i * 10;
-    payload[offset] = b.betType;
-    payload[offset + 1] = b.number;
-    view.setBigUint64(offset + 2, BigInt(b.amount), false);
-  });
-  return payload;
-};
+import { serializeRouletteAtomicBatch } from '../../services/games';
 
 interface UseRouletteProps {
   gameState: GameState;
@@ -188,7 +159,6 @@ export const useRoulette = ({
 
     // Prevent double-submits
     if (isPendingRef.current) {
-      console.log('[useRoulette] spinRoulette - Already pending, ignoring');
       return;
     }
 
@@ -203,7 +173,6 @@ export const useRoulette = ({
         rouletteBets: betsToSpin,
         rouletteZeroRule: gameState.rouletteZeroRule,
       };
-      console.log('[useRoulette] No active session, starting new roulette game (auto-spin queued)');
       setGameState(prev => ({ ...prev, message: 'STARTING NEW SESSION...' }));
       startGame(GameType.ROULETTE);
       return;
@@ -230,7 +199,6 @@ export const useRoulette = ({
 
         // Send atomic batch: all bets + spin in one transaction
         const atomicPayload = serializeRouletteAtomicBatch(betsToSpin);
-        console.log('[useRoulette] Roulette spin with bets (atomic batch):', betsToSpin.length, 'bets');
         const result = await chainService.sendMove(currentSessionIdRef.current, atomicPayload);
         if (result.txHash) setLastTxSig(result.txHash);
 

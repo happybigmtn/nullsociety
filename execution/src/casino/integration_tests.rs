@@ -4,10 +4,12 @@
 //! through multiple moves to game completion.
 
 #[cfg(test)]
+#[allow(unused_must_use)]
 mod tests {
     use crate::casino::{init_game, process_game_move, GameResult, GameRng};
     use crate::mocks::{create_account_keypair, create_network_keypair, create_seed};
     use nullspace_types::casino::{GameSession, GameType};
+    use rand::{rngs::StdRng, Rng, SeedableRng};
 
     fn create_test_seed() -> nullspace_types::Seed {
         let (network_secret, _) = create_network_keypair();
@@ -62,6 +64,51 @@ mod tests {
                 "Game {:?} should not be complete after init",
                 game_type
             );
+        }
+    }
+
+    #[test]
+    fn test_all_games_payload_fuzz_does_not_panic() {
+        let seed = create_test_seed();
+        let mut payload_rng = StdRng::seed_from_u64(0x5eed_f00d);
+
+        let games = [
+            GameType::Baccarat,
+            GameType::Blackjack,
+            GameType::CasinoWar,
+            GameType::Craps,
+            GameType::HiLo,
+            GameType::Roulette,
+            GameType::SicBo,
+            GameType::ThreeCard,
+            GameType::UltimateHoldem,
+            GameType::VideoPoker,
+        ];
+
+        for (idx, game_type) in games.iter().enumerate() {
+            let mut session = create_session(*game_type, 100, idx as u64 + 1);
+            let mut rng = GameRng::new(&seed, session.id, 0);
+            init_game(&mut session, &mut rng);
+
+            for step in 0..200u32 {
+                if session.is_complete {
+                    break;
+                }
+                let len = payload_rng.gen_range(0..=32);
+                let mut payload = vec![0u8; len];
+                payload_rng.fill(&mut payload[..]);
+
+                let mut move_rng = GameRng::new(&seed, session.id, step.saturating_add(1));
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let _ = process_game_move(&mut session, &payload, &mut move_rng);
+                }));
+                assert!(
+                    result.is_ok(),
+                    "payload fuzz panicked for {:?} (len {})",
+                    game_type,
+                    len
+                );
+            }
         }
     }
 

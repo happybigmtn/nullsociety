@@ -58,6 +58,15 @@ WebSocket URL by platform:
 - Android emulator: `ws://10.0.2.2:9010`
 - Physical device: `ws://<LAN-IP>:9010`
 
+After launch:
+- Confirm the lobby shows `Testnet Online` and a wallet short key.
+- Tap the faucet card to claim chips and verify the balance updates.
+
+Connectivity checks (mobile):
+- Toggle airplane mode during a live game; confirm reconnect banner appears and the game resumes.
+- Background the app for 30+ seconds, then return; confirm balance and last game state restore.
+- Force-close and relaunch; confirm `session_ready` + `balance` messages refresh within 5s.
+
 ---
 
 ## On-Chain Game Specifications (Source of Truth)

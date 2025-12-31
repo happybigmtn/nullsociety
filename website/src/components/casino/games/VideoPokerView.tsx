@@ -1,8 +1,7 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import { GameState } from '../../../types';
 import { Hand } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
-import { evaluateVideoPokerHand } from '../../../utils/gameUtils';
 import { Label } from '../ui/Label';
 
 interface VideoPokerViewProps {
@@ -31,16 +30,9 @@ export const VideoPokerView = React.memo<VideoPokerViewProps & { lastWin?: numbe
         onToggleHold(index);
     }, [onToggleHold]);
 
-    const handEval = useMemo(() => {
-        if (gameState.playerCards.length !== 5) return null;
-        try {
-            return evaluateVideoPokerHand(gameState.playerCards);
-        } catch {
-            return null;
-        }
-    }, [gameState.playerCards]);
-
-    const highlightRank = gameState.stage === 'RESULT' ? handEval?.rank ?? null : null;
+    const handLabel = gameState.videoPokerHand;
+    const handMultiplier = typeof gameState.videoPokerMultiplier === 'number' ? gameState.videoPokerMultiplier : 0;
+    const highlightRank = gameState.stage === 'RESULT' ? handLabel ?? null : null;
     
     return (
         <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-12 relative pt-12 animate-scale-in">
@@ -70,15 +62,15 @@ export const VideoPokerView = React.memo<VideoPokerViewProps & { lastWin?: numbe
                 <h2 className="text-3xl sm:text-4xl font-extrabold text-titanium-900 tracking-tight font-display">
                     {gameState.message || 'Deal to Start'}
                 </h2>
-                {handEval && gameState.stage !== 'BETTING' && (
+                {handLabel && gameState.stage !== 'BETTING' && (
                     <div className="flex items-center justify-center gap-2">
                         <div className={`px-4 py-1.5 rounded-full border-2 transition-all shadow-soft ${
-                            handEval.multiplier > 0 
+                            handMultiplier > 0 
                                 ? 'border-action-success bg-action-success/5 text-action-success scale-110' 
                                 : 'border-titanium-200 bg-white text-titanium-400 opacity-60'
                         }`}>
                             <span className="text-xs font-black uppercase tracking-widest">
-                                {handEval.rank} {handEval.multiplier > 0 ? `· ${handEval.multiplier}x` : ''}
+                                {handLabel} {handMultiplier > 0 ? `· ${handMultiplier}x` : ''}
                             </span>
                         </div>
                     </div>
@@ -88,7 +80,7 @@ export const VideoPokerView = React.memo<VideoPokerViewProps & { lastWin?: numbe
             {/* Hand Area */}
             <div className="min-h-[160px] flex gap-3 sm:gap-6 items-center justify-center px-4">
                 {gameState.playerCards.length > 0 && gameState.playerCards.map((card, i) => {
-                    const isWinningCard = handEval && handEval.multiplier > 0 && card.isHeld;
+                    const isWinningCard = handMultiplier > 0 && card.isHeld;
                     return (
                         <button
                             key={i}

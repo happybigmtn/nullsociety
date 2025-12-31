@@ -29,8 +29,9 @@
 //! 10 = Banker Perfect Pair (banker's first two cards are suited pair, pays 25:1)
 
 use super::super_mode::apply_super_multiplier_cards;
-use super::{cards, CasinoGame, GameError, GameResult, GameRng};
+use super::{cards, limits, CasinoGame, GameError, GameResult, GameRng};
 use nullspace_types::casino::GameSession;
+use std::fmt::Write;
 
 /// Payout multipliers for Baccarat (per Wizard of Odds standard paytables).
 /// All values represent "X:1" payouts (winnings only, not including original stake).
@@ -70,8 +71,6 @@ mod payouts {
 
 /// Maximum cards in a Baccarat hand (2-3 cards per hand).
 const MAX_HAND_SIZE: usize = 3;
-/// Maximum number of bets per session (one of each type).
-const MAX_BETS: usize = 11;
 /// WoO notes Baccarat is usually dealt from eight decks.
 const BACCARAT_DECKS: u8 = 8;
 
@@ -223,6 +222,18 @@ fn is_suited_pair(cards: &[u8]) -> bool {
     cards::card_rank(c1) == cards::card_rank(c2) && cards::card_suit(c1) == cards::card_suit(c2)
 }
 
+fn collect_all_cards(player_cards: &[u8], banker_cards: &[u8]) -> ([u8; 6], usize) {
+    let mut all_cards = [0u8; 6];
+    let mut count = 0;
+    for &card in player_cards.iter().chain(banker_cards.iter()) {
+        if count < all_cards.len() {
+            all_cards[count] = card;
+            count += 1;
+        }
+    }
+    (all_cards, count)
+}
+
 /// Individual bet in baccarat.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BaccaratBet {
@@ -232,10 +243,10 @@ pub struct BaccaratBet {
 
 impl BaccaratBet {
     /// Serialize to 9 bytes: [bet_type:u8] [amount:u64 BE]
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(9);
-        bytes.push(self.bet_type as u8);
-        bytes.extend_from_slice(&self.amount.to_be_bytes());
+    fn to_bytes(&self) -> [u8; 9] {
+        let mut bytes = [0u8; 9];
+        bytes[0] = self.bet_type as u8;
+        bytes[1..9].copy_from_slice(&self.amount.to_be_bytes());
         bytes
     }
 
@@ -246,6 +257,9 @@ impl BaccaratBet {
         }
         let bet_type = BetType::try_from(bytes[0]).ok()?;
         let amount = u64::from_be_bytes(bytes[1..9].try_into().ok()?);
+        if amount == 0 {
+            return None;
+        }
         Some(BaccaratBet { bet_type, amount })
     }
 }
@@ -302,7 +316,7 @@ impl BaccaratState {
         offset += 1;
 
         // Validate bet count against maximum to prevent DoS via large allocations
-        if bet_count > MAX_BETS {
+        if bet_count > limits::BACCARAT_MAX_BETS {
             return None;
         }
 
@@ -332,6 +346,9 @@ impl BaccaratState {
             return None;
         }
         let player_cards = blob[offset..offset + player_len].to_vec();
+        if player_cards.iter().any(|&card| card >= 52) {
+            return None;
+        }
         offset += player_len;
 
         // Parse banker cards
@@ -344,6 +361,9 @@ impl BaccaratState {
             return None;
         }
         let banker_cards = blob[offset..offset + banker_len].to_vec();
+        if banker_cards.iter().any(|&card| card >= 52) {
+            return None;
+        }
         offset += banker_len;
 
         let rules = if offset < blob.len() {
@@ -601,6 +621,17 @@ fn calculate_dragon_bonus_payout(
     }
 }
 
+fn format_card_list(cards: &[u8]) -> String {
+    let mut out = String::new();
+    for (idx, card) in cards.iter().enumerate() {
+        if idx > 0 {
+            out.push(',');
+        }
+        let _ = write!(out, "{}", card);
+    }
+    out
+}
+
 /// Generate JSON logs for baccarat game completion
 fn generate_baccarat_logs(
     state: &BaccaratState,
@@ -608,6 +639,10 @@ fn generate_baccarat_logs(
     total_wagered: u64,
     total_return: u64,
 ) -> Vec<String> {
+    let clamp_i64 = |value: i128| -> i64 {
+        value
+            .clamp(i64::MIN as i128, i64::MAX as i128) as i64
+    };
     // Determine winner
     let winner = if outcome.player_total > outcome.banker_total {
         "PLAYER"
@@ -618,59 +653,98 @@ fn generate_baccarat_logs(
     };
 
     // Build bet results array
-    let bet_results: Vec<String> = state
-        .bets
-        .iter()
-        .map(|bet| {
-            let (payout_delta, is_push) = calculate_bet_payout(bet, outcome, state.rules);
-            let bet_type_str = match bet.bet_type {
-                BetType::Player => "PLAYER",
-                BetType::Banker => "BANKER",
-                BetType::Tie => "TIE",
-                BetType::PlayerPair => "PLAYER_PAIR",
-                BetType::BankerPair => "BANKER_PAIR",
-                BetType::Lucky6 => "LUCKY_6",
-                BetType::PlayerDragon => "PLAYER_DRAGON",
-                BetType::BankerDragon => "BANKER_DRAGON",
-                BetType::Panda8 => "PANDA_8",
-                BetType::PlayerPerfectPair => "PLAYER_PERFECT_PAIR",
-                BetType::BankerPerfectPair => "BANKER_PERFECT_PAIR",
-            };
-            let result = if is_push {
-                "PUSH"
-            } else if payout_delta > 0 {
-                "WIN"
-            } else {
-                "LOSS"
-            };
-            format!(
-                r#"{{"type":"{}","amount":{},"result":"{}","payout":{}}}"#,
-                bet_type_str, bet.amount, result, payout_delta
-            )
-        })
-        .collect();
+    let mut bet_results = String::new();
+    let mut resolved_entries = String::new();
+    let mut resolved_sum: i128 = 0;
+    for bet in &state.bets {
+        if !bet_results.is_empty() {
+            bet_results.push(',');
+        }
+        if !resolved_entries.is_empty() {
+            resolved_entries.push(',');
+        }
+        let (payout_delta, is_push) = calculate_bet_payout(bet, outcome, state.rules);
+        let bet_type_str = match bet.bet_type {
+            BetType::Player => "PLAYER",
+            BetType::Banker => "BANKER",
+            BetType::Tie => "TIE",
+            BetType::PlayerPair => "PLAYER_PAIR",
+            BetType::BankerPair => "BANKER_PAIR",
+            BetType::Lucky6 => "LUCKY_6",
+            BetType::PlayerDragon => "PLAYER_DRAGON",
+            BetType::BankerDragon => "BANKER_DRAGON",
+            BetType::Panda8 => "PANDA_8",
+            BetType::PlayerPerfectPair => "PLAYER_PERFECT_PAIR",
+            BetType::BankerPerfectPair => "BANKER_PERFECT_PAIR",
+        };
+        let label = match bet.bet_type {
+            BetType::Player => "PLAYER",
+            BetType::Banker => "BANKER",
+            BetType::Tie => "TIE",
+            BetType::PlayerPair => "P_PAIR",
+            BetType::BankerPair => "B_PAIR",
+            BetType::Lucky6 => "LUCKY6",
+            BetType::PlayerDragon => "P_DRAGON",
+            BetType::BankerDragon => "B_DRAGON",
+            BetType::Panda8 => "PANDA8",
+            BetType::PlayerPerfectPair => "P_PERFECT_PAIR",
+            BetType::BankerPerfectPair => "B_PERFECT_PAIR",
+        };
+        let result = if is_push {
+            "PUSH"
+        } else if payout_delta > 0 {
+            "WIN"
+        } else {
+            "LOSS"
+        };
+        resolved_sum = resolved_sum.saturating_add(i128::from(payout_delta));
+        let _ = write!(
+            resolved_entries,
+            r#"{{"label":"{}","pnl":{}}}"#,
+            label,
+            payout_delta
+        );
+        let _ = write!(
+            bet_results,
+            r#"{{"type":"{}","amount":{},"result":"{}","payout":{}}}"#,
+            bet_type_str,
+            bet.amount,
+            result,
+            payout_delta
+        );
+    }
 
-    let player_cards_str = state
-        .player_cards
-        .iter()
-        .map(|c| c.to_string())
-        .collect::<Vec<_>>()
-        .join(",");
-    let banker_cards_str = state
-        .banker_cards
-        .iter()
-        .map(|c| c.to_string())
-        .collect::<Vec<_>>()
-        .join(",");
+    let player_cards_str = format_card_list(&state.player_cards);
+    let banker_cards_str = format_card_list(&state.banker_cards);
+
+    let summary = format!(
+        "P: {}, B: {}, Winner: {}",
+        outcome.player_total, outcome.banker_total, winner
+    );
+    let net_pnl = clamp_i64(i128::from(total_return) - i128::from(total_wagered));
+    let diff = i128::from(net_pnl).saturating_sub(resolved_sum);
+    if diff != 0 {
+        if !resolved_entries.is_empty() {
+            resolved_entries.push(',');
+        }
+        let _ = write!(
+            resolved_entries,
+            r#"{{"label":"ADJUSTMENT","pnl":{}}}"#,
+            clamp_i64(diff)
+        );
+    }
 
     vec![format!(
-        r#"{{"player":{{"cards":[{}],"total":{}}},"banker":{{"cards":[{}],"total":{}}},"winner":"{}","bets":[{}],"totalWagered":{},"totalReturn":{}}}"#,
+        r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"player":{{"cards":[{}],"total":{}}},"banker":{{"cards":[{}],"total":{}}},"winner":"{}","bets":[{}],"totalWagered":{},"totalReturn":{}}}"#,
+        summary,
+        net_pnl,
+        resolved_entries,
         player_cards_str,
         outcome.player_total,
         banker_cards_str,
         outcome.banker_total,
         winner,
-        bet_results.join(","),
+        bet_results,
         total_wagered,
         total_return
     )]
@@ -736,7 +810,7 @@ impl CasinoGame for Baccarat {
                         .ok_or(GameError::InvalidPayload)?;
                 } else {
                     // Check max bets limit
-                    if state.bets.len() >= MAX_BETS {
+                    if state.bets.len() >= limits::BACCARAT_MAX_BETS {
                         return Err(GameError::InvalidMove);
                     }
                     state.bets.push(BaccaratBet { bet_type, amount });
@@ -766,12 +840,12 @@ impl CasinoGame for Baccarat {
 
                 // Deal 2 cards each: Player, Banker, Player, Banker
                 state.player_cards = vec![
-                    rng.draw_card(&mut deck).expect("deck not empty"),
-                    rng.draw_card(&mut deck).expect("deck not empty"),
+                    rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?,
+                    rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?,
                 ];
                 state.banker_cards = vec![
-                    rng.draw_card(&mut deck).expect("deck not empty"),
-                    rng.draw_card(&mut deck).expect("deck not empty"),
+                    rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?,
+                    rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?,
                 ];
 
                 let mut player_total = hand_total(&state.player_cards);
@@ -785,7 +859,7 @@ impl CasinoGame for Baccarat {
                 if !natural {
                     // Player draws?
                     if player_draws(player_total) {
-                        let card = rng.draw_card(&mut deck).expect("deck not empty");
+                        let card = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
                         state.player_cards.push(card);
                         player_third_card = Some(card);
                         player_total = hand_total(&state.player_cards);
@@ -793,7 +867,7 @@ impl CasinoGame for Baccarat {
 
                     // Banker draws?
                     if banker_draws(banker_total, player_third_card) {
-                        let card = rng.draw_card(&mut deck).expect("deck not empty");
+                        let card = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
                         state.banker_cards.push(card);
                         banker_total = hand_total(&state.banker_cards);
                     }
@@ -833,13 +907,14 @@ impl CasinoGame for Baccarat {
                 let total_return = if all_push && net_payout == 0 {
                     total_wagered // Push returns full wager
                 } else if net_payout > 0 {
-                    let winnings = u64::try_from(net_payout).expect("deck not empty");
+                    let winnings =
+                        u64::try_from(net_payout).map_err(|_| GameError::InvalidState)?;
                     total_wagered.saturating_add(winnings)
                 } else if net_payout < 0 {
                     let loss_amount = net_payout
                         .checked_neg()
                         .and_then(|v| u64::try_from(v).ok())
-                        .expect("deck not empty");
+                        .ok_or(GameError::InvalidState)?;
                     if loss_amount >= total_wagered {
                         0
                     } else {
@@ -851,14 +926,10 @@ impl CasinoGame for Baccarat {
 
                 // Apply super mode multiplier for final return
                 let final_return = if session.super_mode.is_active && total_return > 0 {
-                    let all_cards: Vec<u8> = state
-                        .player_cards
-                        .iter()
-                        .chain(state.banker_cards.iter())
-                        .cloned()
-                        .collect();
+                    let (all_cards, count) =
+                        collect_all_cards(&state.player_cards, &state.banker_cards);
                     apply_super_multiplier_cards(
-                        &all_cards,
+                        &all_cards[..count],
                         &session.super_mode.multipliers,
                         total_return,
                     )
@@ -879,7 +950,7 @@ impl CasinoGame for Baccarat {
                     let loss_amount = net_payout
                         .checked_neg()
                         .and_then(|v| u64::try_from(v).ok())
-                        .expect("deck not empty");
+                        .ok_or(GameError::InvalidState)?;
                     if loss_amount >= total_wagered {
                         // Total loss - use LossPreDeducted to report actual amount
                         GameResult::LossPreDeducted(total_wagered, logs)
@@ -937,7 +1008,7 @@ impl CasinoGame for Baccarat {
                 }
 
                 let bet_count = payload[1] as usize;
-                if bet_count == 0 || bet_count > MAX_BETS {
+                if bet_count == 0 || bet_count > limits::BACCARAT_MAX_BETS {
                     return Err(GameError::InvalidPayload);
                 }
 
@@ -993,12 +1064,12 @@ impl CasinoGame for Baccarat {
                 let mut deck = rng.create_shoe(BACCARAT_DECKS);
 
                 state.player_cards = vec![
-                    rng.draw_card(&mut deck).expect("deck not empty"),
-                    rng.draw_card(&mut deck).expect("deck not empty"),
+                    rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?,
+                    rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?,
                 ];
                 state.banker_cards = vec![
-                    rng.draw_card(&mut deck).expect("deck not empty"),
-                    rng.draw_card(&mut deck).expect("deck not empty"),
+                    rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?,
+                    rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?,
                 ];
 
                 let mut player_total = hand_total(&state.player_cards);
@@ -1009,14 +1080,14 @@ impl CasinoGame for Baccarat {
 
                 if !natural {
                     if player_draws(player_total) {
-                        let card = rng.draw_card(&mut deck).expect("deck not empty");
+                        let card = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
                         state.player_cards.push(card);
                         player_third_card = Some(card);
                         player_total = hand_total(&state.player_cards);
                     }
 
                     if banker_draws(banker_total, player_third_card) {
-                        let card = rng.draw_card(&mut deck).expect("deck not empty");
+                        let card = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
                         state.banker_cards.push(card);
                         banker_total = hand_total(&state.banker_cards);
                     }
@@ -1054,7 +1125,8 @@ impl CasinoGame for Baccarat {
                 let total_return = if all_push && net_payout == 0 {
                     total_wager
                 } else if net_payout > 0 {
-                    let winnings = u64::try_from(net_payout).expect("deck not empty");
+                    let winnings =
+                        u64::try_from(net_payout).map_err(|_| GameError::InvalidState)?;
                     total_wager.saturating_add(winnings)
                 } else if net_payout < 0 {
                     let loss = net_payout
@@ -1072,14 +1144,10 @@ impl CasinoGame for Baccarat {
 
                 // Apply super mode multiplier for final return
                 let final_return = if session.super_mode.is_active && total_return > 0 {
-                    let all_cards: Vec<u8> = state
-                        .player_cards
-                        .iter()
-                        .chain(state.banker_cards.iter())
-                        .cloned()
-                        .collect();
+                    let (all_cards, count) =
+                        collect_all_cards(&state.player_cards, &state.banker_cards);
                     apply_super_multiplier_cards(
-                        &all_cards,
+                        &all_cards[..count],
                         &session.super_mode.multipliers,
                         total_return,
                     )
@@ -1121,6 +1189,7 @@ impl CasinoGame for Baccarat {
 }
 
 #[cfg(test)]
+#[allow(unused_must_use)]
 mod tests {
     use super::*;
     use crate::mocks::{create_account_keypair, create_network_keypair, create_seed};
@@ -1238,6 +1307,17 @@ mod tests {
         assert_eq!(parsed.bets[1].amount, 50);
         assert_eq!(parsed.player_cards, vec![1, 2, 3]);
         assert_eq!(parsed.banker_cards, vec![4, 5]);
+    }
+
+    #[test]
+    fn test_state_blob_fuzz_does_not_panic() {
+        let mut rng = StdRng::seed_from_u64(0x5eed_bacc);
+        for _ in 0..1_000 {
+            let len = rng.gen_range(0..=256);
+            let mut blob = vec![0u8; len];
+            rng.fill(&mut blob[..]);
+            let _ = BaccaratState::from_blob(&blob);
+        }
     }
 
     /// Helper to create place bet payload
@@ -1546,6 +1626,85 @@ mod tests {
         let outcome = make_outcome(7, 6, false, false, false, false, 2, 2);
         let (payout, _) = calculate_bet_payout(&bet, &outcome, BaccaratRules::default());
         assert_eq!(payout, -100);
+    }
+
+    #[test]
+    fn test_dragon_bonus_natural_win_and_push() {
+        let bet = BaccaratBet {
+            bet_type: BetType::PlayerDragon,
+            amount: 100,
+        };
+
+        // Player natural win pays 1:1.
+        let outcome = make_outcome(9, 1, false, false, false, false, 2, 2);
+        let (payout, is_push) = calculate_bet_payout(&bet, &outcome, BaccaratRules::default());
+        assert!(!is_push);
+        assert_eq!(payout, 100);
+
+        // Natural tie pushes.
+        let outcome = make_outcome(8, 8, false, false, false, false, 2, 2);
+        let (payout, is_push) = calculate_bet_payout(&bet, &outcome, BaccaratRules::default());
+        assert!(is_push);
+        assert_eq!(payout, 0);
+    }
+
+    #[test]
+    fn test_dragon_bonus_margin_payouts() {
+        let player_bet = BaccaratBet {
+            bet_type: BetType::PlayerDragon,
+            amount: 100,
+        };
+        let banker_bet = BaccaratBet {
+            bet_type: BetType::BankerDragon,
+            amount: 100,
+        };
+
+        // Player wins by 9 (non-natural) pays 30:1.
+        let outcome = make_outcome(9, 0, false, false, false, false, 3, 3);
+        let (payout, is_push) =
+            calculate_bet_payout(&player_bet, &outcome, BaccaratRules::default());
+        assert!(!is_push);
+        assert_eq!(payout, 3000);
+
+        // Banker wins by 9 (non-natural) pays 30:1.
+        let outcome = make_outcome(0, 9, false, false, false, false, 3, 3);
+        let (payout, is_push) =
+            calculate_bet_payout(&banker_bet, &outcome, BaccaratRules::default());
+        assert!(!is_push);
+        assert_eq!(payout, 3000);
+
+        // Win by less than 4 loses.
+        let outcome = make_outcome(5, 4, false, false, false, false, 3, 3);
+        let (payout, is_push) =
+            calculate_bet_payout(&player_bet, &outcome, BaccaratRules::default());
+        assert!(!is_push);
+        assert_eq!(payout, -100);
+    }
+
+    #[test]
+    fn test_panda8_and_perfect_pair_payouts() {
+        let panda_bet = BaccaratBet {
+            bet_type: BetType::Panda8,
+            amount: 100,
+        };
+        let perfect_pair_bet = BaccaratBet {
+            bet_type: BetType::PlayerPerfectPair,
+            amount: 100,
+        };
+
+        // Panda 8: player wins with 3-card 8.
+        let outcome = make_outcome(8, 1, false, false, false, false, 3, 2);
+        let (payout, is_push) =
+            calculate_bet_payout(&panda_bet, &outcome, BaccaratRules::default());
+        assert!(!is_push);
+        assert_eq!(payout, 2500);
+
+        // Player perfect pair pays 25:1.
+        let outcome = make_outcome(1, 7, true, false, true, false, 2, 2);
+        let (payout, is_push) =
+            calculate_bet_payout(&perfect_pair_bet, &outcome, BaccaratRules::default());
+        assert!(!is_push);
+        assert_eq!(payout, 2500);
     }
 
     #[test]

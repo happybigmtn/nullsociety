@@ -497,12 +497,16 @@ impl<'a, S: State> Layer<'a, S> {
         // Initialize game
         let mut rng = crate::casino::GameRng::new(&self.seed, session_id, 0);
         let result = crate::casino::init_game(&mut session, &mut rng);
+        tracing::info!(
+            player = ?public,
+            session_id = session_id,
+            game_type = ?session.game_type,
+            bet = session.bet,
+            tournament = session.is_tournament,
+            "casino game started"
+        );
 
         let initial_state = session.state_blob.clone();
-        self.insert(
-            Key::CasinoSession(session_id),
-            Value::CasinoSession(session.clone()),
-        );
 
         let mut events = vec![Event::CasinoGameStarted {
             session_id,
@@ -514,6 +518,7 @@ impl<'a, S: State> Layer<'a, S> {
 
         // Handle immediate result (e.g. Natural Blackjack)
         if !matches!(result, crate::casino::GameResult::Continue(_)) {
+            log_game_completion(public, &session, &result);
             let now = self.seed.view.saturating_mul(3);
             if let Some(Value::CasinoPlayer(mut player)) =
                 self.get(&Key::CasinoPlayer(public.clone())).await?
@@ -572,7 +577,7 @@ impl<'a, S: State> Layer<'a, S> {
                             final_chips,
                             was_shielded: false,
                             was_doubled,
-                            logs: logs.clone(),
+                            logs,
                             player_balances: balances,
                         });
                     }
@@ -612,7 +617,7 @@ impl<'a, S: State> Layer<'a, S> {
                             final_chips,
                             was_shielded: false,
                             was_doubled: false,
-                            logs: logs.clone(),
+                            logs,
                             player_balances: balances,
                         });
                     }
@@ -663,7 +668,7 @@ impl<'a, S: State> Layer<'a, S> {
                             final_chips,
                             was_shielded,
                             was_doubled: false,
-                            logs: logs.clone(),
+                            logs,
                             player_balances: balances,
                         });
                     }
@@ -671,6 +676,11 @@ impl<'a, S: State> Layer<'a, S> {
                 }
             }
         }
+
+        self.insert(
+            Key::CasinoSession(session_id),
+            Value::CasinoSession(session),
+        );
 
         Ok(events)
     }
@@ -689,6 +699,8 @@ impl<'a, S: State> Layer<'a, S> {
             Err(events) => return Ok(events),
         };
         let now = self.seed.view.saturating_mul(3);
+        let payload_len = payload.len();
+        let payload_action = payload.first().copied();
 
         // Process move
         session.move_count += 1;
@@ -696,15 +708,31 @@ impl<'a, S: State> Layer<'a, S> {
 
         let result = match crate::casino::process_game_move(&mut session, payload, &mut rng) {
             Ok(r) => r,
-            Err(_) => {
+            Err(err) => {
+                tracing::warn!(
+                    player = ?public,
+                    session_id = session_id,
+                    game_type = ?session.game_type,
+                    payload_len = payload_len,
+                    payload_action = payload_action,
+                    ?err,
+                    "casino move rejected"
+                );
                 return Ok(casino_error_vec(
                     public,
                     Some(session_id),
                     nullspace_types::casino::ERROR_INVALID_MOVE,
                     "Invalid game move",
-                ))
+                ));
             }
         };
+        tracing::debug!(
+            player = ?public,
+            session_id = session_id,
+            game_type = ?session.game_type,
+            move_count = session.move_count,
+            "casino move processed"
+        );
 
         let result = self
             .apply_progressive_meters_for_completion(&session, result)
@@ -713,8 +741,19 @@ impl<'a, S: State> Layer<'a, S> {
         let move_number = session.move_count;
         let new_state = session.state_blob.clone();
 
+        if matches!(
+            result,
+            crate::casino::GameResult::Win(..)
+                | crate::casino::GameResult::Push(..)
+                | crate::casino::GameResult::Loss(..)
+                | crate::casino::GameResult::LossWithExtraDeduction(..)
+                | crate::casino::GameResult::LossPreDeducted(..)
+        ) {
+            log_game_completion(public, &session, &result);
+        }
+
         // Handle game result
-        let mut events = Vec::new();
+        let mut events = Vec::with_capacity(2);
         let mut move_balances: Option<nullspace_types::casino::PlayerBalanceSnapshot> = None;
         let move_logs: Vec<String>;
 
@@ -830,7 +869,7 @@ impl<'a, S: State> Layer<'a, S> {
                 );
             }
             crate::casino::GameResult::Win(base_payout, logs) => {
-                move_logs = logs.clone();
+                move_logs = logs;
                 session.is_complete = true;
                 self.insert(
                     Key::CasinoSession(session_id),
@@ -906,13 +945,13 @@ impl<'a, S: State> Layer<'a, S> {
                         final_chips,
                         was_shielded: false,
                         was_doubled,
-                        logs: logs.clone(),
+                        logs: move_logs.clone(),
                         player_balances: balances,
                     });
                 }
             }
             crate::casino::GameResult::Push(refund, logs) => {
-                move_logs = logs.clone();
+                move_logs = logs;
                 session.is_complete = true;
                 self.insert(
                     Key::CasinoSession(session_id),
@@ -978,13 +1017,13 @@ impl<'a, S: State> Layer<'a, S> {
                         final_chips,
                         was_shielded: false,
                         was_doubled: false,
-                        logs: logs.clone(),
+                        logs: move_logs.clone(),
                         player_balances: balances,
                     });
                 }
             }
             crate::casino::GameResult::Loss(logs) => {
-                move_logs = logs.clone();
+                move_logs = logs;
                 session.is_complete = true;
                 self.insert(
                     Key::CasinoSession(session_id),
@@ -1053,13 +1092,13 @@ impl<'a, S: State> Layer<'a, S> {
                         final_chips,
                         was_shielded,
                         was_doubled: false,
-                        logs: logs.clone(),
+                        logs: move_logs.clone(),
                         player_balances: balances,
                     });
                 }
             }
             crate::casino::GameResult::LossWithExtraDeduction(extra, logs) => {
-                move_logs = logs.clone();
+                move_logs = logs;
                 // Loss with additional deduction for mid-game bet increases
                 // (e.g., Blackjack double-down, Casino War go-to-war)
                 session.is_complete = true;
@@ -1145,13 +1184,13 @@ impl<'a, S: State> Layer<'a, S> {
                         final_chips,
                         was_shielded,
                         was_doubled: false,
-                        logs: logs.clone(),
+                        logs: move_logs.clone(),
                         player_balances: balances,
                     });
                 }
             }
             crate::casino::GameResult::LossPreDeducted(total_loss, logs) => {
-                move_logs = logs.clone();
+                move_logs = logs;
                 // Loss where chips were already deducted via ContinueWithUpdate
                 // (e.g., Baccarat, Craps, Roulette, Sic Bo table games)
                 // No additional chip deduction needed, just report the loss amount
@@ -1218,7 +1257,7 @@ impl<'a, S: State> Layer<'a, S> {
                         final_chips,
                         was_shielded,
                         was_doubled: false,
-                        logs: logs.clone(),
+                        logs: move_logs.clone(),
                         player_balances: balances,
                     });
                 }
@@ -1242,7 +1281,7 @@ impl<'a, S: State> Layer<'a, S> {
                 session_id,
                 move_number,
                 new_state,
-                logs: move_logs.clone(),
+                logs: move_logs,
                 player_balances: move_balances,
             },
         );
@@ -1618,6 +1657,16 @@ impl<'a, S: State> Layer<'a, S> {
             Value::Tournament(tournament.clone()),
         );
 
+        tracing::info!(
+            tournament_id = tournament_id,
+            start_block = self.seed.view,
+            start_time_ms = tournament.start_time_ms,
+            end_time_ms = tournament.end_time_ms,
+            prize_pool = tournament.prize_pool,
+            players = tournament.players.len(),
+            "tournament started"
+        );
+
         Ok(vec![Event::TournamentStarted {
             id: tournament_id,
             start_block: self.seed.view,
@@ -1717,6 +1766,7 @@ impl<'a, S: State> Layer<'a, S> {
         }
 
         tournament.phase = nullspace_types::casino::TournamentPhase::Complete;
+        let prize_pool = tournament.prize_pool;
         let rankings_summary: Vec<(PublicKey, u64)> = rankings
             .iter()
             .map(|(pk, chips, _)| (pk.clone(), *chips))
@@ -1724,6 +1774,14 @@ impl<'a, S: State> Layer<'a, S> {
         self.insert(
             Key::Tournament(tournament_id),
             Value::Tournament(tournament),
+        );
+
+        tracing::info!(
+            tournament_id = tournament_id,
+            players = num_players,
+            winners = num_winners,
+            prize_pool,
+            "tournament ended"
         );
 
         Ok(vec![Event::TournamentEnded {
@@ -1905,4 +1963,32 @@ impl<'a, S: State> Layer<'a, S> {
         self.insert(Key::House, Value::House(house));
         Ok(())
     }
+}
+
+fn log_game_completion(
+    public: &PublicKey,
+    session: &nullspace_types::casino::GameSession,
+    result: &crate::casino::GameResult,
+) {
+    let (outcome, payout, loss) = match result {
+        crate::casino::GameResult::Win(amount, _) => ("win", Some(*amount), None),
+        crate::casino::GameResult::Push(amount, _) => ("push", Some(*amount), None),
+        crate::casino::GameResult::Loss(_) => ("loss", None, None),
+        crate::casino::GameResult::LossWithExtraDeduction(amount, _) => {
+            ("loss_extra", None, Some(*amount))
+        }
+        crate::casino::GameResult::LossPreDeducted(amount, _) => {
+            ("loss_prededucted", None, Some(*amount))
+        }
+        _ => return,
+    };
+    tracing::info!(
+        player = ?public,
+        session_id = session.id,
+        game_type = ?session.game_type,
+        outcome,
+        payout,
+        loss,
+        "casino game completed"
+    );
 }

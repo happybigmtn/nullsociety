@@ -51,6 +51,9 @@ export interface Session {
   /** Last activity timestamp */
   lastActivityAt: number;
 
+  /** Last faucet claim timestamp (ms) */
+  lastFaucetAt?: number;
+
   /** WebSocket client for backend updates (optional, created after registration) */
   updatesClient?: UpdatesClient;
 }

@@ -7,6 +7,7 @@
 //! - peers.yaml with all peer addresses
 //! - .env.local with the network identity for the frontend
 
+use anyhow::{Context, Result};
 use clap::Parser;
 use commonware_codec::Encode;
 use commonware_cryptography::{
@@ -18,6 +19,11 @@ use commonware_cryptography::{
     PrivateKeyExt, Signer,
 };
 use commonware_utils::{hex, quorum};
+use nullspace_node::defaults::{
+    DEFAULT_DEQUE_SIZE, DEFAULT_EXECUTION_CONCURRENCY, DEFAULT_LOG_LEVEL,
+    DEFAULT_MAILBOX_SIZE, DEFAULT_MAX_PENDING_SEED_LISTENERS, DEFAULT_MEMPOOL_MAX_BACKLOG,
+    DEFAULT_MEMPOOL_MAX_TRANSACTIONS, DEFAULT_MESSAGE_BACKLOG, DEFAULT_WORKER_THREADS,
+};
 use rand::{rngs::StdRng, SeedableRng};
 use std::fs;
 use std::path::PathBuf;
@@ -43,7 +49,7 @@ struct Args {
     base_port: u16,
 
     /// Base port for Prometheus metrics (nodes use base+0, base+1, etc.)
-    #[arg(long, default_value_t = 9090)]
+    #[arg(long, default_value_t = 9100)]
     metrics_base_port: u16,
 
     /// Indexer URL (simulator endpoint)
@@ -52,6 +58,13 @@ struct Args {
 }
 
 fn main() {
+    if let Err(err) = run() {
+        eprintln!("generate-keys failed: {err:#}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     let args = Args::parse();
 
     let n = args.nodes;
@@ -75,10 +88,15 @@ fn main() {
     let identity_hex = hex(&identity.encode());
 
     // Create output directory
-    fs::create_dir_all(&args.output).expect("Failed to create output directory");
+    fs::create_dir_all(&args.output).with_context(|| {
+        format!(
+            "Failed to create output directory {}",
+            args.output.display()
+        )
+    })?;
 
     // Generate Ed25519 keys first
-    let mut node_data: Vec<_> = (0..n)
+    let node_data: Vec<_> = (0..n)
         .map(|i| {
             let ed25519_key = PrivateKey::from_seed(args.seed + i as u64);
             let ed25519_pub = ed25519_key.public_key();
@@ -120,7 +138,7 @@ fn main() {
         let participant_idx = sorted_indices
             .iter()
             .position(|&idx| idx == i as usize)
-            .unwrap();
+            .with_context(|| format!("Missing participant index for node {i}"))?;
 
         // Assign the share with matching index
         let share = &shares[participant_idx];
@@ -160,21 +178,21 @@ indexer: "{indexer}"
 directory: "./data/node{i}"
 
 # Performance tuning
-worker_threads: 4
-log_level: "info"
+worker_threads: {worker_threads}
+log_level: "{log_level}"
 
 # P2P settings
 allowed_peers: []
 {bootstrapper}
-message_backlog: 128
-mailbox_size: 1024
-deque_size: 128
+message_backlog: {message_backlog}
+mailbox_size: {mailbox_size}
+deque_size: {deque_size}
 
 # Execution settings
-execution_concurrency: 4
-mempool_max_backlog: 64
-mempool_max_transactions: 100000
-max_pending_seed_listeners: 10000
+execution_concurrency: {execution_concurrency}
+mempool_max_backlog: {mempool_max_backlog}
+mempool_max_transactions: {mempool_max_transactions}
+max_pending_seed_listeners: {max_pending_seed_listeners}
 "#,
             i = i,
             seed = args.seed,
@@ -185,10 +203,21 @@ max_pending_seed_listeners: 10000
             metrics_port = metrics_port,
             indexer = args.indexer,
             bootstrapper = bootstrapper,
+            worker_threads = DEFAULT_WORKER_THREADS,
+            log_level = DEFAULT_LOG_LEVEL,
+            message_backlog = DEFAULT_MESSAGE_BACKLOG,
+            mailbox_size = DEFAULT_MAILBOX_SIZE,
+            deque_size = DEFAULT_DEQUE_SIZE,
+            execution_concurrency = DEFAULT_EXECUTION_CONCURRENCY,
+            mempool_max_backlog = DEFAULT_MEMPOOL_MAX_BACKLOG,
+            mempool_max_transactions = DEFAULT_MEMPOOL_MAX_TRANSACTIONS,
+            max_pending_seed_listeners = DEFAULT_MAX_PENDING_SEED_LISTENERS,
         );
 
         let config_path = args.output.join(format!("node{}.yaml", i));
-        fs::write(&config_path, config).expect("Failed to write config");
+        fs::write(&config_path, config).with_context(|| {
+            format!("Failed to write config {}", config_path.display())
+        })?;
         println!(
             "Created: {} (participant idx: {}, share idx: {:02})",
             config_path.display(),
@@ -208,7 +237,8 @@ max_pending_seed_listeners: 10000
 
     // Write peers file
     let peers_path = args.output.join("peers.yaml");
-    fs::write(&peers_path, peers_content).expect("Failed to write peers file");
+    fs::write(&peers_path, peers_content)
+        .with_context(|| format!("Failed to write peers file {}", peers_path.display()))?;
     println!("Created: {}", peers_path.display());
 
     // Write identity for frontend (.env.local format)
@@ -217,7 +247,8 @@ max_pending_seed_listeners: 10000
         args.seed, identity_hex, args.indexer
     );
     let env_path = args.output.join(".env.local");
-    fs::write(&env_path, &env_content).expect("Failed to write .env.local");
+    fs::write(&env_path, &env_content)
+        .with_context(|| format!("Failed to write .env.local {}", env_path.display()))?;
     println!("Created: {}", env_path.display());
 
     println!();
@@ -243,4 +274,6 @@ max_pending_seed_listeners: 10000
     println!();
     println!("3. Start frontend:");
     println!("   cd website && npm run dev");
+
+    Ok(())
 }

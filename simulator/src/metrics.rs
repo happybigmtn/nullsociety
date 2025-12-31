@@ -86,6 +86,9 @@ pub struct HttpMetricsSnapshot {
     pub submit: LatencySnapshot,
     pub query_state: LatencySnapshot,
     pub query_seed: LatencySnapshot,
+    pub reject_origin: u64,
+    pub reject_rate_limit: u64,
+    pub reject_body_limit: u64,
 }
 
 #[derive(Default)]
@@ -93,6 +96,9 @@ pub struct HttpMetrics {
     submit: LatencyMetrics,
     query_state: LatencyMetrics,
     query_seed: LatencyMetrics,
+    reject_origin: AtomicU64,
+    reject_rate_limit: AtomicU64,
+    reject_body_limit: AtomicU64,
 }
 
 impl HttpMetrics {
@@ -108,11 +114,26 @@ impl HttpMetrics {
         self.query_seed.record(duration);
     }
 
+    pub fn inc_reject_origin(&self) {
+        self.reject_origin.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn inc_reject_rate_limit(&self) {
+        self.reject_rate_limit.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn inc_reject_body_limit(&self) {
+        self.reject_body_limit.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> HttpMetricsSnapshot {
         HttpMetricsSnapshot {
             submit: self.submit.snapshot(),
             query_state: self.query_state.snapshot(),
             query_seed: self.query_seed.snapshot(),
+            reject_origin: self.reject_origin.load(Ordering::Relaxed),
+            reject_rate_limit: self.reject_rate_limit.load(Ordering::Relaxed),
+            reject_body_limit: self.reject_body_limit.load(Ordering::Relaxed),
         }
     }
 }
@@ -206,7 +227,13 @@ impl SystemMetrics {
     }
 
     pub fn snapshot(&self) -> SystemMetricsSnapshot {
-        let mut system = self.system.lock().unwrap();
+        let mut system = match self.system.lock() {
+            Ok(system) => system,
+            Err(poisoned) => {
+                tracing::warn!("System metrics lock poisoned; recovering");
+                poisoned.into_inner()
+            }
+        };
         system.refresh_cpu_usage();
         system.refresh_processes(ProcessesToUpdate::Some(&[self.pid]), false);
 

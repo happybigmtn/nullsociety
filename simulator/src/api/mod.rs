@@ -1,5 +1,5 @@
 use axum::{
-    extract::{DefaultBodyLimit, Request},
+    extract::{DefaultBodyLimit, Request, State as AxumState},
     http::{header, HeaderValue, Method, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -9,6 +9,7 @@ use axum::{
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use governor::middleware::NoOpMiddleware;
 use tower_governor::{
     governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
 };
@@ -28,6 +29,15 @@ pub struct Api {
 struct OriginConfig {
     allowed_origins: Arc<HashSet<String>>,
     allow_no_origin: bool,
+}
+
+type IpGovernorConfig =
+    tower_governor::governor::GovernorConfig<SmartIpKeyExtractor, NoOpMiddleware>;
+
+fn default_governor_config() -> Option<IpGovernorConfig> {
+    GovernorConfigBuilder::default()
+        .key_extractor(SmartIpKeyExtractor)
+        .finish()
 }
 
 impl Api {
@@ -82,22 +92,18 @@ impl Api {
             {
                 let nanos_per_request = (1_000_000_000u64 / rate_per_second).max(1);
                 let period = Duration::from_nanos(nanos_per_request);
-                Some(Arc::new(
-                    GovernorConfigBuilder::default()
-                        .period(period)
-                        .burst_size(burst_size)
-                        .key_extractor(SmartIpKeyExtractor)
-                        .finish()
-                        .unwrap_or_else(|| {
-                            tracing::warn!(
-                                "invalid rate-limit config; falling back to defaults"
-                            );
-                            GovernorConfigBuilder::default()
-                                .key_extractor(SmartIpKeyExtractor)
-                                .finish()
-                                .expect("default governor config is valid")
-                        }),
-                ))
+                let config = GovernorConfigBuilder::default()
+                    .period(period)
+                    .burst_size(burst_size)
+                    .key_extractor(SmartIpKeyExtractor)
+                    .finish()
+                    .or_else(|| {
+                        tracing::warn!(
+                            "invalid rate-limit config; falling back to defaults"
+                        );
+                        default_governor_config()
+                    });
+                config.map(Arc::new)
             }
             _ => None,
         };
@@ -116,22 +122,18 @@ impl Api {
                     period_ms = period.as_millis(),
                     "Submit endpoint rate limit configured"
                 );
-                Some(Arc::new(
-                    GovernorConfigBuilder::default()
-                        .period(period)
-                        .burst_size(burst_size)
-                        .key_extractor(SmartIpKeyExtractor)
-                        .finish()
-                        .unwrap_or_else(|| {
-                            tracing::warn!(
-                                "invalid submit rate-limit config; falling back to defaults"
-                            );
-                            GovernorConfigBuilder::default()
-                                .key_extractor(SmartIpKeyExtractor)
-                                .finish()
-                                .expect("default governor config is valid")
-                        }),
-                ))
+                let config = GovernorConfigBuilder::default()
+                    .period(period)
+                    .burst_size(burst_size)
+                    .key_extractor(SmartIpKeyExtractor)
+                    .finish()
+                    .or_else(|| {
+                        tracing::warn!(
+                            "invalid submit rate-limit config; falling back to defaults"
+                        );
+                        default_governor_config()
+                    });
+                config.map(Arc::new)
             }
             _ => None,
         };
@@ -197,7 +199,10 @@ impl Api {
             Some(limit) if limit > 0 => router.layer(DefaultBodyLimit::max(limit)),
             _ => router,
         };
-        let router = router.layer(middleware::from_fn(request_id_middleware));
+        let router = router.layer(middleware::from_fn_with_state(
+            self.simulator.clone(),
+            request_id_middleware,
+        ));
 
         router.with_state(self.simulator.clone())
     }
@@ -247,7 +252,11 @@ async fn enforce_origin(
     next.run(req).await
 }
 
-async fn request_id_middleware(req: Request, next: Next) -> Response {
+async fn request_id_middleware(
+    AxumState(simulator): AxumState<Arc<Simulator>>,
+    req: Request,
+    next: Next,
+) -> Response {
     let request_id = req
         .headers()
         .get(header::HeaderName::from_static("x-request-id"))
@@ -258,6 +267,12 @@ async fn request_id_middleware(req: Request, next: Next) -> Response {
     let path = req.uri().path().to_string();
     let start = Instant::now();
     let mut response = next.run(req).await;
+    match response.status() {
+        StatusCode::FORBIDDEN => simulator.http_metrics().inc_reject_origin(),
+        StatusCode::PAYLOAD_TOO_LARGE => simulator.http_metrics().inc_reject_body_limit(),
+        StatusCode::TOO_MANY_REQUESTS => simulator.http_metrics().inc_reject_rate_limit(),
+        _ => {}
+    }
     if let Ok(header_value) = HeaderValue::from_str(&request_id) {
         response.headers_mut().insert(
             header::HeaderName::from_static("x-request-id"),

@@ -161,10 +161,12 @@ export const DiceThrow2D: React.FC<{
   const containerRef = React.useRef<HTMLDivElement>(null);
   const settleTargetsRef = React.useRef<DicePose[]>([]);
   const [poses, setPoses] = useState<DicePose[]>([]);
+  const posesRef = React.useRef<DicePose[]>([]);
   const velocitiesRef = React.useRef<DiceVelocity[]>([]);
   const frameRef = React.useRef<number | null>(null);
   const lastTimeRef = React.useRef<number | null>(null);
   const startTimeRef = React.useRef<number | null>(null);
+  const lastPaintRef = React.useRef<number | null>(null);
 
   // Track if we should be "rolling" (tumbling) vs "settled" (showing value)
   const [isSettled, setIsSettled] = useState(false);
@@ -182,6 +184,13 @@ export const DiceThrow2D: React.FC<{
     const clampedRightInset = Math.max(0, Math.min(rightWallInset, rect.width - diceSize));
     const boundsX = Math.max(0, rect.width - diceSize - clampedRightInset);
     const boundsY = Math.max(0, rect.height - diceSize);
+
+    const clampPose = (pose: DicePose) => ({
+      x: Math.max(0, Math.min(boundsX, pose.x)),
+      y: Math.max(0, Math.min(boundsY, pose.y)),
+      rot: pose.rot,
+      rollRotation: pose.rollRotation,
+    });
 
     // Calculate center targets for each die
     const gap = diceSize * 0.25;
@@ -238,11 +247,18 @@ export const DiceThrow2D: React.FC<{
     }
 
     setPoses(initialPoses);
+    posesRef.current = initialPoses;
     velocitiesRef.current = initialVelocities;
     lastTimeRef.current = null;
     startTimeRef.current = null;
+    lastPaintRef.current = null;
 
     if (reducedMotion) {
+      const finalPoses = settleToRow && settleTargetsRef.current.length > 0
+        ? settleTargetsRef.current.map(clampPose)
+        : initialPoses;
+      posesRef.current = finalPoses;
+      setPoses(finalPoses);
       setIsSettled(true);
       onSettled?.();
       return;
@@ -254,13 +270,6 @@ export const DiceThrow2D: React.FC<{
     const centerAttraction = 0.008; // Gentle pull toward center
     const settleThreshold = 0.3; // Velocity threshold to consider settled
     const MAX_DURATION_MS = 3000; // Safety timeout
-
-    const clampPose = (pose: DicePose) => ({
-      x: Math.max(0, Math.min(boundsX, pose.x)),
-      y: Math.max(0, Math.min(boundsY, pose.y)),
-      rot: pose.rot,
-      rollRotation: pose.rollRotation,
-    });
 
     const step = (time: number) => {
       if (startTimeRef.current === null) {
@@ -277,102 +286,109 @@ export const DiceThrow2D: React.FC<{
       let allSettled = true;
       const circumference = diceSize * Math.PI;
 
-      setPoses((prev) => {
-        const nextPoses = prev.map((pose, i) => {
-          const vel = velocitiesRef.current[i];
-          if (!vel) return pose;
+      const nextPoses = posesRef.current.map((pose, i) => {
+        const vel = velocitiesRef.current[i];
+        if (!vel) return pose;
 
-          const target = settleToRow ? targets[i] : null;
-          let x = pose.x;
-          let y = pose.y;
-          let rollRotation = pose.rollRotation;
-          let rot = pose.rot;
+        const target = settleToRow ? targets[i] : null;
+        let x = pose.x;
+        let y = pose.y;
+        let rollRotation = pose.rollRotation;
+        let rot = pose.rot;
 
-          // Apply rolling friction
-          vel.vx *= Math.pow(rollingFriction, dtScale);
-          vel.vy *= Math.pow(rollingFriction, dtScale);
-          vel.vr *= Math.pow(rollingFriction, dtScale);
+        // Apply rolling friction
+        vel.vx *= Math.pow(rollingFriction, dtScale);
+        vel.vy *= Math.pow(rollingFriction, dtScale);
+        vel.vr *= Math.pow(rollingFriction, dtScale);
 
-          // Center attraction (increases as velocity decreases)
-          if (target && settleToRow) {
-            const speed = Math.sqrt(vel.vx * vel.vx + vel.vy * vel.vy);
-            const attractionStrength = centerAttraction * (1 + Math.max(0, 5 - speed) * 0.5);
-            const dx = target.x - x;
-            const dy = target.y - y;
-            vel.vx += dx * attractionStrength * dtScale;
-            vel.vy += dy * attractionStrength * dtScale;
-          }
-
-          // Update position
-          const moveX = vel.vx * dtScale;
-          x = pose.x + moveX;
-          y = pose.y + vel.vy * dtScale;
-
-          // Track cumulative horizontal movement for rotation
-          vel.cumulativeX += moveX;
-          rot += vel.vr * dtScale;
-          rollRotation = rot + (vel.cumulativeX / circumference) * 360;
-
-          // Wall bounces
-          if (x <= 0) {
-            x = 0;
-            vel.vx = Math.abs(vel.vx) * restitution;
-          } else if (x >= boundsX) {
-            x = boundsX;
-            vel.vx = -Math.abs(vel.vx) * restitution;
-          }
-
-          // Vertical bounds (keep on table)
-          if (y >= boundsY) {
-            y = boundsY;
-            vel.vy = -Math.abs(vel.vy) * restitution * 0.5;
-          } else if (y <= 0) {
-            y = 0;
-            vel.vy = Math.abs(vel.vy) * restitution * 0.5;
-          }
-
-          // Check if this die has settled
+        // Center attraction (increases as velocity decreases)
+        if (target && settleToRow) {
           const speed = Math.sqrt(vel.vx * vel.vx + vel.vy * vel.vy);
-          const distToTarget = target ? Math.sqrt((x - target.x) ** 2 + (y - target.y) ** 2) : 0;
-          if (speed > settleThreshold || (target && distToTarget > 5)) {
-            allSettled = false;
-          }
+          const attractionStrength = centerAttraction * (1 + Math.max(0, 5 - speed) * 0.5);
+          const dx = target.x - x;
+          const dy = target.y - y;
+          vel.vx += dx * attractionStrength * dtScale;
+          vel.vy += dy * attractionStrength * dtScale;
+        }
 
-          return { ...clampPose({ x, y, rot, rollRotation }), rollRotation };
-        });
+        // Update position
+        const moveX = vel.vx * dtScale;
+        x = pose.x + moveX;
+        y = pose.y + vel.vy * dtScale;
 
-        if (preventOverlap && nextPoses.length > 1) {
-          const minDist = diceSize * 0.85;
-          for (let i = 0; i < nextPoses.length; i += 1) {
-            for (let j = i + 1; j < nextPoses.length; j += 1) {
-              const dx = nextPoses[i].x - nextPoses[j].x;
-              const dy = nextPoses[i].y - nextPoses[j].y;
-              const dist = Math.hypot(dx, dy);
-              if (dist > 0 && dist < minDist) {
-                const push = (minDist - dist) / 2;
-                const nx = dx / dist;
-                const ny = dy / dist;
-                nextPoses[i].x += nx * push;
-                nextPoses[i].y += ny * push;
-                nextPoses[j].x -= nx * push;
-                nextPoses[j].y -= ny * push;
-                velocitiesRef.current[i].vx += nx * 0.4;
-                velocitiesRef.current[i].vy += ny * 0.4;
-                velocitiesRef.current[j].vx -= nx * 0.4;
-                velocitiesRef.current[j].vy -= ny * 0.4;
-              }
+        // Track cumulative horizontal movement for rotation
+        vel.cumulativeX += moveX;
+        rot += vel.vr * dtScale;
+        rollRotation = rot + (vel.cumulativeX / circumference) * 360;
+
+        // Wall bounces
+        if (x <= 0) {
+          x = 0;
+          vel.vx = Math.abs(vel.vx) * restitution;
+        } else if (x >= boundsX) {
+          x = boundsX;
+          vel.vx = -Math.abs(vel.vx) * restitution;
+        }
+
+        // Vertical bounds (keep on table)
+        if (y >= boundsY) {
+          y = boundsY;
+          vel.vy = -Math.abs(vel.vy) * restitution * 0.5;
+        } else if (y <= 0) {
+          y = 0;
+          vel.vy = Math.abs(vel.vy) * restitution * 0.5;
+        }
+
+        // Check if this die has settled
+        const speed = Math.sqrt(vel.vx * vel.vx + vel.vy * vel.vy);
+        const distToTarget = target ? Math.sqrt((x - target.x) ** 2 + (y - target.y) ** 2) : 0;
+        if (speed > settleThreshold || (target && distToTarget > 5)) {
+          allSettled = false;
+        }
+
+        return { ...clampPose({ x, y, rot, rollRotation }), rollRotation };
+      });
+
+      if (preventOverlap && nextPoses.length > 1) {
+        const minDist = diceSize * 0.85;
+        for (let i = 0; i < nextPoses.length; i += 1) {
+          for (let j = i + 1; j < nextPoses.length; j += 1) {
+            const dx = nextPoses[i].x - nextPoses[j].x;
+            const dy = nextPoses[i].y - nextPoses[j].y;
+            const dist = Math.hypot(dx, dy);
+            if (dist > 0 && dist < minDist) {
+              const push = (minDist - dist) / 2;
+              const nx = dx / dist;
+              const ny = dy / dist;
+              nextPoses[i].x += nx * push;
+              nextPoses[i].y += ny * push;
+              nextPoses[j].x -= nx * push;
+              nextPoses[j].y -= ny * push;
+              velocitiesRef.current[i].vx += nx * 0.4;
+              velocitiesRef.current[i].vy += ny * 0.4;
+              velocitiesRef.current[j].vx -= nx * 0.4;
+              velocitiesRef.current[j].vy -= ny * 0.4;
             }
           }
         }
+      }
 
-        return nextPoses.map(clampPose);
-      });
+      const clampedPoses = nextPoses.map(clampPose);
+      posesRef.current = clampedPoses;
+
+      const shouldPaint = lastPaintRef.current === null || time - lastPaintRef.current >= 33;
+      if (shouldPaint || allSettled || elapsed >= MAX_DURATION_MS) {
+        setPoses(clampedPoses);
+        lastPaintRef.current = time;
+      }
 
       // End animation when all dice settled or timeout
       if (allSettled || elapsed >= MAX_DURATION_MS) {
         // Snap to final positions
         if (settleToRow && settleTargetsRef.current.length > 0) {
-          setPoses(settleTargetsRef.current.map(clampPose));
+          const finalPoses = settleTargetsRef.current.map(clampPose);
+          posesRef.current = finalPoses;
+          setPoses(finalPoses);
         }
         setIsSettled(true);
         onSettled?.();

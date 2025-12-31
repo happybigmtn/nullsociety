@@ -260,6 +260,16 @@ export const RewardsDrawer: React.FC<RewardsDrawerProps> = ({
             </div>
 
             <div className="rounded-3xl border border-titanium-200 bg-white p-5 shadow-soft dark:border-titanium-800 dark:bg-titanium-900/60">
+              <Label size="micro" variant="primary" className="mb-2 block">Wallet</Label>
+              <div className="text-sm font-semibold text-titanium-800 dark:text-titanium-100">
+                Testnet deposits and withdrawals are coming soon.
+              </div>
+              <div className="text-[11px] text-titanium-500 dark:text-titanium-300 mt-2">
+                Use the daily faucet to top up RNG while the bridge flow is finalized.
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-titanium-200 bg-white p-5 shadow-soft dark:border-titanium-800 dark:bg-titanium-900/60">
               <Label size="micro" variant="primary" className="mb-3 block">Missions</Label>
               <div className="space-y-4">
                 {missions.map((mission) => {
