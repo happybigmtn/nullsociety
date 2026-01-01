@@ -14,6 +14,20 @@ type RewardsDrawerProps = {
   gameType: GameType;
 };
 
+type LeagueEntry = {
+  publicKey: string;
+  points: number;
+  games: number;
+  wager?: number;
+  netPnl?: number;
+};
+
+type ReferralSummary = {
+  code: string | null;
+  referrals: number;
+  qualified: number;
+};
+
 const STORAGE_KEYS = {
   lastClaim: 'ns_rewards_last_claim',
   streak: 'ns_rewards_streak',
@@ -87,6 +101,22 @@ const formatAmount = (value: number) => {
   return Math.floor(value).toLocaleString();
 };
 
+const opsBase =
+  (import.meta as any)?.env?.VITE_OPS_URL?.replace(/\/$/, '') ??
+  (import.meta as any)?.env?.VITE_ANALYTICS_URL?.replace(/\/$/, '') ??
+  '';
+
+const readLocalPublicKey = () => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem('casino_public_key_hex')?.toLowerCase() ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const formatKey = (value: string) => `${value.slice(0, 6)}…${value.slice(-4)}`;
+
 export const RewardsDrawer: React.FC<RewardsDrawerProps> = ({
   isOpen,
   onClose,
@@ -111,6 +141,13 @@ export const RewardsDrawer: React.FC<RewardsDrawerProps> = ({
   const [clubWeek, setClubWeek] = useState(() => readString(STORAGE_KEYS.clubWeek, weekKey));
   const [clubBaseline, setClubBaseline] = useState(() => readNumber(STORAGE_KEYS.clubBaseline, stats.history.length));
   const [pendingClaim, setPendingClaim] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<LeagueEntry[]>([]);
+  const [leaderboardUpdatedAt, setLeaderboardUpdatedAt] = useState<number | null>(null);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [referralSummary, setReferralSummary] = useState<ReferralSummary | null>(null);
+  const [referralError, setReferralError] = useState<string | null>(null);
+  const [referralLoading, setReferralLoading] = useState(false);
+  const publicKeyHex = readLocalPublicKey();
 
   useEffect(() => {
     if (handsDate !== todayKey) {
@@ -138,6 +175,69 @@ export const RewardsDrawer: React.FC<RewardsDrawerProps> = ({
       writeStorage(STORAGE_KEYS.clubBaseline, stats.history.length);
     }
   }, [clubWeek, weekKey, stats.history.length]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!opsBase) return;
+    const controller = new AbortController();
+    setLeaderboardError(null);
+    fetch(`${opsBase}/league/leaderboard?week=${encodeURIComponent(weekKey)}`, { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Leaderboard fetch failed (${res.status})`);
+        return res.json() as Promise<{ entries?: LeagueEntry[]; updatedAt?: number }>;
+      })
+      .then((data) => {
+        setLeaderboard(Array.isArray(data.entries) ? data.entries.slice(0, 10) : []);
+        setLeaderboardUpdatedAt(typeof data.updatedAt === 'number' ? data.updatedAt : null);
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return;
+        setLeaderboard([]);
+        setLeaderboardError(err instanceof Error ? err.message : 'Leaderboard unavailable');
+      });
+    return () => controller.abort();
+  }, [isOpen, weekKey]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!opsBase) return;
+    if (!publicKeyHex) return;
+    const controller = new AbortController();
+    setReferralLoading(true);
+    setReferralError(null);
+
+    const fetchReferral = async () => {
+      try {
+        const codeRes = await fetch(`${opsBase}/referrals/code`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ publicKey: publicKeyHex }),
+          signal: controller.signal,
+        });
+        if (!codeRes.ok) throw new Error(`Referral code failed (${codeRes.status})`);
+        const codeData = await codeRes.json();
+        const summaryRes = await fetch(`${opsBase}/referrals/summary?publicKey=${encodeURIComponent(publicKeyHex)}`, {
+          signal: controller.signal,
+        });
+        if (!summaryRes.ok) throw new Error(`Referral summary failed (${summaryRes.status})`);
+        const summaryData = await summaryRes.json();
+        setReferralSummary({
+          code: codeData?.code ?? summaryData?.code ?? null,
+          referrals: Number(summaryData?.referrals ?? 0),
+          qualified: Number(summaryData?.qualified ?? 0),
+        });
+      } catch (err) {
+        if (err?.name === 'AbortError') return;
+        setReferralSummary(null);
+        setReferralError(err instanceof Error ? err.message : 'Referral unavailable');
+      } finally {
+        setReferralLoading(false);
+      }
+    };
+
+    void fetchReferral();
+    return () => controller.abort();
+  }, [isOpen, publicKeyHex]);
 
   useEffect(() => {
     if (gameType === GameType.NONE) return;
@@ -224,6 +324,74 @@ export const RewardsDrawer: React.FC<RewardsDrawerProps> = ({
                 <div className="mt-3 text-[10px] font-mono text-titanium-400 dark:text-titanium-400">
                   Ends in {formatCountdownShort(timeLeftMs)}
                 </div>
+              </div>
+            ) : null}
+
+            {leaderboard.length > 0 ? (
+              <div className="rounded-3xl border border-titanium-200 bg-white p-5 shadow-soft dark:border-titanium-800 dark:bg-titanium-900/60">
+                <Label size="micro" variant="primary" className="mb-2 block">Weekly league</Label>
+                <div className="text-sm font-bold text-titanium-900 dark:text-titanium-100">Top players</div>
+                <div className="mt-3 space-y-2 text-[11px]">
+                  {leaderboard.slice(0, 5).map((entry, index) => {
+                    const isYou = publicKeyHex && entry.publicKey?.toLowerCase() === publicKeyHex;
+                    return (
+                      <div
+                        key={entry.publicKey}
+                        className={`flex items-center justify-between rounded-xl border px-3 py-2 ${
+                          isYou ? 'border-action-primary/40 bg-action-primary/10 text-action-primary' : 'border-titanium-200 dark:border-titanium-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-titanium-400">#{index + 1}</span>
+                          <span className="font-mono">{formatKey(entry.publicKey)}</span>
+                          {isYou ? <span className="text-[9px] font-bold uppercase">You</span> : null}
+                        </div>
+                        <div className="text-xs font-bold">{formatAmount(entry.points)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-2 text-[10px] text-titanium-400">
+                  {leaderboardUpdatedAt ? `Updated ${new Date(leaderboardUpdatedAt).toLocaleTimeString()}` : 'Updated recently'}
+                </div>
+              </div>
+            ) : leaderboardError ? (
+              <div className="rounded-2xl border border-titanium-200 bg-titanium-50/70 p-4 text-[11px] text-titanium-500 dark:border-titanium-800 dark:bg-titanium-900/40">
+                {leaderboardError}
+              </div>
+            ) : null}
+
+            {opsBase && publicKeyHex ? (
+              <div className="rounded-3xl border border-titanium-200 bg-white p-5 shadow-soft dark:border-titanium-800 dark:bg-titanium-900/60">
+                <Label size="micro" variant="gold" className="mb-2 block">Invite friends</Label>
+                {referralLoading ? (
+                  <div className="text-[11px] text-titanium-400">Loading referral stats…</div>
+                ) : referralSummary ? (
+                  <>
+                    <div className="text-lg font-bold text-titanium-900 dark:text-titanium-100">
+                      Code: {referralSummary.code ?? '—'}
+                    </div>
+                    <div className="mt-2 text-[11px] text-titanium-500 dark:text-titanium-300">
+                      Referrals: {referralSummary.referrals} · Qualified: {referralSummary.qualified}
+                    </div>
+                    {referralSummary.code ? (
+                      <button
+                        type="button"
+                        className="mt-3 text-[10px] border px-3 py-2 rounded bg-gray-900 border-gray-700 text-gray-200 hover:border-gray-500"
+                        onClick={() => {
+                          const url = `${window.location.origin}/?ref=${referralSummary.code}`;
+                          navigator.clipboard.writeText(url).catch(() => {
+                            // ignore clipboard errors
+                          });
+                        }}
+                      >
+                        Copy invite link
+                      </button>
+                    ) : null}
+                  </>
+                ) : referralError ? (
+                  <div className="text-[11px] text-titanium-500">{referralError}</div>
+                ) : null}
               </div>
             ) : null}
 

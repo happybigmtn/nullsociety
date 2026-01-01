@@ -8,15 +8,12 @@ This document is the canonical roadmap for RNG token distribution + liquidity ac
 
 | Bucket | % of supply | Amount (RNG) | Mechanism | Status in code |
 |---|---:|---:|---|---|
-| Freeroll bonus pool | up to 15% | 150,000,000 | Phase 2 BOGO bonus for successful CCA bidders (not airdropped) | **EVM contract implemented (BogoDistributor); deployment + eligibility root pending** |
-| Phase 2 auction sale | 20% | 200,000,000 | Ethereum CCA raising USDT; proceeds seed a v4 pool | **CCA integration scripts present; runbook done, deployment/testnet rehearsal pending** |
-| Liquidity reserve | 10% | 100,000,000 | Paired with auction proceeds at clearing price | **EVM token reserve accounted for; pool launch pending** |
-| Player snapshot + rewards | 35% | 350,000,000 | Phase 1 earnings + allocations | **Partially implemented (credits ledger + emissions; snapshot exporter exists)** |
-| Treasury / ops / partnerships | 15% | 150,000,000 | Treasury allocations + market-making | **Ledger + vesting enforcement implemented; schedule config pending** |
-| Team / investor vesting | 5% | 50,000,000 | Time-locked vesting | **Ledger + vesting enforcement implemented; schedule config pending** |
+| Freeroll bonus pool | up to 25% | 250,000,000 | CCA BOGO bonus for successful CCA bidders (unclaimed bonus rolls into treasury reserve) | **EVM contract implemented (BogoDistributor); deployment + eligibility root pending** |
+| CCA auction sale (base) | 25% | 250,000,000 | Quarterly CCAs (10 total, 2.5% each); proceeds seed a v4 pool | **CCA integration scripts present; runbook done, deployment/testnet rehearsal pending** |
+| Developer-controlled reserve | 50% | 500,000,000 | Treasury/ops/liquidity/partnerships/insurance; liquidity reserve sourced here; vests at 5%/year over 10 years | **Ledger + vesting enforcement implemented; policy config pending** |
 
-Baseline example totals 100%. Final allocation must be reconciled to Phase 1
-snapshot data before launch.
+Baseline example totals 100%. Final allocation must be reconciled to pre-token launch
+snapshot data and the CCA cadence before launch.
 
 ### Freeroll emission schedule (implemented)
 On each tournament start, the executor mints a **per-tournament prize pool**:
@@ -26,12 +23,12 @@ On each tournament start, the executor mints a **per-tournament prize pool**:
 Current protocol constants:
 - `types/src/casino/constants.rs`: `TOTAL_SUPPLY = 1_000_000_000`
 - `types/src/casino/constants.rs`: `ANNUAL_EMISSION_RATE_BPS = 300` (3%/year)
-- `types/src/casino/constants.rs`: `REWARD_POOL_BPS = 1500` (15% cap)
+- `types/src/casino/constants.rs`: `REWARD_POOL_BPS = 1500` (15% cap; update for 25% program)
 - `types/src/casino/constants.rs`: `TOURNAMENTS_PER_DAY = 240` (1m registration + 5m active schedule)
 
-Policy target update (Phase 2 plan):
-- Reduce cap to 15% (`REWARD_POOL_BPS=1500`, `ANNUAL_EMISSION_RATE_BPS=300`).
-- Track freeroll credits as Phase 2 bonus eligibility rather than direct
+Policy target update (CCA program plan):
+- Update cap to support 25% bonus distribution over 10 CCAs (BPS TBD).
+- Track freeroll credits as CCA bonus eligibility rather than direct
   airdrop.
 
 This yields approximately:
@@ -40,12 +37,12 @@ This yields approximately:
 - Per-tournament prize pool: `~342 RNG/tournament` (integer division rounding)
 
 The executor tracks `HouseState.total_issuance` and caps total freeroll issuance to
-`15% * TOTAL_SUPPLY` today (Phase 2 bonus gating).
+`25% * TOTAL_SUPPLY` for CCA bonus gating across 10 CCAs.
 
-Policy update (Phase 1 -> Phase 2):
+Policy update (pre-token launch → CCA program):
 - Freeroll payouts track a non-transferable credit ledger (not direct
   RNG minting).
-- Credits become eligibility for Phase 2 auction bonuses, with vesting.
+- Credits become eligibility for CCA auction bonuses, with continuous 3-month vesting.
 
 ## Current Codebase Snapshot (Reality Today)
 
@@ -74,12 +71,12 @@ The current “economy” lives inside the casino state machine. RNG is represen
 
 ### What does NOT exist yet (and is required for the roadmap)
 - A protocol-native **token ledger** (CTI-20 / “real RNG token”) separate from casino player state.
-- Full Phase 2 deployment flow (testnet CCA rehearsal, liquidity launcher governance).
+- Full CCA program deployment flow (testnet CCA rehearsal, liquidity launcher governance).
 - Bridge relayer/service (Commonware bridge module + UI flows implemented; relayer shipped).
 
 ## Stage 1 — On-Chain Price Discovery (RNG/vUSD on Commonware)
 
-**Goal:** discover a credible on-chain price curve and liquidity baseline *inside* Nullspace before any external bridge exists.
+Discover a credible on-chain price curve and liquidity baseline *inside* Nullspace before any external bridge exists.
 
 ### Stage 1A (now): make the existing AMM usable for price discovery
 Leverage the already-implemented CPMM:
@@ -93,10 +90,10 @@ Leverage the already-implemented CPMM:
   - we can audit price discovery behavior over time.
 - Define a **treasury seeding mechanism**:
   - Decide how initial reserves are provisioned (genesis allocation vs. privileged instruction vs. multisig account).
-  - Establish initial AMM parameters (fee, sell-tax, min liquidity, bootstrap price).
+- Establish initial AMM parameters (fee, sell-tax, buy-tax, min liquidity, bootstrap price).
 
 ### Stage 1B (optional but recommended): time-limited “futures” / bootstrap auction mode
-If we want a *fixed* “closing price” that later anchors Phase 2:
+If we want a *fixed* “closing price” that later anchors token launch:
 - Add an on-chain **Auction/Bootstrap state** (deadline + finalized flag + closing price snapshot).
 - Add `finalize()` logic that:
   - freezes trading after deadline,
@@ -107,13 +104,14 @@ This can be implemented as a wrapper around the existing `AmmPool` state (no nee
 
 ## Stage 2 — Ethereum Auction + Uniswap Liquidity (RNG/USDT or RNG/USDC)
 
-**Goal:** sell the Phase 2 allocation (20% of supply) via an Ethereum-native mechanism,
-seed 10% liquidity at the clearing price, and distribute up to 15% in BOGO bonuses.
+Sell 25% of supply via 10 quarterly CCAs (2.5% each), starting 3 months after testnet launch; seed v4 liquidity at the
+clearing price with a reserve sourced from the developer-controlled allocation, and
+distribute up to 25% in BOGO bonuses (unclaimed bonus to treasury reserve).
 
 ### Stage 2A: Ethereum contracts + testnet dry run
 Deliverables:
 - **ERC-20 RNG (Ethereum)**:
-  - initial mint = auction allocation + liquidity reserve + bonus pool.
+  - initial mint = total supply; per-auction allocations and bonus caps are carved out of the program allocation.
   - admin = multisig / timelock.
 - **Continuous Clearing Auction (CCA)** (or equivalent):
   - accepts USDT/USDC bids over time/tranches,
@@ -122,21 +120,23 @@ Deliverables:
   - enforces a minimum raise threshold (liquidity pairing requirement).
 - **Liquidity launcher**:
   - upon auction finalization, seeds a Uniswap pool at the discovered price with
-    the 10% RNG liquidity reserve and matching USDT.
-  - excess proceeds fund the 20m USDT recovery pool, then treasury/insurance.
+    RNG reserves sourced from the developer-controlled allocation and matching USDT.
+  - 100% of auction proceeds go into the liquidity pool; the recovery pool is
+    funded by 80% of sell tax (10% on RNG sales) until $10m, with 20% to the
+    operating budget. After $10m, 80% of sell tax routes to RNG stakers.
 
 Operational requirements:
 - Deployment scripts (Foundry/Hardhat), subgraph/indexing, and a minimal bidding UI.
 - Security review/audit plan (CCA and launch contracts are high-risk).
 
 ### Stage 2B: mainnet launch
-- Finalize auction parameters: duration, tranche schedule, max bid size, allowlist (if any), and disclosures.
+- Finalize auction parameters: quarterly cadence (start 3 months after testnet), duration, tranche schedule, max bid size, allowlist (if any), and disclosures.
 - Run the auction, then automatically seed Uniswap liquidity.
 - Publish the canonical on-chain addresses and verification artifacts.
 
 ## Stage 3 — Bridge + Multi-Chain Liquidity (Canonical Supply Across Commonware + Ethereum)
 
-**Goal:** unify the ecosystems so RNG can move between chains without inflating supply.
+Unify the ecosystems so RNG can move between chains without inflating supply.
 
 ### Bridge architecture decision (must be made)
 Pick one canonical supply domain:
@@ -162,22 +162,22 @@ Then implement a bridge that is **supply-preserving**:
 - **Canonical token ledger:** when do we graduate from `Player.chips` to a protocol-native CTI-20 RNG ledger?
 - **Treasury + vesting:** how are the treasury/ops + team allocations controlled
   (multisig) and vested (time locks)?
-- **Stable choice:** USDT vs USDC (and which chain/L2 for Phase 2).
+- **Stable choice:** USDT vs USDC (and which chain/L2 for token launch).
 - **Oracle strategy:** do we import Ethereum price back into Commonware (and how) once the bridge exists?
 - **AMM parameter governance:** who can change fee/sell-tax and under what process?
 
 ## Next Steps (Concrete, Codebase-Aligned)
 
 ### Immediate (this repo)
-- [x] Complete treasury vesting enforcement for Phase 2 allocation buckets.
+- [x] Complete treasury vesting enforcement for CCA program allocation buckets.
 - [x] Implement website UI flows for AMM swap + LP management, vault borrow/repay,
   and price/TVL/LP share metrics.
 - [x] Add execution events for AMM/vault/stake actions so the UI can rely on updates instead of polling.
 - [ ] Update `client/examples/simulation_ecosystem.rs` assumptions to match the
-  Phase 2 allocation (20/10/15 bonus plus remaining buckets).
+  CCA program allocation (25% base auctions + up to 25% bonus + 50% developer-controlled).
 - [ ] Decide whether Stage 1 needs an explicit time-limited “finalize” step; if yes, design new state + instructions.
 
-### New repos / new modules (Phase 2/3)
+### New repos / new modules (CCA program / bridge)
 6. Create an `evm/` workspace (or separate repo) for Ethereum contracts + deployment scripts.
 7. Implement Stage 2 contracts (ERC-20 RNG, CCA, liquidity launcher) and run a full testnet rehearsal.
 8. Design and implement the canonical bridge (Stage 3), starting with an MVP trust model and a path to decentralization.

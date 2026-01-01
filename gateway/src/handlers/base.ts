@@ -131,6 +131,9 @@ export abstract class GameHandler {
 
         // Fallback if no event received (backend may be slow)
         await this.ensureSessionUpdatesClient(session, backendUrl, session.activeGameId!);
+        session.lastGameBet = bet;
+        session.lastGameStartChips = session.balance;
+        session.lastGameStartedAt = Date.now();
         return {
           success: true,
           response: {
@@ -179,6 +182,9 @@ export abstract class GameHandler {
             }
 
             await this.ensureSessionUpdatesClient(session, backendUrl, session.activeGameId!);
+            session.lastGameBet = bet;
+            session.lastGameStartChips = session.balance;
+            session.lastGameStartedAt = Date.now();
             return {
               success: true,
               response: {
@@ -449,6 +455,9 @@ export abstract class GameHandler {
     sessionId: bigint,
     bet: bigint
   ): Record<string, unknown> {
+    session.lastGameBet = bet;
+    session.lastGameStartChips = session.balance;
+    session.lastGameStartedAt = Date.now();
     const response: Record<string, unknown> = {
       type: 'game_started',
       gameType: event.gameType ?? this.gameType,

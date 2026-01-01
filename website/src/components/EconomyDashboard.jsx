@@ -16,6 +16,20 @@ const EconomyDashboard = () => {
     updatedAt: null,
   });
   const [loading, setLoading] = useState(true);
+  const [publicData, setPublicData] = useState([]);
+  const [publicDistribution, setPublicDistribution] = useState({
+    gini: null,
+    top1Share: null,
+    players: 0,
+    updatedAt: null,
+  });
+  const [publicError, setPublicError] = useState(null);
+  const [publicLoading, setPublicLoading] = useState(false);
+
+  const opsBase =
+    (import.meta.env.VITE_OPS_URL || import.meta.env.VITE_ANALYTICS_URL || '').replace(/\/$/, '');
+  const snapshotUrl = (import.meta.env.VITE_PUBLIC_ECONOMY_SNAPSHOT_URL || '').trim() ||
+    (opsBase ? `${opsBase}/economy/snapshot` : '');
 
   useEffect(() => {
     if (connection.status !== 'connected' || !connection.client) return;
@@ -142,34 +156,78 @@ const EconomyDashboard = () => {
     };
   }, [connection.client, connection.status]);
 
-  if (connection.status !== 'connected') {
-    return (
-      <div className="text-gray-100 p-8 text-center bg-gray-950 min-h-screen">
-        {connection.status === 'missing_identity'
-          ? 'Missing VITE_IDENTITY — set identity to enable live analytics.'
-          : 'Connecting to live economy...'}
-      </div>
-    );
-  }
-  if (loading) return <div className="text-gray-100 p-8 text-center bg-gray-950 min-h-screen">Loading Analytics...</div>;
-  if (!data.length) return <div className="text-gray-100 p-8 text-center bg-gray-950 min-h-screen">No Data Available</div>;
+  useEffect(() => {
+    if (!snapshotUrl) return;
+    if (connection.status === 'connected') return;
+    let cancelled = false;
+    setPublicLoading(true);
+    fetch(snapshotUrl)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Snapshot fetch failed (${res.status})`);
+        return res.json();
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        const snapshots = payload?.data ?? payload?.snapshots ?? [];
+        const dist = payload?.distribution ?? {};
+        setPublicData(Array.isArray(snapshots) ? snapshots : []);
+        setPublicDistribution({
+          gini: dist.gini ?? null,
+          top1Share: dist.top1Share ?? null,
+          players: dist.players ?? 0,
+          updatedAt: dist.updatedAt ?? payload?.updatedAt ?? null,
+        });
+        setPublicError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setPublicError(err instanceof Error ? err.message : 'Snapshot unavailable');
+      })
+      .finally(() => {
+        if (!cancelled) setPublicLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshotUrl, connection.status]);
 
-  const last = data[data.length - 1];
-  const first = data[0];
+  const usingPublic = connection.status !== 'connected';
+  const effectiveData = usingPublic ? publicData : data;
+  const effectiveDistribution = usingPublic ? publicDistribution : distribution;
+
+  if (usingPublic) {
+    if (publicLoading) {
+      return <div className="text-gray-100 p-8 text-center bg-gray-950 min-h-screen">Loading Public Snapshot...</div>;
+    }
+    if (!effectiveData.length) {
+      return (
+        <div className="text-gray-100 p-8 text-center bg-gray-950 min-h-screen">
+          {publicError ?? 'Public snapshot unavailable.'}
+        </div>
+      );
+    }
+  } else {
+    if (loading) return <div className="text-gray-100 p-8 text-center bg-gray-950 min-h-screen">Loading Analytics...</div>;
+    if (!data.length) return <div className="text-gray-100 p-8 text-center bg-gray-950 min-h-screen">No Data Available</div>;
+  }
+
+  const last = effectiveData[effectiveData.length - 1];
+  const first = effectiveData[0];
   const elapsedSeconds = Math.max(1, (last.timestamp - first.timestamp) / 1000);
   const burnRate = ((last.total_burned - first.total_burned) / elapsedSeconds).toFixed(2);
   const supply = 1_000_000_000 + (last.total_issuance || 0) - (last.total_burned || 0);
   const tvl = last.pool_tvl_vusdt || 0;
   const lpPrice = last.lp_share_price_vusdt || 0;
-  const top1Share = distribution.top1Share !== null ? `${(distribution.top1Share * 100).toFixed(2)}%` : '—';
-  const gini = distribution.gini !== null ? distribution.gini.toFixed(3) : '—';
+  const top1Share = effectiveDistribution.top1Share !== null ? `${(effectiveDistribution.top1Share * 100).toFixed(2)}%` : '—';
+  const gini = effectiveDistribution.gini !== null ? effectiveDistribution.gini.toFixed(3) : '—';
+  const sourceLabel = usingPublic ? 'Public Snapshot' : 'Live';
 
   return (
     <div className="bg-gray-950 min-h-screen text-gray-100 p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-8">
         <header>
           <h1 className="text-4xl font-bold mb-2">Nullspace Analytics</h1>
-          <p className="text-gray-400">Real-time economic monitoring (Live)</p>
+          <p className="text-gray-400">Real-time economic monitoring ({sourceLabel})</p>
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -190,16 +248,16 @@ const EconomyDashboard = () => {
           <StatsCard title="Pool TVL" value={`$${tvl.toLocaleString()}`} subtext="vUSDT" trend="up" />
           <StatsCard title="LP Share Price" value={`$${lpPrice.toFixed(4)}`} subtext="vUSDT / LP" trend="up" />
           <StatsCard title="Top 1% Share" value={top1Share} subtext="Supply" />
-          <StatsCard title="Gini" value={gini} subtext={`Players ${distribution.players}`} />
+          <StatsCard title="Gini" value={gini} subtext={`Players ${effectiveDistribution.players}`} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <SupplyChart data={data} />
-          <IssuanceChart data={data} />
+          <SupplyChart data={effectiveData} />
+          <IssuanceChart data={effectiveData} />
         </div>
 
-        <PoolHealthChart data={data} />
-        <PnLChart data={data} />
+        <PoolHealthChart data={effectiveData} />
+        <PnLChart data={effectiveData} />
       </div>
     </div>
   );

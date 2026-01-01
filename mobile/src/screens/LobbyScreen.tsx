@@ -2,14 +2,14 @@
  * Lobby Screen - Jony Ive Redesigned
  * Game selection with balance display and minimal navigation
  */
-import { View, Text, StyleSheet, FlatList, Pressable, ListRenderItem, useWindowDimensions } from 'react-native';
-import { useCallback, useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, Pressable, ListRenderItem, useWindowDimensions, Linking, Share } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
 import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { COLORS, SPACING, TYPOGRAPHY, RADIUS, GAME_COLORS } from '../constants/theme';
 import { haptics } from '../services/haptics';
 import { initializeNotifications } from '../services';
 import { useGameStore } from '../stores/gameStore';
-import { useGatewaySession } from '../hooks';
+import { useEntitlements, useGatewaySession } from '../hooks';
 import type { LobbyScreenProps } from '../navigation/types';
 import type { GameId } from '../types';
 
@@ -20,6 +20,17 @@ interface GameInfo {
   emoji: string;
   color: string;
 }
+
+type LeagueEntry = {
+  publicKey: string;
+  points: number;
+};
+
+type ReferralSummary = {
+  code: string | null;
+  referrals: number;
+  qualified: number;
+};
 
 const GAMES: GameInfo[] = [
   {
@@ -104,14 +115,101 @@ export function LobbyScreen({ navigation }: LobbyScreenProps) {
     faucetMessage,
   } = useGameStore();
   const { requestFaucet, connectionState } = useGatewaySession();
+  const { entitlements, loading: entitlementsLoading } = useEntitlements();
+  const [leagueEntries, setLeagueEntries] = useState<LeagueEntry[]>([]);
+  const [leagueError, setLeagueError] = useState<string | null>(null);
+  const [referralSummary, setReferralSummary] = useState<ReferralSummary | null>(null);
+  const [referralError, setReferralError] = useState<string | null>(null);
+  const [referralLoading, setReferralLoading] = useState(false);
   const faucetDisabled = faucetStatus === 'pending';
   const balanceLabel = balanceReady ? `$${balance.toLocaleString()}` : '...';
   const shortKey = publicKey ? `${publicKey.slice(0, 6)}...${publicKey.slice(-4)}` : 'Not connected';
   const networkLabel = connectionState === 'connected' ? 'Testnet Online' : connectionState === 'connecting' ? 'Connecting' : 'Offline';
+  const activeEntitlement = entitlements.find((ent) => ['active', 'trialing'].includes(ent.status));
+  const tierLabel = activeEntitlement ? activeEntitlement.tier.toUpperCase() : 'Free';
+  const billingUrl = process.env.EXPO_PUBLIC_BILLING_URL ?? process.env.EXPO_PUBLIC_WEBSITE_URL ?? '';
+  const opsBase = process.env.EXPO_PUBLIC_OPS_URL ?? process.env.EXPO_PUBLIC_ANALYTICS_URL ?? '';
+  const inviteBase = process.env.EXPO_PUBLIC_WEBSITE_URL ?? '';
 
   useEffect(() => {
-    void initializeNotifications();
-  }, []);
+    void initializeNotifications(publicKey);
+  }, [publicKey]);
+
+  useEffect(() => {
+    if (!opsBase) return;
+    const controller = new AbortController();
+    setLeagueError(null);
+
+    const getWeekKey = (date: Date) => {
+      const day = (date.getUTCDay() + 6) % 7;
+      const thursday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+      thursday.setUTCDate(date.getUTCDate() - day + 3);
+      const yearStart = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1));
+      const week = Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+      return `${thursday.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+    };
+
+    const fetchLeaderboard = async () => {
+      try {
+        const weekKey = getWeekKey(new Date());
+        const response = await fetch(`${opsBase.replace(/\\/$/, '')}/league/leaderboard?week=${encodeURIComponent(weekKey)}`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`Leaderboard failed (${response.status})`);
+        const data = await response.json();
+        const entries = Array.isArray(data?.entries) ? data.entries : [];
+        setLeagueEntries(entries.slice(0, 3));
+      } catch (err) {
+        if (err?.name === 'AbortError') return;
+        setLeagueEntries([]);
+        setLeagueError(err instanceof Error ? err.message : 'League unavailable');
+      }
+    };
+
+    void fetchLeaderboard();
+    return () => controller.abort();
+  }, [opsBase]);
+
+  useEffect(() => {
+    if (!opsBase) return;
+    if (!publicKey) return;
+    const controller = new AbortController();
+    setReferralLoading(true);
+    setReferralError(null);
+
+    const fetchReferral = async () => {
+      try {
+        const codeRes = await fetch(`${opsBase.replace(/\\/$/, '')}/referrals/code`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ publicKey }),
+          signal: controller.signal,
+        });
+        if (!codeRes.ok) throw new Error(`Referral code failed (${codeRes.status})`);
+        const codeData = await codeRes.json();
+        const summaryRes = await fetch(
+          `${opsBase.replace(/\\/$/, '')}/referrals/summary?publicKey=${encodeURIComponent(publicKey)}`,
+          { signal: controller.signal }
+        );
+        if (!summaryRes.ok) throw new Error(`Referral summary failed (${summaryRes.status})`);
+        const summaryData = await summaryRes.json();
+        setReferralSummary({
+          code: codeData?.code ?? summaryData?.code ?? null,
+          referrals: Number(summaryData?.referrals ?? 0),
+          qualified: Number(summaryData?.qualified ?? 0),
+        });
+      } catch (err) {
+        if (err?.name === 'AbortError') return;
+        setReferralSummary(null);
+        setReferralError(err instanceof Error ? err.message : 'Referral unavailable');
+      } finally {
+        setReferralLoading(false);
+      }
+    };
+
+    void fetchReferral();
+    return () => controller.abort();
+  }, [opsBase, publicKey]);
 
   const handleGameSelect = useCallback((gameId: GameId) => {
     haptics.selectionChange();
@@ -122,6 +220,20 @@ export function LobbyScreen({ navigation }: LobbyScreenProps) {
     if (faucetDisabled) return;
     requestFaucet();
   }, [faucetDisabled, requestFaucet]);
+
+  const handleManageMembership = useCallback(() => {
+    if (!billingUrl) return;
+    void Linking.openURL(billingUrl);
+  }, [billingUrl]);
+
+  const handleShareInvite = useCallback(() => {
+    if (!referralSummary?.code) return;
+    const base = inviteBase ? inviteBase.replace(/\\/$/, '') : '';
+    const url = base ? `${base}/?ref=${referralSummary.code}` : referralSummary.code;
+    void Share.share({
+      message: base ? `Join me on Nullspace: ${url}` : `My referral code: ${url}`,
+    });
+  }, [inviteBase, referralSummary]);
 
   const numColumns = width >= 900 ? 4 : width >= 700 ? 3 : 2;
 
@@ -206,6 +318,73 @@ export function LobbyScreen({ navigation }: LobbyScreenProps) {
         </View>
       </View>
 
+      <View style={styles.membershipCard}>
+        <View>
+          <Text style={styles.rewardsLabel}>Membership</Text>
+          <Text style={styles.rewardsValue}>{entitlementsLoading ? 'Checking...' : tierLabel}</Text>
+          <Text style={styles.rewardsSub}>
+            {activeEntitlement ? 'Freeroll boosted' : 'Unlock daily freeroll boosts'}
+          </Text>
+        </View>
+        {billingUrl ? (
+          <Pressable style={styles.membershipButton} onPress={handleManageMembership}>
+            <Text style={styles.membershipButtonText}>{activeEntitlement ? 'Manage' : 'Join'}</Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      {opsBase ? (
+        <View style={styles.leagueCard}>
+          <View style={styles.leagueHeader}>
+            <Text style={styles.rewardsLabel}>Weekly league</Text>
+            <Text style={styles.rewardsSub}>Top players this week</Text>
+          </View>
+          {leagueEntries.length > 0 ? (
+            leagueEntries.map((entry, index) => {
+              const masked = `${entry.publicKey.slice(0, 6)}...${entry.publicKey.slice(-4)}`;
+              const isYou = publicKey && entry.publicKey.toLowerCase() === publicKey.toLowerCase();
+              return (
+                <View key={entry.publicKey} style={styles.leagueRow}>
+                  <Text style={[styles.leagueRank, isYou && styles.leagueHighlight]}>#{index + 1}</Text>
+                  <Text style={[styles.leagueKey, isYou && styles.leagueHighlight]}>
+                    {masked}{isYou ? ' (you)' : ''}
+                  </Text>
+                  <Text style={styles.leaguePoints}>{Math.floor(entry.points).toLocaleString()}</Text>
+                </View>
+              );
+            })
+          ) : (
+            <Text style={styles.leagueEmpty}>{leagueError ?? 'No league data yet.'}</Text>
+          )}
+        </View>
+      ) : null}
+
+      {opsBase && publicKey ? (
+        <View style={styles.referralCard}>
+          <View style={styles.leagueHeader}>
+            <Text style={styles.rewardsLabel}>Invite friends</Text>
+            <Text style={styles.rewardsSub}>Share your referral code</Text>
+          </View>
+          {referralLoading ? (
+            <Text style={styles.leagueEmpty}>Loading referral…</Text>
+          ) : referralSummary ? (
+            <>
+              <Text style={styles.referralCode}>{referralSummary.code ?? '—'}</Text>
+              <Text style={styles.referralStats}>
+                Referrals: {referralSummary.referrals} · Qualified: {referralSummary.qualified}
+              </Text>
+              {referralSummary.code ? (
+                <Pressable style={styles.referralButton} onPress={handleShareInvite}>
+                  <Text style={styles.referralButtonText}>Share invite</Text>
+                </Pressable>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.leagueEmpty}>{referralError ?? 'Referral unavailable.'}</Text>
+          )}
+        </View>
+      ) : null}
+
       {/* Games Grid */}
       <FlatList
         key={`games-${numColumns}`}
@@ -277,6 +456,98 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
+  },
+  membershipCard: {
+    marginHorizontal: SPACING.lg,
+    marginBottom: SPACING.lg,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.md,
+  },
+  membershipButton: {
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary,
+  },
+  membershipButtonText: {
+    ...TYPOGRAPHY.label,
+    color: '#FFFFFF',
+  },
+  leagueCard: {
+    marginHorizontal: SPACING.lg,
+    marginBottom: SPACING.lg,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  leagueHeader: {
+    marginBottom: SPACING.sm,
+  },
+  leagueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+  },
+  leagueRank: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    width: 32,
+  },
+  leagueKey: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    flex: 1,
+  },
+  leaguePoints: {
+    ...TYPOGRAPHY.label,
+    color: COLORS.textPrimary,
+  },
+  leagueEmpty: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+  },
+  leagueHighlight: {
+    color: COLORS.primary,
+  },
+  referralCard: {
+    marginHorizontal: SPACING.lg,
+    marginBottom: SPACING.lg,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  referralCode: {
+    ...TYPOGRAPHY.h2,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.xs,
+  },
+  referralStats: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginBottom: SPACING.sm,
+  },
+  referralButton: {
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+  },
+  referralButtonText: {
+    ...TYPOGRAPHY.label,
+    color: '#FFFFFF',
   },
   rewardsHeader: {
     flexDirection: 'row',

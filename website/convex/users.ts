@@ -55,6 +55,22 @@ export const getUserByIdWithToken = query({
   },
 });
 
+export const getUserByPublicKey = query({
+  args: {
+    serviceToken: v.string(),
+    publicKey: v.string(),
+  },
+  returns: v.union(v.null(), userDoc),
+  handler: async (ctx, args) => {
+    requireServiceToken(args.serviceToken);
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_public_key", (q) => q.eq("publicKey", args.publicKey))
+      .unique();
+    return user ?? null;
+  },
+});
+
 export const upsertUser = mutation({
   args: {
     serviceToken: v.string(),

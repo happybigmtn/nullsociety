@@ -1,20 +1,32 @@
 function buildWeightedSteps(totalMps, steps) {
-  if (totalMps <= 0) {
-    throw new Error('totalMps must be > 0');
+  if (!Number.isFinite(totalMps) || totalMps <= 0 || !Number.isInteger(totalMps)) {
+    throw new Error('totalMps must be a positive integer');
   }
-  if (!steps.length) {
+  if (!Array.isArray(steps) || steps.length === 0) {
     throw new Error('steps required');
   }
 
-  const weightSum = steps.reduce((sum, step) => sum + step.weight, 0);
+  const normalized = steps.map((step, idx) => {
+    const blockDelta = Number(step.blockDelta);
+    const weight = Number(step.weight);
+    if (!Number.isFinite(blockDelta) || !Number.isInteger(blockDelta) || blockDelta <= 0) {
+      throw new Error(`step ${idx} blockDelta must be a positive integer`);
+    }
+    if (!Number.isFinite(weight) || weight <= 0) {
+      throw new Error(`step ${idx} weight must be > 0`);
+    }
+    return { blockDelta, weight };
+  });
+
+  const weightSum = normalized.reduce((sum, step) => sum + step.weight, 0);
   if (weightSum <= 0) {
     throw new Error('weights must be > 0');
   }
 
   let remainingMps = totalMps;
   const built = [];
-  steps.forEach((step, idx) => {
-    const isLast = idx === steps.length - 1;
+  normalized.forEach((step, idx) => {
+    const isLast = idx === normalized.length - 1;
     const stepTotalMps = isLast
       ? remainingMps
       : Math.floor((totalMps * step.weight) / weightSum);

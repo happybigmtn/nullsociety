@@ -4,3 +4,10 @@ export * from './encode.js';
 export * from './decode.js';
 export * from './websocket.js';
 export * from './validation.js';
+export {
+  GAME_CODECS,
+  GAME_MOVE_SCHEMAS,
+  GAME_CODECS_BY_NAME,
+  encodeGameMove,
+} from './games/index.js';
+export type { GameCodec, GatewayGameMove } from './games/index.js';

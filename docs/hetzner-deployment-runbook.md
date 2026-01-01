@@ -85,9 +85,13 @@ Copy unit files from `ops/systemd/` to `/etc/systemd/system/` and set
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable nullspace-simulator nullspace-node nullspace-auth \
-  nullspace-gateway nullspace-website
+  nullspace-gateway nullspace-website nullspace-ops
 sudo systemctl start nullspace-simulator nullspace-node nullspace-auth \
-  nullspace-gateway nullspace-website
+  nullspace-gateway nullspace-website nullspace-ops
+
+# Optional: public economy snapshot generator
+sudo systemctl enable nullspace-economy-snapshot.timer
+sudo systemctl start nullspace-economy-snapshot.timer
 ```
 
 ## 8) Postgres + backups

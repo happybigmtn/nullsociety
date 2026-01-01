@@ -163,6 +163,9 @@ export const STORAGE_KEYS = {
   // Notifications
   PUSH_TOKEN: 'notifications.push_token',
 
+  // Analytics
+  ANALYTICS_DEVICE_ID: 'analytics.device_id',
+
   // Rewards
   REWARDS_LAST_CLAIM: 'rewards.last_claim',
   REWARDS_STREAK: 'rewards.streak',

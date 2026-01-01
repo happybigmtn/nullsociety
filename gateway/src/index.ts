@@ -12,6 +12,7 @@ import { SubmitClient } from './backend/index.js';
 import { GameType } from './codec/index.js';
 import { ErrorCodes, createError } from './types/errors.js';
 import { OutboundMessageSchema } from '@nullspace/protocol/mobile';
+import { trackGatewayFaucet, trackGatewayResponse, trackGatewaySession } from './ops.js';
 
 // Configuration from environment
 const PORT = parseInt(process.env.GATEWAY_PORT || '9010', 10);
@@ -182,6 +183,7 @@ async function handleMessage(ws: WebSocket, rawData: Buffer): Promise<void> {
       balance: session.balance.toString(),
       message: 'FAUCET_CLAIMED',
     });
+    trackGatewayFaucet(session, amount);
     return;
   }
 
@@ -232,6 +234,7 @@ async function handleMessage(ws: WebSocket, rawData: Buffer): Promise<void> {
     if (result.response) {
       console.log(`[Gateway] Sending response:`, JSON.stringify(result.response).slice(0, 200));
       send(ws, result.response);
+      trackGatewayResponse(session, result.response as Record<string, unknown>);
     }
   } else if (result.error) {
     sendError(ws, result.error.code, result.error.message);
@@ -273,6 +276,7 @@ wss.on('connection', async (ws: WebSocket, req) => {
       registered: session.registered,
       hasBalance: session.hasBalance,
     });
+    trackGatewaySession(session);
 
     // Handle messages
     ws.on('message', async (data: Buffer) => {

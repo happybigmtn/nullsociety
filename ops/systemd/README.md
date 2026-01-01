@@ -8,14 +8,20 @@ Common setup:
 - Install binaries under `/usr/local/bin/` and the repo under `/opt/nullspace`.
 - Create `/etc/nullspace/` env files per service (examples in `configs/`).
 - Build the auth service (`npm run build` in `services/auth`) before starting.
+- Build the ops service (`npm run build` in `services/ops`) before starting.
 - Install gateway dependencies (`pnpm -C gateway install`) before starting.
 - Use `website/nginx.ssl.conf` (or your own) as `/etc/nginx/nullspace.conf`.
+- Optional: set up the economy snapshot timer for public dashboards.
 
 Enable and start:
 ```
 sudo systemctl daemon-reload
 sudo systemctl enable nullspace-simulator nullspace-node nullspace-auth \
-  nullspace-gateway nullspace-website
+  nullspace-gateway nullspace-website nullspace-ops
 sudo systemctl start nullspace-simulator nullspace-node nullspace-auth \
-  nullspace-gateway nullspace-website
+  nullspace-gateway nullspace-website nullspace-ops
+
+# Optional: public economy snapshot generator
+sudo systemctl enable nullspace-economy-snapshot.timer
+sudo systemctl start nullspace-economy-snapshot.timer
 ```

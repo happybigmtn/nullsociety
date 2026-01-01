@@ -17,17 +17,58 @@ if [ ! -f website/.env.local ]; then
   fi
 fi
 
+# Optional: enable ops analytics + leaderboards in the UI
+# echo "VITE_OPS_URL=http://127.0.0.1:9020" >> website/.env.local
+
 # Read required vars from website/.env.local (avoid `source` because keys can contain `|`)
 VITE_IDENTITY=$(awk -F= '/^VITE_IDENTITY=/{print $2}' website/.env.local)
 CONVEX_SELF_HOSTED_URL=$(awk -F= '/^CONVEX_SELF_HOSTED_URL=/{print $2}' website/.env.local)
 CONVEX_SELF_HOSTED_ADMIN_KEY=$(awk -F= '/^CONVEX_SELF_HOSTED_ADMIN_KEY=/{print $2}' website/.env.local)
 
+missing=()
 if [ -z "${VITE_IDENTITY}" ]; then
-  echo "Missing VITE_IDENTITY in website/.env.local"
+  missing+=("VITE_IDENTITY (website/.env.local)")
+fi
+if [ -z "${CONVEX_SELF_HOSTED_URL}" ]; then
+  missing+=("CONVEX_SELF_HOSTED_URL (website/.env.local)")
+fi
+if [ -z "${CONVEX_SELF_HOSTED_ADMIN_KEY}" ]; then
+  missing+=("CONVEX_SELF_HOSTED_ADMIN_KEY (website/.env.local)")
+fi
+if [ "${#missing[@]}" -ne 0 ]; then
+  echo "Missing required configuration:"
+  printf '  - %s\n' "${missing[@]}"
   exit 1
 fi
-if [ -z "${CONVEX_SELF_HOSTED_URL}" ] || [ -z "${CONVEX_SELF_HOSTED_ADMIN_KEY}" ]; then
-  echo "Missing CONVEX_SELF_HOSTED_URL or CONVEX_SELF_HOSTED_ADMIN_KEY in website/.env.local"
+
+# Build simulator + dev-executor if missing
+if [ ! -f target/release/nullspacje-simulator ] || [ ! -f target/release/dev-executor ]; then
+  echo "Building nullspace-simulator and dev-executor..."
+  cargo build --release --bin nullspace-simulator --bin dev-executor
+fi
+
+# Derive casino admin public key from env or local key file
+derive_admin_public() {
+  node -e "const fs=require('fs'); const { ed25519 } = require('@noble/curves/ed25519'); const hex=fs.readFileSync(process.argv[1],'utf8').trim(); if (!hex) process.exit(1); const pk=ed25519.getPublicKey(Buffer.from(hex,'hex')); console.log(Buffer.from(pk).toString('hex'));" "$1"
+}
+
+if [ -z "${CASINO_ADMIN_PUBLIC_KEY_HEX:-}" ] && [ -f configs/local/casino-admin-key.hex ]; then
+  if ! command -v node > /dev/null 2>&1; then
+    echo "node is required to derive the casino admin public key."
+    exit 1
+  fi
+  CASINO_ADMIN_PUBLIC_KEY_HEX=$(derive_admin_public configs/local/casino-admin-key.hex)
+fi
+
+if [ -z "${CASINO_ADMIN_PUBLIC_KEY_HEX:-}" ]; then
+  echo "Missing CASINO_ADMIN_PUBLIC_KEY_HEX. Set it or generate configs/local/casino-admin-key.hex (scripts/generate-admin-key.sh)."
+  exit 1
+fi
+export CASINO_ADMIN_PUBLIC_KEY_HEX
+
+# Ensure Convex env file exists before starting
+if [ ! -f docker/convex/.env ]; then
+  echo "Missing docker/convex/.env. Create it before starting Convex."
   exit 1
 fi
 
@@ -38,6 +79,21 @@ docker compose --env-file docker/convex/.env -f docker/convex/docker-compose.yml
 CONVEX_SERVICE_TOKEN=$(awk -F= '/^CONVEX_SERVICE_TOKEN=/{print $2}' docker/convex/.env)
 STRIPE_SECRET_KEY=$(awk -F= '/^STRIPE_SECRET_KEY=/{print $2}' docker/convex/.env)
 STRIPE_WEBHOOK_SECRET=$(awk -F= '/^STRIPE_WEBHOOK_SECRET=/{print $2}' docker/convex/.env)
+missing=()
+if [ -z "${CONVEX_SERVICE_TOKEN}" ]; then
+  missing+=("CONVEX_SERVICE_TOKEN (docker/convex/.env)")
+fi
+if [ -z "${STRIPE_SECRET_KEY}" ]; then
+  missing+=("STRIPE_SECRET_KEY (docker/convex/.env)")
+fi
+if [ -z "${STRIPE_WEBHOOK_SECRET}" ]; then
+  missing+=("STRIPE_WEBHOOK_SECRET (docker/convex/.env)")
+fi
+if [ "${#missing[@]}" -ne 0 ]; then
+  echo "Missing required Convex configuration:"
+  printf '  - %s\n' "${missing[@]}"
+  exit 1
+fi
 (
   cd website
   CONVEX_SELF_HOSTED_URL="${CONVEX_SELF_HOSTED_URL}" CONVEX_SELF_HOSTED_ADMIN_KEY="${CONVEX_SELF_HOSTED_ADMIN_KEY}" \
@@ -57,12 +113,15 @@ ALLOW_HTTP_NO_ORIGIN=1 ALLOW_WS_NO_ORIGIN=1 ALLOWED_HTTP_ORIGINS="${ALLOWED_ORIG
   nohup ./target/release/nullspace-simulator --host 127.0.0.1 --port 8080 --identity "${VITE_IDENTITY}" > simulator.log 2>&1 &
 echo $! > simulator.pid
 
-CASINO_ADMIN_PUBLIC_KEY_HEX=ae2817b9b6a4038dac68cfc9f109b1d800a56b86eae035e616f901ea96a0565d \
+CASINO_ADMIN_PUBLIC_KEY_HEX="${CASINO_ADMIN_PUBLIC_KEY_HEX}" \
   nohup ./target/release/dev-executor --url http://127.0.0.1:8080 --identity "${VITE_IDENTITY}" --block-interval-ms 100 > executor.log 2>&1 &
 echo $! > executor.pid
 
 # Start auth service
 ( cd services/auth && nohup npm run dev > ../../auth.log 2>&1 & echo $! > ../../auth.pid )
+
+# Start ops service (analytics + league + CRM)
+( cd services/ops && nohup npm run dev > ../../ops.log 2>&1 & echo $! > ../../ops.pid )
 
 # Start website (UI)
 ( cd website && nohup npm run dev -- --host 127.0.0.1 --port "${WEB_PORT}" > ../website.log 2>&1 & echo $! > ../website.pid )
@@ -84,18 +143,19 @@ wait_for() {
 
 wait_for "simulator" "http://127.0.0.1:8080/healthz" 20 || true
 wait_for "auth" "http://127.0.0.1:4000/healthz" 20 || true
+wait_for "ops" "http://127.0.0.1:9020/healthz" 20 || true
 wait_for "web" "http://127.0.0.1:${WEB_PORT}" 120 || true
 
 echo "UI: http://127.0.0.1:${WEB_PORT}"
 
 echo "Streaming logs (Ctrl+C to stop viewing; services keep running)."
-tail -f simulator.log executor.log auth.log website.log
+tail -f simulator.log executor.log auth.log ops.log website.log
 ```
 
 Stop everything:
 
 ```bash
-for pidfile in simulator.pid executor.pid auth.pid website.pid; do
+for pidfile in simulator.pid executor.pid auth.pid ops.pid website.pid; do
   if [ -f "$pidfile" ]; then kill "$(cat "$pidfile")" 2>/dev/null || true; fi
 done
 ```

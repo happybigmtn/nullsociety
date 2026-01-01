@@ -1,12 +1,14 @@
-import React, { Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import React, { Suspense, lazy, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import CasinoApp from './CasinoApp';
 import { isFeatureEnabled } from './services/featureFlags';
 import { ToastHost } from './components/ui/ToastHost';
+import { captureReferralFromSearch, claimReferralIfReady } from './services/referrals';
 
 const AppLayout = lazy(() => import('./components/AppLayout'));
 const ChainConnectionLayout = lazy(() => import('./components/ChainConnectionLayout'));
 const EconomyDashboard = lazy(() => import('./components/EconomyDashboard'));
+const OpsAnalyticsDashboard = lazy(() => import('./components/OpsAnalyticsDashboard'));
 const EconomyApp = lazy(() => import('./EconomyApp'));
 const StakingApp = lazy(() => import('./StakingApp'));
 const BridgeApp = lazy(() => import('./BridgeApp'));
@@ -25,10 +27,24 @@ const TokensPage = lazy(() => import('./explorer/TokensPage'));
 const EconomyRoute = () => (isFeatureEnabled('new_economy_ui') ? <EconomyApp /> : <LegacyEconomyApp />);
 const StakingRoute = () => (isFeatureEnabled('new_staking_ui') ? <StakingApp /> : <LegacyStakingApp />);
 
+const ReferralListener = () => {
+  const location = useLocation();
+  useEffect(() => {
+    void captureReferralFromSearch(location.search);
+  }, [location.search]);
+  useEffect(() => {
+    const handler = () => void claimReferralIfReady();
+    window.addEventListener('focus', handler);
+    return () => window.removeEventListener('focus', handler);
+  }, []);
+  return null;
+};
+
 function App() {
   return (
     <BrowserRouter>
       <ToastHost />
+      <ReferralListener />
       <Suspense
         fallback={
           <div className="min-h-screen bg-terminal-black text-white flex items-center justify-center font-mono">
@@ -39,8 +55,9 @@ function App() {
         <Routes>
           <Route path="/" element={<CasinoApp />} />
           <Route element={<AppLayout />}>
-            <Route path="economy" element={<EconomyDashboard />} />
-            <Route element={<ChainConnectionLayout />}>
+          <Route path="economy" element={<EconomyDashboard />} />
+          <Route path="analytics" element={<OpsAnalyticsDashboard />} />
+          <Route element={<ChainConnectionLayout />}>
               <Route path="swap" element={<EconomyRoute />} />
               <Route path="borrow" element={<EconomyRoute />} />
               <Route path="stake" element={<StakingRoute />} />

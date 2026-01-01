@@ -54,6 +54,15 @@ export interface Session {
   /** Last faucet claim timestamp (ms) */
   lastFaucetAt?: number;
 
+  /** Last bet amount (for analytics) */
+  lastGameBet?: bigint;
+
+  /** Balance before current game started (for analytics) */
+  lastGameStartChips?: bigint;
+
+  /** Timestamp when game started (ms) */
+  lastGameStartedAt?: number;
+
   /** WebSocket client for backend updates (optional, created after registration) */
   updatesClient?: UpdatesClient;
 

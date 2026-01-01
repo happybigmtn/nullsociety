@@ -1,9 +1,8 @@
-# Economy Design: Phase 1 Island -> Phase 2 Convertibility
+# Economy Design: Testnet → Token Launch → Rolling CCAs
 
-This document defines the Phase 1 and Phase 2 economic systems, with explicit
-capital controls in Phase 1 and external convertibility in Phase 2. It is
-grounded in the current codebase primitives and highlights the gaps needed to
-complete the vision.
+This document defines the pre-token launch window (testnet → end of the first CCA) and the
+rolling CCA program (10 auctions over 30 months). It is grounded in current codebase
+primitives and highlights the gaps needed to complete the vision.
 
 Related references:
 - `liquidity.md` (existing liquidity and token distribution roadmap)
@@ -18,11 +17,21 @@ Related references:
   external convertibility.
 - Defend against sybil farming and "down only" price dynamics.
 - Create a credible, auditable price discovery process before Uniswap launch.
-- Make Phase 2 convertibility sustainable and aligned with long-term staking
+- Make convertibility sustainable and aligned with long-term staking
   rewards (real USDT distribution).
-- Retire up to 20m USDT of vUSDT debt via Phase 2 recovery pool proceeds.
+- Retire up to 10m USDT of vUSDT debt via a recovery pool funded by 80% of sell
+  tax (CCA program target: 10% on RNG sales), with 20% routed to the
+  operating budget; after the 10m threshold, 80% of sell tax flows to RNG
+  stakers.
+
+## Timeline
+- Testnet launch (T0).
+- First CCA starts at T0 + 3 months and runs ~1 month.
+- Token launch occurs at the end of the first CCA period.
+- Remaining 9 CCAs run quarterly; total program length is 30 months.
 
 ## Current Primitive Inventory (codebase reality)
+
 - RNG (internal): `Player.balances.chips`
 - Freeroll credits: tracked separately from RNG (non-transferable credits with
   vesting + expiry).
@@ -33,74 +42,88 @@ Related references:
   `HouseState.net_pnl`
 - House accounting: `net_pnl`, `accumulated_fees`, `total_burned`, `total_issuance`
 - Savings pool: deposit vUSDT to earn stability fee distribution.
-- Freeroll emissions: capped at 15% of total supply with Phase 2 auction gating.
+- Freeroll emissions: capped to support up to 25% bonus supply across the 10-CCA program (2.5% per auction).
 - Freeroll credit ledger: implemented (separate balance with vesting + expiry).
 
 ## Threat Model
+
 - Sybil farming: many accounts maximize freerolls and internal rewards.
 - "Down only" price: once external trading opens, early farmers dump.
 - vUSDT instability: no interest or liquidations means long-term debt risk.
 - AMM manipulation: low liquidity + no guards can distort price signals.
 - Debt spiral: cheap leverage + no debt ceiling can amplify volatility.
 
-## Phase 1 (Year 1) - Island Economy With Capital Controls
-Goal: build a self-contained economy that users engage with for utility and
-status, not immediate cash-out.
+## Pre-token Launch Window (Testnet → Token Launch)
+
+Build a self-contained economy that users engage with for utility and status,
+not immediate cash-out.
 
 ### Capital Controls (hard rules)
-- No external transfer or bridge in Phase 1.
+
+- No external transfer or bridge before token launch.
 - RNG/vUSDT are internal-only balances.
 - Limits on daily net sell and swap notional.
 - Convertibility caps tied to account age, stake, or activity history.
 
 ### Monetary Policy Framework
+
 Sources (emissions):
-- Freeroll credits (up to 15% of supply) tracked in Phase 1; non-transferable
-  and redeemable only through Phase 2 auction participation (BOGO bonus).
-- Credits should be activity-bound (expire after prolonged inactivity) to
-  reduce farmed balance hoarding.
+
+- Freeroll credits (up to 25% of supply across the program) tracked pre-token launch;
+  non-transferable and redeemable only through CCA participation (BOGO bonus).
 - Credits are internal reward points; they do not increase transferable RNG
-  supply until redeemed in Phase 2.
+  supply until redeemed in the CCA program.
 - Optional incentive pools (LP rewards) funded by treasury only.
 - Membership perks increase opportunity, not direct minting.
 
 Sinks (removing RNG from circulation):
+
 - House edge on games (net PnL).
-- AMM sell tax burn.
+- AMM sell tax split: 80% to the recovery pool until $10m, 20% to operating
+  budget; after the threshold, 80% to RNG stakers and 20% to operating budget.
+- AMM buy tax: 10% during the CCA program (to encourage CCA bidding).
 - Vault stability fee (new).
 - Fees for optional premium services or cosmetics (future).
 
 Stability (vUSDT):
+
 - Introduce stability fee on vUSDT debt.
 - Add liquidation mechanics for LTV breaches.
 - Define oracle policy (AMM spot + guardrails).
 
 ### Concrete Parameter Proposals (initial values)
-These are starting values for Phase 1. All should be configurable and
+
+These are starting values for the pre-token launch window. All should be configurable and
 governed by admin policy with a clear audit log.
 
 Emissions and rewards:
+
 - Freeroll credits: target `ANNUAL_EMISSION_RATE_BPS=300` and
-  `REWARD_POOL_BPS=1500` (15% cap); credits convert to bonus RNG only via
-  Phase 2 auction participation.
+  `REWARD_POOL_BPS=1500` (cap should be revisited to support the 25% bonus program);
+  credits convert to bonus RNG only via CCA participation.
 - Credits are usable for internal tournaments/rewards but are non-transferable
-  and excluded from external convertibility until Phase 2.
+  and excluded from external convertibility until token launch.
 - Credit expiry: credits decay to 0 after 180 days of inactivity.
 - Membership perk: 10 freerolls/day; require account age >= 7 days to unlock
   full 10 (else cap at 3/day for the first week).
-- Reward vesting: 20% immediate, 80% linear over 180 days (per account).
+- Reward vesting: 0% immediate, 100% continuous over 30 months (per account).
 - Stake bonus for retention: +10% freeroll weight for accounts staking >= 30 days.
 
 AMM controls (RNG/vUSDT):
+
 - Base fee: 0.30% (existing).
-- Dynamic sell tax: 3% to 10% based on 7-day net outflow vs pool TVL.
+- Buy tax: 10% on RNG buys via the AMM during the CCA program (encourages CCA bidding).
+- Dynamic sell tax: 3% to 10% based on 7-day net outflow vs pool TVL
+  (pre-token launch); CCA program sets a fixed 10% sell tax split 80% to the recovery pool until
+  $10m (then 80% to RNG stakers), with 20% to operating budget.
   - <1% net outflow: 3%
   - 1-5% net outflow: 5% (current default)
-  - >5% net outflow: 7-10% (stepped)
+  - > 5% net outflow: 7-10% (stepped)
 - Per-account net sell cap: min(3% of account RNG balance, 0.15% of pool TVL) per day.
 - Per-account net buy cap: min(6% of account RNG balance, 0.30% of pool TVL) per day.
 
 Vault/vUSDT (stability):
+
 - Max LTV (borrow limit): 45% for mature stakers, 30% for new accounts
   (<7 days or no stake).
 - Liquidation threshold: 60% LTV (liquidate to 45% target).
@@ -110,132 +133,160 @@ Vault/vUSDT (stability):
   when above the ceiling.
 
 Capital control schedule:
+
 - Account age tiers:
   - Tier 0 (<7 days): reduced caps, no LP removal, borrow <= 30% LTV.
   - Tier 1 (7-30 days): standard caps, LP allowed, borrow <= 30% LTV.
   - Tier 2 (30+ days + stake >= 1k RNG): higher caps, borrow <= 45% LTV.
-- Convertibility remains disabled in Phase 1 (no bridge).
+- Convertibility remains disabled before token launch (no bridge).
 
 Down-only mitigation toolkit:
+
 - Reward vesting + account maturity tiers (prevents instant dump behavior).
 - Dynamic sell tax tied to net outflows.
 - Per-account net sell caps and borrow caps.
 - Stability fee + liquidation + debt ceiling to prevent debt spirals.
 - Treasury buyback and burn using accumulated fees during severe sell pressure.
-- Freeroll credits redeemable only via auction, with bonus vesting in Phase 2.
+- Freeroll credits redeemable only via auction, with bonus vesting over a continuous
+  3-month schedule.
 
-### Remaining DeFi Gaps (Phase 1)
-1) Optional auction bootstrap finalization (if we want a locked closing price for Phase 2).
+### Remaining DeFi Gaps (pre-token launch window)
 
-### Sybil Mitigation Strategy (Phase 1)
+1. Optional auction bootstrap finalization (if we want a locked closing price for token launch).
+
+### Sybil Mitigation Strategy (pre-token launch window)
+
 Economic controls:
+
 - Progressive reward caps by account age and stake.
 - Reward vesting: earned RNG unlocks over time, not immediately.
 - Minimum stake requirement for higher freeroll tiers or borrow limits.
 
 Behavioral controls:
+
 - "Proof of play" weighting for freeroll rewards (duration, outcomes, session count).
 - Rate-limit high-frequency farm behaviors (faucet, tournament churn).
 - Heuristic flags for multi-account patterns (device fingerprint + IP + timing).
-- Auction gating: allowlist or proof-of-play requirement for Phase 2 bonuses.
+- Auction gating: allowlist or proof-of-play requirement for CCA bonuses.
 
 Membership integration:
+
 - Membership increases freeroll opportunities, but does not mint RNG directly.
 - High-tier perks require stake lock or activity thresholds.
 
 ### Vesting + Account Maturity Tiers
-Vesting schedule proposal (Phase 1 rewards):
+
+Vesting schedule proposal (pre-token launch rewards):
+
 - Freeroll rewards:
-  - 20% immediate, 80% linear over 180 days as credit unlocks.
+  - 0% immediate, 100% continuous over 30 months as credit unlocks.
   - Claim frequency: daily.
-- Phase 2 bonus tokens:
-  - 0% immediate, 100% linear over 180 days after TGE.
+- CCA bonus tokens:
+  - 0% immediate, 100% continuous vest over 3 months after TGE.
 - Staking rewards:
-  - Immediate claim but with a 7-day cool-down for large claims (>10k RNG).
+  - 0% immediate, 100% continuous over 30 months (same schedule as freeroll rewards).
 - Vault liquidations:
   - Liquidator payout immediate; penalty share to stability pool.
 
 Account maturity tiers (anti-sybil):
+
 - Tier 0: age < 7 days OR no stake OR < 10 sessions played.
 - Tier 1: age 7-30 days AND stake >= 100 RNG OR >= 10 sessions played.
 - Tier 2: age > 30 days AND stake >= 1k RNG AND >= 50 sessions played.
 
 ### Internal Market Health Metrics
+
 Track and publish a dashboard (public or internal):
+
 - Emission vs burn per day and per epoch.
 - Gini coefficient / distribution concentration.
 - AMM liquidity depth and slippage at fixed sizes.
 - vUSDT outstanding debt and liquidation queue health.
 - Sybil indicators: suspicious account clusters, repeated patterns.
 
-### Phase 1 Marketing Plan (Simulation-first)
+### Marketing Plan (Simulation-first)
+
 Core message: "Earn and use RNG in a real economy before any external trading."
 
 Channels:
+
 - Weekly league tournaments with public leaderboards.
 - Creator-led events (streamer tournaments).
 - Transparent on-chain dashboards (issuance, burn, fees).
 - Seasonal themes and limited-time in-game rewards.
 
 Positioning:
+
 - Emphasize skill + participation, not airdrops.
-- Make it clear Phase 1 is a closed economy.
+- Make it clear the pre-token launch window is a closed economy.
 - Showcase internal DeFi (swap/borrow/stake) as gameplay depth.
 
-### Phase 1 Marketing Execution Plan (12 months)
+### Marketing Execution Plan (Months 0–12)
+
 Months 0-2 (Foundations):
+
 - Launch "Season 0" closed economy announcement.
 - Publish transparent emission/fee dashboards.
 - Run weekly tournaments with visible leaderboards.
 
 Months 3-6 (Growth):
+
 - Creator-led events and community leagues.
 - Release staking dashboards and LP incentives.
 - Introduce referral program tied to proof-of-play (avoid pure invite farming).
 
 Months 7-10 (Retention):
+
 - Seasonal resets with cosmetic rewards.
 - Highlight economic milestones (burn milestones, fee distributions).
 - Publish quarterly economic reports.
 
 Months 11-12 (Pre-convertibility):
-- Announce Phase 2 auction plan and timeline.
+
+- Announce the CCA program auction plan and timeline.
 - Run testnet CCA simulations and publish results.
 - Start KYC or allowlist strategy if required for auction compliance.
 
 Channels and content playbook:
+
 - Weekly "economy report" thread (issuance, burns, fees, liquidity depth).
 - Streamer spotlight tournaments (sponsorship budget, prize boosts).
 - "RNG Insider" newsletter (season recaps + roadmap milestones).
 - Transparent anti-sybil policy (publish rules and enforcement stats).
 
 KPIs:
+
 - DAU/WAU, tournament participation, retention (D7/D30).
 - Swap/borrow/LP conversion rates.
 - Distribution metrics (top 1% share of supply).
 - Sybil flags per 1k accounts.
 
-## Phase 2 - External Convertibility via Uniswap v4 CCA
-Goal: open limited, structured convertibility with a fair price discovery
-process and fee flow back to stakers.
+## Token Launch + Rolling CCAs (External Convertibility)
 
-### Phase 2 Architecture
-1) ERC-20 RNG on EVM (capped supply, treasury controlled).
-2) Uniswap v4 liquidity launcher (CCA) as the canonical pool on Ethereum:
-   - Auction allocation: 20% of total RNG (raised from 15%).
-   - Liquidity reserve: 10% of total RNG.
-   - Raised USDT seeds a v4 pool at the CCA clearing price.
-3) Convertibility bridge between Commonware and EVM:
-   - Lock/mint model with EVM canonical token (Phase 2 decision).
+Open limited, structured convertibility with fair price discovery and fee
+flow back to stakers.
+
+### CCA Program Architecture
+
+1. ERC-20 RNG on EVM (capped supply, treasury controlled).
+2. Uniswap v4 liquidity launcher (CCA) as the canonical pool on Ethereum:
+   - Quarterly CCAs (10 total); first auction 3 months after testnet launch; each auction sells 2.5% of total supply.
+   - Up to 2.5% additional supply per auction via freeroll BOGO credits.
+   - Raised USDT seeds a v4 pool at the CCA clearing price (100% of proceeds).
+   - RNG liquidity reserve for the pool is sourced from the developer-controlled allocation.
+3. Convertibility bridge between Commonware and EVM:
+   - Lock/mint model with EVM canonical token (token launch decision).
    - Caps, delays, and emergency pause.
-4) Freeroll bonus pool (Phase 2 only):
-   - Up to 15% of total RNG reserved for a "buy 1, get 1 free" bonus tied to
-     successful auction participation.
+4. Freeroll bonus pool (CCA program only):
+   - Up to 2.5% of total RNG per auction reserved for a "buy 1, get 1 free" bonus;
+     unclaimed bonus supply rolls into a treasury reserve.
 
 ### Liquidity Launcher CCA Mechanics (summary)
+
 The launcher uses a continuous clearing auction (CCA) for price discovery and
 automatically seeds a Uniswap v4 pool at the clearing price. Key mechanics to
 plan for (validate against repo before deployment):
+
 - Auction tranches: tokens are released in steps; each step clears at a single
   price based on aggregate bids; tranche sizes should be non-decreasing.
 - Bids: participants bid a max price with a spend amount; fills happen at the
@@ -255,154 +306,155 @@ plan for (validate against repo before deployment):
 - Token requirements: standard ERC-20; avoid rebasing or fee-on-transfer.
 
 ### Aztec-style Launch Lessons (apply to RNG)
-- Use a multi-day CCA to avoid sniping and gas wars.
+
+- Use a longer CCA window (quarterly cadence) to avoid sniping and gas wars.
 - Set a sensible floor price and large final tranche for robust price
   discovery.
 - Consider sybil controls for auction participation (allowlist, proof of
   personhood, or capped bids).
-- Seed liquidity with the reserve at clearing price; allocate excess proceeds
-  to the recovery pool and balance sheet to reduce systemic risk.
+- Seed liquidity with the reserve at clearing price; direct 100% of auction
+  proceeds into the v4 pool and fund the recovery pool via 80% of sell tax
+  until $10m (then 80% to RNG stakers), with 20% to operating budget.
 - Publish transparent post-mortems and dashboards around distribution and
   clearing prices.
 
-### Token Allocation Blueprint (Phase 2)
-This is a recommended starting point; the exact split should be finalized
-after a 12-month snapshot of Phase 1 balances.
-- 20% public CCA auction (price discovery + distribution).
-- 10% reserved for initial v4 liquidity.
-- Up to 15% freeroll bonus pool (BOGO for successful bids).
-- 30-40% for player balances and in-game rewards (earned in Phase 1).
-- 10-15% for treasury, ops, partnerships, and market-making.
-- 5-10% team/investor vesting (time-locked).
+### Token Allocation Blueprint (CCA program)
 
-Baseline example (totals 100%):
-- 20% auction + 10% liquidity + 15% freeroll bonus + 35% players + 15%
-  treasury + 5% team/investor.
+Updated distribution program for the CCA program.
 
-### Freeroll Bonus Mechanics (Phase 2)
-Constraint: a 15% bonus pool cannot fully cover a 20% auction with 1:1
-matching for every bidder. We need a deterministic rule:
-- Option A (pro-rata): every successful bidder receives a bonus ratio of
-  15%/20% = 0.75 RNG per 1 RNG purchased.
-- Option B (capped BOGO tranche): only the first 15% of auction sales qualify
-  for 1:1; remaining 5% are standard auction purchases.
-- Option C (tiered): 1:1 up to a per-wallet cap, pro-rata above the cap.
+- 25% base auction supply across 10 quarterly CCAs (2.5% of total supply per auction).
+- Up to 25% bonus supply via freeroll BOGO credits (up to 2.5% per auction); unclaimed bonus
+  supply rolls into a treasury reserve.
+- 50% developer-controlled supply (treasury/ops/liquidity/partnerships/insurance), which also
+  sources RNG liquidity reserves for the v4 pool.
 
-Recommended: Option A for fairness and to avoid race conditions. If marketing
-demands "buy 1, get 1 free," use Option B with clear tranche limits.
+### Freeroll Bonus Mechanics (CCA program)
+
+BOGO is 1:1 up to each bidder's available freeroll credits and the per-auction bonus cap.
 
 Eligibility requirements:
-- Only successful CCA bidders who also have Phase 1 freeroll credits.
+
+- Only successful CCA bidders who also have pre-token launch freeroll credits.
 - Bonus amount capped by each player's accumulated freeroll credits.
-- Bonus tokens vest 180 days to reduce immediate dumping.
+- Bonus tokens vest continuously over 3 months to reduce immediate dumping.
 
 Auction success criteria:
+
 - Minimum raise threshold must cover liquidity pairing for 10% RNG reserve.
-- If the auction fails to sell at least 50% of its allocation, delay
-  convertibility and run a second auction window or reduce the liquidity
-  reserve proportionally.
+- If an auction fails to clear its 2.5% allocation, roll the remainder into
+  the next scheduled auction or return it to the developer-controlled reserve.
 
 ### Bridge Architecture (Commonware <-> Ethereum)
+
 Canonical liquidity is on Ethereum; Commonware remains the fast game chain.
 Two viable models:
-1) Lock/mint (canonical EVM):
+
+1. Lock/mint (canonical EVM):
    - Players lock RNG on Commonware to mint ERC-20 RNG on Ethereum.
    - Reverse flow burns on EVM and unlocks on Commonware.
-2) Burn/mint (canonical Commonware):
+2. Burn/mint (canonical Commonware):
    - Commonware RNG is canonical; EVM RNG is wrapped.
 
-Decision (locked for Phase 2): canonical EVM token with Commonware as a wrapped
+Decision (locked for CCA program): canonical EVM token with Commonware as a wrapped
 representation (lock/mint) so Uniswap v4 is the source of price truth.
 
 Bridge rollout options:
-- One-time airdrop claim on EVM based on a Phase 1 snapshot.
+
+- One-time airdrop claim on EVM based on a pre-token launch snapshot.
 - Follow-up bridge for ongoing 1:1 conversion.
 - Initial bridge can be multisig-controlled with strict limits and monitoring,
   moving toward threshold or light-client validation over time.
 
-### Phase 2 Launch Flow (step-by-step)
-1) Finalize token supply and allocation from Phase 1 snapshot.
-2) Deploy ERC-20 RNG on Ethereum (no rebasing or transfer-fee behavior).
-3) Configure CCA parameters (auction schedule, floor price, bid caps).
-4) Run the multi-day CCA auction and publish live dashboards.
-5) Migrate to Uniswap v4 pool at final clearing price; lock LP NFT.
-6) Fund recovery pool and compute bonus distribution from CCA receipts.
-7) Activate bridge and claims for Phase 1 holders.
-8) Integrate price oracles (Uniswap TWAP) for in-game risk controls.
-9) Update on-chain policy caps to reflect real-world convertibility.
+### CCA Launch Flow (step-by-step)
 
-### Auction Proceeds Waterfall + Recovery Pool
-Use auction proceeds in a fixed order to keep the launch auditable:
-1) Liquidity seeding: allocate USDT equal to the final price of 10% RNG to
-   pair with the 10% RNG liquidity reserve.
-2) Recovery pool: allocate up to 20,000,000 USDT to retire vUSDT debt or
-   undercollateralized vaults.
-3) Remainder (if any): split across treasury runway, protocol insurance, and
-   optional extra liquidity or buyback/burn.
+1. Finalize token supply and allocation from the pre-token launch snapshot.
+2. Deploy ERC-20 RNG on Ethereum (no rebasing or transfer-fee behavior).
+3. Configure CCA parameters (auction schedule, floor price, bid caps).
+4. Run each CCA auction (quarterly cadence, starting 3 months after testnet launch) and publish live dashboards.
+5. Migrate to Uniswap v4 pool at final clearing price; lock LP NFT.
+6. Fund recovery pool via 80% of sell tax (CCA program fixed 10%) and compute bonus distribution from CCA receipts.
+7. Activate bridge and claims for pre-token launch holders.
+8. Integrate price oracles (Uniswap TWAP) for in-game risk controls.
+9. Update on-chain policy caps to reflect real-world convertibility.
 
-Recommended default split for remainder:
-- 50% treasury runway (ops + compliance + audits).
-- 30% protocol insurance reserve (coverage for edge cases and exploits).
-- 20% supplemental liquidity or buyback/burn based on volatility.
+### Auction Proceeds + Recovery Pool Funding
+
+- Auction proceeds: 100% of USDT raised in the CCA is paired with an RNG
+  liquidity reserve sourced from the developer-controlled allocation and
+  locked in the v4 pool.
+- Recovery pool: funded by 80% of the sell tax (CCA program fixed 10% on RNG
+  sales) until the 10,000,000 USDT target is reached; 20% goes to operating
+  budget. After the threshold, 80% of sell tax goes to RNG stakers and 20%
+  continues to the operating budget.
 
 Debt recovery mechanics:
+
 - One-time or time-bounded program to avoid ongoing moral hazard.
 - Eligibility filters: proof-of-play, account age, and stake lock.
 - Debt retirements at a haircut (e.g., borrower repays 30-50%) to preserve
   incentives and reduce strategic defaults.
-- If recovery pool funding is short of 20m, retire the remainder using
+- If recovery pool funding is short of 10m, retire the remainder using
   stability fees + a fixed share of house edge over a defined window.
 - Priority order: highest-risk (LTV) positions first, then oldest debt, to
   minimize systemic insolvency.
 
 ### Feasibility and Impact Assessment
-- BOGO constraint: a 15% bonus pool cannot cover a 20% auction at 1:1 for all
-  bidders; choose a deterministic allocation (pro-rata or capped tranche).
+
+- BOGO constraint: per-auction bonus supply is capped at 2.5% of total supply;
+  unclaimed bonus rolls into the treasury reserve.
 - Demand signal: effective price discount for eligible bidders can improve
   participation but increases circulating supply; vesting is required to
   reduce immediate sell pressure.
 - BOGO dilution: discount reduces net capital raised; floor price and tranche
-  sizing must still cover the 10% liquidity pairing plus recovery pool target.
-- Liquidity depth: seeding only the 10% reserve at the clearing price gives a
-  strong baseline, but a portion of excess proceeds may be needed if early
-  volatility is high.
+  sizing must still cover the per-auction liquidity pairing.
+- Liquidity depth: pairing the 10% RNG reserve with 100% of auction proceeds
+  provides the baseline; supplemental liquidity or buyback may still be needed
+  during early volatility.
 - Recovery pool: improves solvency and lowers systemic debt before
   convertibility; must be limited in scope to avoid encouraging risky leverage.
-- Debt repayment: if total vUSDT debt exceeds 20m USDT, remaining balance
+- Debt repayment: if total vUSDT debt exceeds 10m USDT, remaining balance
   should be retired via stability fees and treasury buybacks over time.
-- Treasury impact: excess proceeds should prioritize balance sheet strength
-  and protocol insurance before discretionary spending.
+- Treasury impact: with auction proceeds locked as liquidity, operating budget
+  relies on ongoing revenues, including 20% of sell tax plus house edge and
+  stability fees.
 - Auction failure risk: if the minimum raise threshold is not met, delay Phase
   2 convertibility rather than under-seeding liquidity or underfunding debt
   retirement.
 
 ### Fee Distribution (USDT to stakers)
+
 Design requirements:
+
 - Swap fees must flow to RNG stakers in USDT.
 - Distribution should be on-chain and auditable.
-- Treasury custody (LP NFT + fee streams) should live under the DUNA or its
+- Treasury custody (LP NFT + fee streams) should live under the legal entity or its
   governance-controlled multisig until staker governance is activated.
 
 Options:
+
 - EVM staking contract receives fees directly (stakers stake EVM RNG).
 - Bridge fees back to Commonware, distribute in vUSDT or wrapped USDT.
 - Hybrid: allow both EVM and Commonware staking, with mirrored accounting.
 
 ### Convertibility Ramp
+
 To prevent immediate dumping:
+
 - Gradual ramp of withdrawal limits.
-- Vesting schedule for Phase 1 rewards.
+- Vesting schedule for pre-token launch rewards.
 - Initial liquidity depth guarantees (treasury seeded).
 - Ongoing buyback and burn using house fees.
 
-### Phase 2 Parameter Proposals (CCA + Pool)
-- Auction duration: 10-28 days, daily tranches (6 weeks max if demand is low).
-- Allocation: 20% of total RNG supply.
-- Liquidity reserve: 10%.
-- Freeroll bonus pool: up to 15% (BOGO via pro-rata or capped tranche).
+### CCA Program Parameters (CCA + Pool)
+
+- Auction duration: set per-auction window on a quarterly cadence (10 auctions total, starting 3 months after testnet).
+- Allocation: 2.5% of total supply per auction (25% base across 10 auctions).
+- Liquidity reserve: sourced from the developer-controlled allocation (sizing
+  set per auction).
+- Freeroll bonus pool: up to 2.5% per auction (25% max across the program).
 - Minimum raise threshold: >= 50% of auction allocation sold (or explicit
   USDT floor to cover liquidity pairing).
-- Floor price: derived from Phase 1 internal economy valuation + buffer.
+- Floor price: derived from pre-token launch internal economy valuation + buffer.
 - Min bid: $25 USDT; max bid per wallet per day: $50k USDT (adjustable).
 - Price discovery: CCA clearing price sets initial pool price.
 - Pool fee: 0.30% with 100% of swap fees routed to RNG stakers (USDT).
@@ -411,89 +463,93 @@ To prevent immediate dumping:
   - Month 2: 0.25% per day.
   - Month 3+: 0.5% per day + raised caps for long-term stakers.
 
-## Implementation Steps (Phase 1 -> Phase 2)
+## Implementation Steps (Testnet → Token Launch → CCA Program)
 
-Phase 1 (0-12 months)
-1) Add treasury + vesting ledger on-chain.
-2) Add vUSDT stability fee + liquidation path.
-3) Add savings market (vUSDT focus); defer general lending until post-Phase 2.
-4) Add risk parameter governance (fee/tax/caps + debt ceiling).
-5) Add reward vesting, freeroll credit ledger, and anti-sybil gating.
-6) Ship full DeFi UX (swap, borrow, LP, stake, health metrics).
-7) Publish economic dashboards and transparency reports.
+Pre-token launch window (testnet → end of first CCA)
+1. Add treasury + vesting ledger on-chain.
+2. Add vUSDT stability fee + liquidation path.
+3. Add savings market (vUSDT focus); defer general lending until post-CCA program.
+4. Add risk parameter governance (fee/tax/caps + debt ceiling).
+5. Add reward vesting, freeroll credit ledger, and anti-sybil gating.
+6. Ship full DeFi UX (swap, borrow, LP, stake, health metrics).
+7. Publish economic dashboards and transparency reports.
 
-Phase 2 (convertibility)
-8) Canonical RNG domain chosen: EVM canonical with lock/mint bridge; Commonware bridge module + UI + relayer shipped.
-9) Build ERC-20 RNG + deploy CCA + v4 liquidity launcher.
-10) Implement fee distributor and staking payout (USDT).
-11) Launch convertibility with caps and monitoring.
-12) Expand liquidity pools to additional venues as needed.
+CCA program (convertibility)
+8. Canonical RNG domain chosen: EVM canonical with lock/mint bridge; Commonware bridge module + UI + relayer shipped.
+9. Build ERC-20 RNG + deploy CCA + v4 liquidity launcher.
+10. Implement fee distributor and staking payout (USDT).
+11. Launch convertibility with caps and monitoring.
+12. Expand liquidity pools to additional venues as needed.
 
 ## Codebase Remediation Plan (Implement 1-3 Above)
 
-### Phase 1 Remediation (domestic DeFi + sybil controls)
-1) Add economic policy state:
+### Pre-token Launch Remediation (domestic DeFi + sybil controls)
+
+1. Add economic policy state:
    - New `PolicyState` stored on-chain with fee bands, caps, LTV thresholds.
    - Files: `types/src/casino/economy.rs`, `types/src/execution.rs`
    - New admin instruction to update policy parameters.
    - Update defaults in `types/src/casino/constants.rs`.
-2) Add stability fee + interest accrual:
+2. Add stability fee + interest accrual:
    - Extend `Vault` with `debt_index` and `last_accrual_ts`.
    - Add `accrue_debt()` helper in `execution/src/layer/handlers/liquidity.rs`.
    - Introduce `StabilityFeeAccrued` event.
    - Add tests for debt accrual edge cases and rounding.
-3) Add liquidations:
+3. Add liquidations:
    - Add instruction `LiquidateVault { target }`.
    - Implement partial liquidation to target LTV (45%).
    - Add `VaultLiquidated` event (penalty split + pool updates).
    - Add oracle guardrails (EWMA price + bootstrap clamps).
-4) Add savings market (vUSDT):
+4. Add savings market (vUSDT):
    - New `SavingsAccount` state keyed by player.
    - Instructions: `DepositSavings`, `WithdrawSavings`, `ClaimSavingsYield`.
    - Yield funded by stability fees + portion of AMM fees.
-5) Add vesting ledger for rewards:
+5. Add vesting ledger for rewards:
    - New `VestingAccount` (per-player) with unlock schedule.
    - Freeroll and staking rewards mint into vesting by default.
    - New `ClaimVested` instruction and `RewardsVested` event.
    - Integrate vesting checks in `execution/src/layer/handlers/casino.rs`.
-6) Add freeroll credit ledger and auction eligibility:
-   - Track Phase 1 freeroll credits (non-transferable).
-   - Enforce 15% global cap and per-account limits.
-   - Record eligible bonus amount for Phase 2 BOGO claims.
-7) Add sybil controls in execution layer:
+6. Add freeroll credit ledger and auction eligibility:
+   - Track pre-token launch freeroll credits (non-transferable).
+   - Enforce 25% global cap and per-account limits.
+   - Record eligible bonus amount for CCA BOGO claims.
+7. Add sybil controls in execution layer:
    - Track account age, session count, and stake.
    - Enforce caps in `handle_swap`, `handle_borrow_usdt`, `handle_casino_join_tournament`.
-8) UI updates:
+8. UI updates:
    - Add savings panel and vesting view.
    - Show dynamic caps, LTV health, interest rate, and penalties.
    - Update `website/src/EconomyApp.tsx` + related panels.
    - Add policy warnings and maturity tier status in the UI.
-9) Metrics + dashboards:
+9. Metrics + dashboards:
    - Emit events for all economic actions.
    - Update simulator indexer to expose treasury, vesting, and savings metrics.
    - Add metrics for liquidation counts, debt ratio, and vesting unlock rate.
 
-### Phase 2 Remediation (convertibility + fee distribution)
-9) EVM contracts (new repo or `evm/` workspace):
+### CCA Program Remediation (convertibility + fee distribution)
+
+9. EVM contracts (new repo or `evm/` workspace):
    - ERC-20 RNG + CCA contracts + v4 liquidity launcher integration.
-10) Fee distribution contract:
+10. Fee distribution contract:
     - Route Uniswap v4 fees to stakers (USDT).
-11) Bridge + policy toggles:
+11. Bridge + policy toggles:
     - Lock/mint or burn/mint, with caps and delays.
     - Add emergency pause and monitoring hooks.
-12) Auction bonus + recovery pool plumbing:
+12. Auction bonus + recovery pool plumbing:
     - BOGO claim contract keyed to CCA receipts and freeroll credits.
     - Recovery pool accounting and debt retirement tooling.
 
 ## Executive Decisions (Locked)
+
 - Canonical RNG domain: EVM canonical, Commonware wraps.
-- Reward vesting: 20% immediate, 80% linear over 180 days; Phase 2 bonus vests
-  100% over 180 days.
+- Reward vesting: 0% immediate, 100% continuous over 30 months; CCA program bonus vests
+  continuously over 3 months.
 - vUSDT stability policy: 8% APR baseline, 6-14% band; 60% liquidation
   threshold, 45% target, 10% penalty.
 - Staking payout location: EVM-only USDT distribution (bridge required).
-- Governance model: multisig in Phase 1/early Phase 2, transition to staker
+- Governance model: multisig in pre-token launch/early CCA program, transition to staker
   governance post-audit.
-- BOGO allocation: pro-rata (0.75 bonus per 1 RNG purchased).
-- Recovery pool remainder: 50% treasury, 30% insurance, 20% supplemental
-  liquidity/buyback.
+- BOGO allocation: 1:1 up to available freeroll credits and the per-auction cap;
+  unclaimed bonus rolls into the treasury reserve.
+- Sell tax allocation: 80% to recovery pool until $10m, then 80% to RNG
+  stakers; 20% to operating budget in both phases.

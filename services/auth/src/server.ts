@@ -147,6 +147,9 @@ if (allowedOrigins.length === 0) {
   throw new Error("AUTH_ALLOWED_ORIGINS must be set");
 }
 const allowedChainIds = parseAllowedChainIds();
+const mobileEnabled = ["1", "true", "yes"].includes(
+  String(process.env.AUTH_MOBILE_ENABLED ?? "").toLowerCase(),
+);
 const aiStrategyDisabled = ["1", "true", "yes"].includes(
   String(process.env.AI_STRATEGY_DISABLED ?? "").toLowerCase(),
 );
@@ -389,6 +392,30 @@ const logJson = (level: "info" | "warn" | "error", message: string, data: any) =
   }
 };
 
+const opsBase = (process.env.OPS_ANALYTICS_URL ?? process.env.OPS_URL ?? "").trim().replace(/\/$/, "");
+const opsEventsUrl = opsBase.endsWith("/analytics/events") ? opsBase : opsBase ? `${opsBase}/analytics/events` : "";
+
+const sendOpsEvent = async (
+  name: string,
+  props?: Record<string, unknown>,
+  actor?: { publicKey?: string },
+) => {
+  if (!opsEventsUrl) return;
+  try {
+    await fetch(opsEventsUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        events: [{ ts: Date.now(), name, props }],
+        actor,
+        source: { app: "auth" },
+      }),
+    });
+  } catch {
+    // ignore ops analytics failures
+  }
+};
+
 const credentialsProvider = Credentials({
   credentials: {
     publicKey: { label: "Public key", type: "text" },
@@ -563,6 +590,82 @@ app.post("/auth/challenge", requireAllowedOrigin, challengeRateLimit, async (req
   inc("auth.challenge.created");
 
   res.json({ challengeId, challenge, expiresAtMs });
+});
+
+app.post("/mobile/challenge", challengeRateLimit, async (req, res) => {
+  if (!mobileEnabled) {
+    res.status(403).json({ error: "mobile_disabled" });
+    return;
+  }
+  const publicKey = normalizeHex(String(req.body?.publicKey ?? ""));
+  if (!isHex(publicKey, 64)) {
+    res.status(400).json({ error: "invalid publicKey" });
+    return;
+  }
+  const challengeId = crypto.randomUUID();
+  const challenge = crypto.randomBytes(32).toString("hex");
+  const expiresAtMs = Date.now() + challengeTtlMs;
+
+  await convex.mutation(api.auth.createAuthChallenge, {
+    serviceToken,
+    challengeId,
+    publicKey,
+    challenge,
+    expiresAtMs,
+  });
+  res.json({ challengeId, challenge, expiresAtMs });
+});
+
+app.post("/mobile/entitlements", challengeRateLimit, async (req, res) => {
+  if (!mobileEnabled) {
+    res.status(403).json({ error: "mobile_disabled" });
+    return;
+  }
+  const publicKey = normalizeHex(String(req.body?.publicKey ?? ""));
+  const signature = normalizeHex(String(req.body?.signature ?? ""));
+  const challengeId = String(req.body?.challengeId ?? "");
+  if (!isHex(publicKey, 64)) {
+    res.status(400).json({ error: "invalid publicKey" });
+    return;
+  }
+  if (!isHex(signature, 128)) {
+    res.status(400).json({ error: "invalid signature" });
+    return;
+  }
+  if (!challengeId) {
+    res.status(400).json({ error: "challengeId is required" });
+    return;
+  }
+  const challenge = await convex.mutation(api.auth.consumeAuthChallenge, {
+    serviceToken,
+    challengeId,
+    publicKey,
+  });
+  if (!challenge) {
+    res.status(400).json({ error: "invalid challenge" });
+    return;
+  }
+  if (!verifySignature(publicKey, signature, challenge.challenge)) {
+    res.status(400).json({ error: "invalid signature" });
+    return;
+  }
+  const user = await convex.query(api.users.getUserByPublicKey, {
+    serviceToken,
+    publicKey,
+  });
+  const entitlements = user
+    ? await convex.query(api.entitlements.getEntitlementsByUser, {
+        serviceToken,
+        userId: user._id,
+      })
+    : [];
+  if (entitlements.length > 0) {
+    syncFreerollLimit(publicKey, entitlements).catch(() => {
+      // ignore sync failures for mobile lookup
+    });
+  }
+  void sendOpsEvent("mobile.entitlements.viewed", { hasEntitlements: entitlements.length > 0 }, { publicKey });
+  res.json({ entitlements });
 });
 app.use("/auth/*", ExpressAuth(authConfig));
 
@@ -944,6 +1047,12 @@ app.post("/billing/checkout", requireAllowedOrigin, billingRateLimit, async (req
       tier: resolvedTier,
       allowPromotionCodes: Boolean(allowPromotionCodes),
     });
+    const publicKey = (session.session as any)?.user?.authSubject as string | undefined;
+    void sendOpsEvent(
+      "billing.checkout.success",
+      { priceId: String(priceId), tier: resolvedTier, allowPromotionCodes: Boolean(allowPromotionCodes) },
+      publicKey ? { publicKey } : undefined,
+    );
     res.json(result);
   } catch (error) {
     inc("billing.checkout.failure");
@@ -985,6 +1094,12 @@ app.post("/billing/portal", requireAllowedOrigin, billingRateLimit, async (req, 
       requestId: res.locals.requestId,
       userId: session.userId,
     });
+    const publicKey = (session.session as any)?.user?.authSubject as string | undefined;
+    void sendOpsEvent(
+      "billing.portal.success",
+      { returnUrl: safeReturnUrl },
+      publicKey ? { publicKey } : undefined,
+    );
     res.json(result);
   } catch (error) {
     inc("billing.portal.failure");

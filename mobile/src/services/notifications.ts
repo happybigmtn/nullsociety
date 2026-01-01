@@ -20,7 +20,31 @@ function getProjectId(): string | undefined {
   return Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId;
 }
 
-export async function initializeNotifications(): Promise<string | null> {
+const opsBase =
+  process.env.EXPO_PUBLIC_OPS_URL ??
+  process.env.EXPO_PUBLIC_ANALYTICS_URL ??
+  '';
+
+const registerPushToken = async (token: string, publicKey?: string | null) => {
+  if (!opsBase) return;
+  const endpoint = `${opsBase.replace(/\\/$/, '')}/push/register`;
+  try {
+    await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token,
+        publicKey: publicKey ?? undefined,
+        platform: Platform.OS,
+        appVersion: process.env.EXPO_PUBLIC_APP_VERSION,
+      }),
+    });
+  } catch {
+    // ignore registration errors
+  }
+};
+
+export async function initializeNotifications(publicKey?: string | null): Promise<string | null> {
   try {
     if (!Device.isDevice) {
       return null;
@@ -28,6 +52,7 @@ export async function initializeNotifications(): Promise<string | null> {
 
     const cachedToken = getString(STORAGE_KEYS.PUSH_TOKEN, '');
     if (cachedToken) {
+      void registerPushToken(cachedToken, publicKey);
       return cachedToken;
     }
 
@@ -51,6 +76,7 @@ export async function initializeNotifications(): Promise<string | null> {
     const projectId = getProjectId();
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     setString(STORAGE_KEYS.PUSH_TOKEN, token);
+    void registerPushToken(token, publicKey);
     return token;
   } catch {
     return null;

@@ -128,6 +128,14 @@ export const createGameCompletedHandler = ({
     })();
 
     const wasSuperRound = gameStateRef.current?.superMode?.isActive || gameStateRef.current?.activeModifiers?.super;
+    track('casino.game.completed', {
+      game: eventGameType,
+      mode: playModeRef.current,
+      netPnL,
+      wager: sessionWager,
+      finalChips: nextChips,
+      superRound: wasSuperRound,
+    });
     if (wasSuperRound) {
       track('casino.super.round_completed', {
         game: eventGameType,

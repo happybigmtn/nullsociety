@@ -57,6 +57,9 @@ if (!Array.isArray(bids) || bids.length === 0) {
 
 const snapshot = loadJson(snapshotPath, 'Phase 1 snapshot');
 const links = loadJson(linksPath, 'player links');
+if (links && !snapshot) {
+  throw new Error('PLAYER_LINKS_PATH provided without PHASE1_SNAPSHOT_PATH');
+}
 
 const creditsByPubkey = new Map();
 if (snapshot) {

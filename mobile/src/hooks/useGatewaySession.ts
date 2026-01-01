@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useWebSocketContext } from '../context/WebSocketContext';
 import { useGameStore } from '../stores/gameStore';
 import { parseNumeric } from '../utils';
+import { initAnalytics, setAnalyticsContext, track } from '../services/analytics';
 import type { GameMessage } from '@nullspace/protocol/mobile';
 
 export function useGatewaySession() {
@@ -19,6 +20,10 @@ export function useGatewaySession() {
   const lastSessionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    initAnalytics();
+  }, []);
+
+  useEffect(() => {
     if (connectionState === 'connected') {
       send({ type: 'get_balance' });
     }
@@ -32,6 +37,12 @@ export function useGatewaySession() {
       setSessionInfo({
         sessionId: lastMessage.sessionId,
         publicKey: lastMessage.publicKey,
+        registered: lastMessage.registered,
+        hasBalance: lastMessage.hasBalance,
+      });
+      setAnalyticsContext({ publicKey: lastMessage.publicKey });
+      void track('casino.session.started', {
+        source: 'mobile',
         registered: lastMessage.registered,
         hasBalance: lastMessage.hasBalance,
       });
@@ -57,11 +68,18 @@ export function useGatewaySession() {
       }
       if (lastMessage.message === 'FAUCET_CLAIMED') {
         setFaucetStatus('success', 'Faucet claimed');
+        void track('casino.faucet.claimed', { source: 'mobile' });
       }
       return;
     }
 
     if (lastMessage.type === 'game_started') {
+      void track('casino.game.started', {
+        source: 'mobile',
+        gameType: lastMessage.gameType,
+        bet: parseNumeric(lastMessage.bet),
+        sessionId: lastMessage.sessionId,
+      });
       const balanceValue = parseNumeric(lastMessage.balance);
       if (balanceValue !== null) {
         setBalance(balanceValue);
@@ -71,6 +89,16 @@ export function useGatewaySession() {
     }
 
     if (lastMessage.type === 'game_result' || lastMessage.type === 'game_move') {
+      if (lastMessage.type === 'game_result') {
+        void track('casino.game.completed', {
+          source: 'mobile',
+          gameType: lastMessage.gameType,
+          won: lastMessage.won,
+          payout: parseNumeric(lastMessage.payout),
+          finalChips: parseNumeric(lastMessage.finalChips),
+          sessionId: lastMessage.sessionId,
+        });
+      }
       const balanceValue = parseNumeric(lastMessage.balance ?? lastMessage.finalChips);
       if (balanceValue !== null) {
         setBalance(balanceValue);

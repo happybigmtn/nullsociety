@@ -106,31 +106,62 @@ fn record_play_session(
     player.session.last_session_ts = now;
 }
 
+const PROOF_WEIGHT_SCALE: u128 = 1_000_000_000;
+const PROOF_WEIGHT_MIN: u128 = 50_000_000;
+const PROOF_WEIGHT_BASE: u128 = 200_000_000;
+const PROOF_WEIGHT_MULTIPLIER: u128 = 800_000_000;
+
 fn proof_of_play_multiplier(
     player: &nullspace_types::casino::Player,
     now: u64,
-) -> f64 {
-    let min_sessions = nullspace_types::casino::PROOF_OF_PLAY_MIN_SESSIONS as f64;
-    let min_seconds = nullspace_types::casino::PROOF_OF_PLAY_MIN_SECONDS as f64;
-    let session_weight = if min_sessions <= 0.0 {
-        1.0
+) -> u128 {
+    let min_sessions = nullspace_types::casino::PROOF_OF_PLAY_MIN_SESSIONS as u128;
+    let min_seconds = nullspace_types::casino::PROOF_OF_PLAY_MIN_SECONDS as u128;
+
+    let session_weight = if min_sessions == 0 {
+        PROOF_WEIGHT_SCALE
     } else {
-        (player.session.sessions_played as f64 / min_sessions).min(1.0)
+        (player.session.sessions_played as u128)
+            .saturating_mul(PROOF_WEIGHT_SCALE)
+            .checked_div(min_sessions)
+            .unwrap_or(0)
+            .min(PROOF_WEIGHT_SCALE)
     };
-    let seconds_weight = if min_seconds <= 0.0 {
-        1.0
+    let seconds_weight = if min_seconds == 0 {
+        PROOF_WEIGHT_SCALE
     } else {
-        (player.session.play_seconds as f64 / min_seconds).min(1.0)
+        (player.session.play_seconds as u128)
+            .saturating_mul(PROOF_WEIGHT_SCALE)
+            .checked_div(min_seconds)
+            .unwrap_or(0)
+            .min(PROOF_WEIGHT_SCALE)
     };
-    let activity_weight = (session_weight + seconds_weight) / 2.0;
-    let age_secs = now.saturating_sub(player.profile.created_ts) as f64;
+
+    let activity_weight = (session_weight.saturating_add(seconds_weight)) / 2;
+    let age_secs = now.saturating_sub(player.profile.created_ts) as u128;
     let age_weight = if nullspace_types::casino::ACCOUNT_TIER_NEW_SECS == 0 {
-        1.0
+        PROOF_WEIGHT_SCALE
     } else {
-        (age_secs / nullspace_types::casino::ACCOUNT_TIER_NEW_SECS as f64).min(1.0)
+        age_secs
+            .saturating_mul(PROOF_WEIGHT_SCALE)
+            .checked_div(nullspace_types::casino::ACCOUNT_TIER_NEW_SECS as u128)
+            .unwrap_or(0)
+            .min(PROOF_WEIGHT_SCALE)
     };
-    let weight = 0.2 + 0.8 * (activity_weight * age_weight);
-    weight.clamp(0.05, 1.0)
+
+    let activity_age = activity_weight
+        .saturating_mul(age_weight)
+        .checked_div(PROOF_WEIGHT_SCALE)
+        .unwrap_or(0);
+    let weight = PROOF_WEIGHT_BASE
+        .saturating_add(
+            PROOF_WEIGHT_MULTIPLIER
+                .saturating_mul(activity_age)
+                .checked_div(PROOF_WEIGHT_SCALE)
+                .unwrap_or(0),
+        )
+        .clamp(PROOF_WEIGHT_MIN, PROOF_WEIGHT_SCALE);
+    weight
 }
 impl<'a, S: State> Layer<'a, S> {
     // === Casino Handler Methods ===
@@ -1734,7 +1765,7 @@ impl<'a, S: State> Layer<'a, S> {
         let policy = self.get_or_init_policy().await?;
 
         // Gather player tournament chips
-        let mut rankings: Vec<(PublicKey, u64, f64)> = Vec::new();
+        let mut rankings: Vec<(PublicKey, u64, u128)> = Vec::new();
         for player_pk in &tournament.players {
             if let Some(Value::CasinoPlayer(p)) =
                 self.get(&Key::CasinoPlayer(player_pk.clone())).await?
@@ -1749,27 +1780,32 @@ impl<'a, S: State> Layer<'a, S> {
 
         // Determine winners (Top 15% for MTT style)
         let num_players = rankings.len();
-        let num_winners = (num_players as f64 * 0.15).ceil() as usize;
+        let num_winners = (num_players.saturating_mul(15).saturating_add(99)) / 100;
         let num_winners = num_winners.max(1).min(num_players);
 
         // Calculate payout weights (1/rank harmonic distribution)
         let mut weights = Vec::with_capacity(num_winners);
-        let mut total_weight = 0.0;
+        let mut total_weight: u128 = 0;
         for i in 0..num_winners {
-            let base_weight = 1.0 / ((i + 1) as f64);
+            let base_weight = PROOF_WEIGHT_SCALE / (i as u128 + 1);
             let proof_weight = rankings[i].2;
-            let w = base_weight * proof_weight;
+            let w = base_weight
+                .saturating_mul(proof_weight)
+                .checked_div(PROOF_WEIGHT_SCALE)
+                .unwrap_or(0);
             weights.push(w);
-            total_weight += w;
+            total_weight = total_weight.saturating_add(w);
         }
 
         // Distribute Prize Pool
-        if total_weight > 0.0 && tournament.prize_pool > 0 {
+        if total_weight > 0 && tournament.prize_pool > 0 {
             for i in 0..num_winners {
                 let (pk, _, _) = &rankings[i];
                 let weight = weights[i];
-                let share = weight / total_weight;
-                let payout = (share * tournament.prize_pool as f64) as u64;
+                let payout = (tournament.prize_pool as u128)
+                    .saturating_mul(weight)
+                    .checked_div(total_weight)
+                    .unwrap_or(0) as u64;
 
                 if payout > 0 {
                     if let Some(Value::CasinoPlayer(mut p)) =

@@ -22,7 +22,7 @@ Business strategy summary and CEO view: `BUSINESS_PLAN.md`.
 - Domains + TLS strategy (CDN/WAF, cert management).
 - Production secrets: Stripe live keys + webhook secret, Convex service token, admin keypair.
 - Compliance scope (jurisdictions, KYC/AML requirements, responsible gaming scope).
-- Legal structure: confirm Wyoming DUNA formation path and retain counsel.
+- Legal structure: confirm formation path and retain counsel.
 - Launch tiers/pricing (confirm `member` only or additional tiers).
 
 ## What You Need To Do
@@ -35,7 +35,7 @@ Business strategy summary and CEO view: `BUSINESS_PLAN.md`.
 - Configure gateway persistence + session limits: `GATEWAY_DATA_DIR`,
   `GATEWAY_SESSION_RATE_LIMIT_*`, and `GATEWAY_EVENT_TIMEOUT_MS` for production/staging.
 - Approve the target concurrency SLOs so infra sizing can be locked.
-- Engage Wyoming counsel and a registered agent to form the DUNA entity and
+- Engage counsel and a registered agent to form the legal entity and
   confirm tax/regulatory posture (gaming + token issuance).
 
 ## Reference Self-Hosted Architecture (Scale Targets)
@@ -73,7 +73,7 @@ Business strategy summary and CEO view: `BUSINESS_PLAN.md`.
 ## Latest Review Summary
 - Production blockers: self-hosted Convex + Auth deployment with persistent storage/backups, production secrets + Stripe live webhook rollout, staging environment with production-like traffic, and production-scale load tests + SLO validation.
 - Ops readiness gaps: metrics/log aggregation + alerting in staging/prod and backup/restore drills for Convex + explorer data.
-- Business/compliance gates: DUNA formation path, KYC/AML + responsible gaming scope, and geo-fencing plan if required.
+- Business/compliance gates: formation path, KYC/AML + responsible gaming scope, and geo-fencing plan if required.
 - Phase 2 gating: CCA testnet rehearsal + auction parameter validation and contract security plan/audit.
 - Product polish: onboarding status copy + accessibility/readability pass updated; remaining UX polish is ongoing.
 - Gateway: shared protocol validation updated for roulette/sic bo numeric bet types and `hilo_deal` amount; session rate limiting and event timeouts are configurable; integration bet-type coverage runs in `gateway/tests/all-bet-types.test.ts`.
@@ -82,50 +82,25 @@ Business strategy summary and CEO view: `BUSINESS_PLAN.md`.
 - Local staging load test completed (200 bots, 120s, 0 failures); production-scale run still pending.
 
 ## Pre-Testnet Deliverables (Post-Review + Full Bet/Game Tests)
-- [x] Harden gateway update handling: parse Update::Events/FilteredEvents across varied proof sizes, connect session-scoped updates for move events, and fix session filter endianness.
-- [x] Fix Casino War tie-bet flow (SetTieBet + Play) to avoid invalid move rejections.
-- [x] Run full bet-type integration suite (`gateway/tests/all-bet-types.test.ts`) with 87/87 bets passing (requires elevated gateway session rate limits + simulator submit limits).
-- [x] Run execution unit/integration tests (`cargo test -p nullspace-execution`) and Monte Carlo RTP ignored test (passed).
-- [x] Run game-state parser tests (`pnpm -C packages/game-state test` + `pnpm -C website exec vitest run src/services/games/__tests__/game-state.test.ts`).
-- [x] Fix execution doctest failure in `execution/src/lib.rs` so `cargo test -p nullspace-execution --doc` passes (mocks feature gating/API drift).
-- [x] Implement mobile non-custodial vault fallback for devices without passkeys (password-derived vault + recovery key) and document export/recovery flow.
-- [x] Run local testnet runbook smoke (`scripts/testnet-local-runbook.sh`) covering health/metrics, restart recovery, tournament scheduler, and bot load.
-- [x] Define testnet rate-limit profiles (gateway session creation + simulator submit endpoints) that avoid 429s while preserving abuse controls; document in runbooks + staging env.
 - [ ] Enforce non-custodial vaults in staging/testnet by disabling legacy browser keys (`VITE_ALLOW_LEGACY_KEYS=0`) and validating passkey/password fallback UX.
-- [x] Publish testnet readiness + mobile vault QA runbooks to standardize preflight and go/no-go.
-- [x] Publish Hetzner deployment + Postgres ops runbooks for staging/testnet infrastructure.
-- [x] Add gateway + simulator env templates with testnet rate-limit defaults (staging/production examples).
 - [ ] Execute the testnet runbook on real infra (bootstrap configs, multi-node soak test, restart recovery, tournament scheduler, bot load) once staging hosts are available.
 - [ ] Stand up staging/testnet observability (metrics + logs + alerts) and confirm explorer persistence/backup paths.
 - [ ] Deploy Auth + Convex in staging/testnet with production-like secrets, origins, and backup/restore drills.
 - [ ] Complete mobile parity QA on real devices, including key vault recovery flows and reconnect scenarios.
 
 ## Priority Focus (Business Plan Alignment)
-### P0 - Phase 1 readiness + transparency
-- [x] Implement treasury vesting enforcement (allocation unlock schedule + admin tooling).
-- [x] Define and ship AMM bootstrap seeding mechanism; decide on optional bootstrap-finalize snapshot.
-- [x] Replace simulated analytics with live economy dashboards (issuance/burn/fees/house PnL, debt, distribution).
-- [x] Add proof-of-play weighting + sybil heuristics and tighten faucet/tournament churn limits.
-- [x] Close go-live blockers: containerize node/executor/website, fix simulator Dockerfile healthcheck, replace legacy browser private keys with non-custodial vaults (passkey + password fallback) or enforce dev-only.
-
-### P1 - Phase 2 launch prep
-- [x] Write Uniswap v4 CCA testnet runbook (`cca_runbook.md`).
-- [ ] Validate Uniswap v4 CCA deployment flow on testnet (params, clearance, liquidity seeding).
-- [x] Implement fee distributor for staker USDT routing with governance controls.
-- [x] Ship Commonware bridge module + UI flows with caps, delays, and emergency pause.
-- [x] Build bridge relayer/service for EVM lockbox sync.
-- [x] Implement recovery pool payout tooling + treasury wiring for Phase 2 proceeds.
-- [x] Add oracle feed ingestion for AMM risk controls.
-- [x] Ship heuristic sybil detection pipeline (device/IP/time clustering).
-- [x] Align docs (`economy.md`, `liquidity.md`) with the existing `evm/` workspace status.
 
 ### P1 - Operational readiness (Phase 1/2 gating)
-- [x] Document persistence model, migration path, backups, and data access boundaries (`persistence.md`).
-- [x] Add Prometheus metrics endpoints + local Grafana stack (`observability.md`, `docker/observability/`).
-- [x] Publish incident runbooks + rollback guidance (`runbooks.md`, `release.md`).
-- [x] Define resource sizing targets for 5k/20k/50k (`resource_sizing.md`).
 - [ ] Stand up staging environment and validate target load/SLOs.
 - [ ] Deploy log aggregation + alerting in staging/prod.
+
+## Business Objective Gaps (Next Dev Priorities)
+- [ ] Product analytics pipeline for KPIs: server-side event capture (simulator/gateway/auth), warehouse, and dashboards for DAU/WAU, D7/D30 retention, conversion, ARPDAU, and fee revenue per active user.
+- [ ] Public transparency dashboards: publish read-only economy snapshots (cache/export) so analytics pages don’t require `VITE_IDENTITY`.
+- [ ] Weekly league/season system: schedule rotation, scoring aggregation across games, leaderboard resets, reward distribution, and admin tooling for streamer events.
+- [ ] Referral + invite program tied to proof-of-play and account maturity (anti-sybil gating + reward caps).
+- [ ] Mobile monetization parity: subscription/entitlement flows + tier status UI + freeroll limit sync.
+- [ ] Retention CRM: push notification backend and campaign scheduler (weekly events, tournament reminders, seasonal rewards).
 
 ## CEO Feasibility Review (Plan vs Codebase)
 - Phase 1 core controls are implemented (stability fees, liquidations, debt
@@ -135,7 +110,7 @@ Business strategy summary and CEO view: `BUSINESS_PLAN.md`.
 - Phase 2 EVM stack exists in `evm/` (RNGToken, BOGO distributor, RecoveryPool,
   BridgeLockbox, deployment/CCA scripts). Remaining gaps: production CCA
   integration/validation and security audits.
-- The $20m debt repayment plan is now technically viable with debt ceilings,
+- The $10m debt repayment plan is now technically viable with debt ceilings,
   stability fees, and recovery-pool ordering; governance must still enforce
   treasury policies to prevent moral hazard.
 - Optional full lending markets are a scope and risk multiplier; defer until
@@ -164,38 +139,13 @@ Business strategy summary and CEO view: `BUSINESS_PLAN.md`.
 ### Phase 1 - Island Economy With Capital Controls (internal convertibility only)
 Goal: operate as a closed economy with strong internal DeFi loops before any external convertibility.
 
-- [x] Define and publish Phase 1 monetary policy (sinks vs sources):
-  - emission caps (`TOTAL_SUPPLY`, `REWARD_POOL_BPS`, `ANNUAL_EMISSION_RATE_BPS`)
-  - faucet + initial chips (`FAUCET_AMOUNT`, `INITIAL_CHIPS`)
-  - freeroll schedule (tournaments/day, payout curve)
-  - freeroll credits + expiry + Phase 2 bonus eligibility
-  - membership perks (10x freerolls; decide if any swap/LP/staking boosts apply)
-- [x] Implement treasury vesting enforcement for the Phase 2 allocation
-  (20% auction, 10% liquidity, up to 15% bonus, remainder to players/treasury/team).
-- [x] Add stability mechanics for vUSDT (Phase 1 risk controls):
-  - introduce stability fees / interest on vUSDT debt
-  - add liquidation logic for LTV breaches
-  - enforce a system debt ceiling + circuit breaker
-  - define a bounded oracle policy (AMM spot + bootstrap guardrails)
-- [x] Add AMM guardrails to enforce capital controls internally:
-  - per-swap / per-day notional caps
-  - dynamic sell-tax/fee bands (policy-driven)
-- [x] Define treasury seeding mechanism for AMM bootstrap reserves (admin `SeedAmm` instruction).
-- [x] Add an optional Phase 1 bootstrap-finalize snapshot for the closing price (`FinalizeAmmBootstrap`).
-- [x] Expand domestic DeFi UX and analytics:
-  - swap/borrow panels show caps, tax bands, and health metrics
-  - conversion funnel metrics tracked via tx submission/confirmation telemetry
-- [x] Add a vUSDT savings/deposit market funded by stability fees.
 - [ ] Marketing-friendly economic loops:
   - tournaments, freerolls, and staking yield as primary retention hooks
   - LP rewards (if funded by treasury) as liquidity growth lever
-  - public dashboards for emission, fees, burn, and house PnL (live)
 
 ### Phase 2 - External Convertibility (Uniswap v4 CCA via liquidity-launcher)
 Goal: open controlled convertibility using a continuous clearing auction and external DEX liquidity.
 
-- [x] Decide canonical RNG domain (EVM canonical) and bridge model (lock/mint).
-- [x] Build ERC-20 RNG on EVM with capped supply + treasury controls.
 - [ ] Integrate Uniswap v4 liquidity-launcher (CCA):
   - deploy on testnet, run dry run, and validate clearing logic
   - set auction parameters (duration, tranches, caps, allowlist policy)
@@ -203,41 +153,26 @@ Goal: open controlled convertibility using a continuous clearing auction and ext
   - seed Uniswap v4 pool at clearing price with raised stable + RNG
 - [ ] Implement auction bonus + recovery pool:
   - BOGO bonus distribution tied to CCA receipts + Phase 1 freeroll credits
-  - recovery pool accounting to retire up to 20m USDT in vUSDT debt
+  - recovery pool accounting to retire up to 10m USDT in vUSDT debt
 - [ ] Implement bridge service + UI:
-  - export/import flows with caps, delays, and emergency pause (Commonware module + UI shipped)
   - convertibility policy toggles for phased opening
-- [x] Introduce external price oracle feed into Phase 1 AMM controls.
 - [ ] Contract security plan:
   - audits, monitoring, incident response, and pause controls
 
 ## Marketing + Growth (Simulation-First)
 - [ ] Weekly leagues + streamer tournaments with public leaderboards.
-- [x] Public economy dashboards (issuance, burn, fees, liquidity depth).
 - [ ] Seasonal campaigns and retention rewards (cosmetic + status perks).
 - [ ] Referral program tied to proof-of-play (anti-sybil).
 - [ ] Pre-Phase 2 CCA testnet simulations + auction awareness campaigns.
 
-## Sybil + Abuse Mitigation (Phase 1)
-- [x] Account age + stake tiering for LTV (Tier 2 unlock).
-- [x] Account age gating for freeroll limits and membership perks.
-- [x] Proof-of-play weighting for freeroll rewards (session count/duration).
-- [x] Heuristic sybil detection pipeline (device/IP/time clustering).
-- [x] Rate-limit faucet and tournament churn beyond current caps.
-
-## Analytics + Reporting
-- [x] Public dashboards for issuance/burn/fees/house PnL.
-- [x] Distribution concentration metrics (Gini/top-1% share).
-- [x] AMM depth monitoring + vUSDT debt health dashboards.
-
-## Legal + Governance (Wyoming DUNA)
+## Legal + Governance
 Goal: establish a DAO-compatible legal wrapper and governance path for a
 staker-owned economy.
 
-- [ ] Form a Wyoming Decentralized Unincorporated Nonprofit Association (DUNA):
-  - retain Wyoming counsel and a registered agent
-  - file DUNA formation/qualification documents with the WY Secretary of State
-  - adopt a DUNA operating agreement/DAO charter (governance + treasury rules)
+- [ ] Form a legal entity for the DAO-style economy:
+  - retain counsel and a registered agent
+  - file formation/qualification documents in the chosen jurisdiction
+  - adopt an operating agreement/DAO charter (governance + treasury rules)
   - define member/staker rights and voting procedures
   - confirm tax posture and reporting obligations (annual filings)
 - [ ] Governance setup:
@@ -248,219 +183,26 @@ staker-owned economy.
   - jurisdictional analysis and geo-fencing plan
   - responsible gaming policy and age checks
 
-## Codebase Deliverables (Expanded Scope)
-Phase 1 (Commonware codebase):
-- [x] Update emission constants to 15% cap and add freeroll credit ledger with
-  expiry + Phase 2 eligibility flags.
-- [x] Split RNG credits from spendable chips (internal points vs supply ledger)
-  to preserve supply accounting and prevent accidental externalization.
-- [x] Implement stability fees, liquidation path, and a system debt ceiling.
-- [x] Add treasury + vesting ledger for Phase 2 allocation buckets (enforced vesting + admin tooling).
-- [x] Add vUSDT savings/deposit market funded by stability fees.
-- [x] Add recovery-pool debt retirement hooks (vUSDT debt burn + audit trail).
-- [x] Add recovery-pool payout ordering (LTV risk + debt age) to reduce
-  insolvency risk.
-- [x] Add policy state + admin updates for caps/fees/tiers.
-- [x] UI for credit balances, vesting, debt health, and policy caps.
-
-Phase 2 (EVM + bridge workstream):
-- [x] New `evm/` workspace with RNG ERC-20, BOGO distributor, recovery pool, bridge lockbox,
-  and CCA simulation scripts for testnet dry runs.
-- [x] Wire BOGO distributor to Phase 1 credit ledger snapshots + eligibility pipeline
-  (player registry + `freeroll-snapshot` exporter + eligibility merge script).
-- [x] Uniswap v4 CCA parameter validation runbook.
-- [ ] Uniswap v4 CCA deployment rehearsal (testnet dry run).
-- [x] Recovery pool payout tooling (funding + redemption flow) and treasury wiring.
-- [x] Fee distributor routing Uniswap v4 fees to stakers (USDT).
-- [x] Bridge relayer/validator service (Commonware module + UI shipped).
-- [x] Oracle feed ingestion for on-chain risk controls.
-- [x] Player-to-EVM address linking workflow for BOGO claims (auth profile + export pipeline).
-
-## Latest Deliverables
-- [x] Uniswap v4 CCA testnet runbook (`docs/cca_runbook.md`).
-- [x] Fee distributor contract + tests for USDT staker routing (`evm/contracts/FeeDistributor.sol`).
-- [x] Commonware bridge module + UI route (`Bridge` instruction set + website flow).
-- [x] Bridge relayer CLI for EVM lockbox sync (`client/src/bin/bridge_relayer.rs`).
-- [x] Recovery pool admin tooling (Commonware CLI + EVM actions script).
-- [x] Oracle ingestion path (Policy/Oracle state + `UpdateOracle` instruction + wasm/JS bindings).
-- [x] Sybil scan CLI with device/IP/time clustering (`client/src/bin/sybil_scan.rs`).
-- [x] Prometheus metrics endpoints + local Grafana stack (`/metrics/prometheus`, `docker/observability/`).
-- [x] Loki + Promtail log aggregation stack for local dev (`docker/observability/`).
-- [x] Ops docs for observability, persistence, runbooks, release, and sizing (`docs/observability.md`, `docs/persistence.md`, `docs/runbooks.md`, `docs/release.md`, `docs/resource_sizing.md`).
-- [x] Node dependency audits in CI (warn-only) for auth + website.
-- [x] SAST + filesystem vulnerability scans in CI (Semgrep + Trivy, warn-only).
-- [x] Explorer HTTP cache headers for CDN-friendly caching.
-- [x] Redis submission fanout (publish/subscribe) for multi-node updates with origin de-dupe.
-- [x] Redis explorer response cache with TTL for high-traffic endpoints.
-- [x] Connection status pill with offline handling + retry CTA (onboarding UX).
-- [x] TLS/HSTS nginx template for production edge termination (`website/nginx.ssl.conf`).
-- [x] Systemd unit templates for simulator/node/auth/website (`ops/systemd/`).
-- [x] Staging/production env examples for simulator/auth/website (`configs/`, `services/auth/`, `website/`).
-- [x] GameResult logging pipeline: per-move logs now flow through `GameResult` and into
-  `CasinoGameMoved`/`CasinoGameCompleted` events for UI rendering.
-- [x] Phase 1/2 simulation tooling: `phase_simulation` CLI, `scripts/phase-sim.sh`, and
-  `scripts/phase2-e2e-sim.sh` (100-bot end-to-end flow).
-- [x] Phase 2 EVM workspace with ERC-20 RNG, BOGO distributor, recovery pool, bridge lockbox,
-  plus Hardhat tests and CCA bid/snapshot scripts.
-- [x] Phase 2 allocation assumptions logged in `client/examples/simulation_ecosystem.rs`.
-- [x] Player registry + `freeroll-snapshot` CLI to export Phase 1 freeroll eligibility,
-  plus updated `buildEligibilitySnapshot.mjs` to merge bids + player mappings.
-- [x] EVM wallet self-linking (challenge + signature), profile exposure, and export pipeline
-  (`/profile/evm-challenge`, `/profile/link-evm`, `/profile/unlink-evm`, `export-evm-links.mjs`).
-- [x] Economy UI now surfaces daily caps, sell tax bands, tiered LTV limits, and stability fee hints.
-- [x] Wallet pill includes freeroll credit balances (locked + unlocked).
-- [x] Treasury allocations readable in Economy UI (when configured).
-- [x] PolicyState on-chain controls (sell-tax bands, daily caps, LTV tiers, stability fee, debt ceiling).
-- [x] TreasuryState struct and admin setter for allocation tracking (ledger only).
-- [x] Stability fee accrual on vault debt and house-level debt accounting.
-- [x] Liquidation path with penalty split (liquidator + stability pool).
-- [x] Recovery pool funding + debt retirement hooks.
-- [x] Recovery-pool retirement now targets worst LTV vaults (tie-broken by oldest accrual).
-- [x] Treasury updates emit events and refresh the Economy UI state.
-- [x] Borrow panel surfaces recovery-pool and vUSDT debt metrics (debug view).
-- [x] Vault registry key exposed via WASM/client for audits and admin tools.
-- [x] Markdown documentation consolidated under `docs/`.
-- [x] vUSDT savings pool (deposit/withdraw/claim) with stability-fee funding.
-- [x] Freeroll daily limits enforce account age gating for new accounts.
-- [x] Stripe test membership created for tier `member` ($5/month).
-  - Product: `prod_TfP7ygigcze2Ar`
-  - Price: `price_1Si4J93nipX4Oc41ak3eP67k`
-- [x] On-chain daily freeroll limit enforcement + admin sync flow.
-- [x] Auth.js v5 + Convex + Stripe integration wired end-to-end (env-driven tiers).
-- [x] Convex service-token gating + billing validation + shared admin nonce allocator.
-- [x] Stripe multi-item entitlement updates + scheduled retention pruning.
-- [x] Stripe entitlement reconciliation endpoint for manual repair.
-- [x] Auth service rate limiting for challenge/profile/billing endpoints.
-- [x] Simulator HTTP/WS origin allowlists, HTTP body limits, and WS connection/message caps.
-- [x] Stripe reconciliation cron and webhook rate limiting for Convex.
-- [x] Postgres-backed explorer persistence option for multi-node deployments.
-- [x] Simulator + auth request IDs, structured request logs, and auth metrics endpoint.
-- [x] Frontend security headers baseline via `website/public/_headers`.
-- [x] Postgres explorer private-host enforcement with override env vars.
-- [x] Edge/shared rate limiting guidance for simulator + auth.
-- [x] QA + compliance checklists for launch readiness.
-- [x] Auth + billing + entitlement + freeroll E2E automation script (`website/scripts/e2e-auth-billing.mjs`).
-- [x] Layout smoke automation for breakpoints + side bet drawers (`website/scripts/layout-smoke.mjs`).
-  - WebKit runs on Arch use `website/scripts/setup-webkit-libs.sh` + `PW_WEBKIT_LIB_PATH`.
-- [x] Capped in-memory rate-limit buckets for auth + Convex Stripe webhook.
-- [x] Convex Stripe storage moved to non-node module (`website/convex/stripeStore.ts`) to satisfy `use node` action rules.
-- [x] Stripe-enabled E2E run against self-hosted Convex + Auth service (checkout + entitlements + freeroll sync; freeroll sync reports `admin_unconfigured` without casino keys).
-- [x] Removed compiled `website/convex/*.js` artifacts to prevent Convex bundling collisions.
-- [x] Documented load testing steps for simulator/WS scale validation.
-- [x] Added local E2E bootstrap script for self-hosted Convex + Auth + Stripe (`scripts/e2e-auth-billing-local.sh`).
-- [x] Ran local E2E bootstrap (checkout + entitlements OK; freeroll sync `admin_unconfigured` without casino keys).
-- [x] Ran local load-test smoke run (50 bots, 60s, 0 failed; output in `load-test-20251225-015307`).
-
-## Blocking Issues (P0)
-- [x] Lock down Convex auth/user/entitlement/stripe functions with a service token gate.
-- [x] Add server-side validation of Stripe price/tier and origin checks for billing endpoints.
-- [x] Add a safe nonce strategy for admin transactions when Auth service scales horizontally.
-
-## Remediation Plan
-
-### Phase 0 - Security & Access Control (P0)
-- [x] Guard Convex user/auth/entitlement mutations with a service token; make `getUserByAuth` internal.
-- [x] Require service token on Stripe checkout/portal actions.
-- [x] Add server-side validation in Auth service: allowed `priceId` list and tier mapping (reject client-provided values outside the allowlist).
-- [x] Add CSRF/origin enforcement for `/profile/*` and `/billing/*` endpoints (fail closed if `AUTH_ALLOWED_ORIGINS` is unset).
-- [x] Require signature proof when linking a public key to a user profile.
-- [x] Lock down simulator HTTP + WS origins (fail closed unless allowlisted).
-- [x] Enforce request body size limits on simulator submit endpoints.
-
-### Phase 1 - Data Integrity & Retention (P1)
-- [x] Add TTL/cleanup job for `auth_challenges` table and for `stripe_events` retention.
-- [x] Add entitlement reconciliation support (manual endpoint; cron optional).
-- [x] Add idempotent event handling for multiple subscription items (multi-price support).
-- [x] Schedule periodic entitlement reconciliation (cron) for self-hosted Convex.
-
-### Phase 2 - Scalability & Reliability (P1/P2)
-- [x] Introduce distributed nonce management for admin transactions using Convex `admin_nonces`.
-- [x] Add rate limits to Convex HTTP actions (Auth service rate limits implemented).
-- [x] Enforce websocket connection limits and per-connection memory caps (configurable).
-- [x] Establish shared explorer persistence backend for multi-node deployments (Postgres; SQLite remains for single-node).
-- [x] Add TLS or private-network enforcement for explorer Postgres connections (private-host enforcement with overrides).
-- [x] Add shared rate limiting guidance (edge/WAF config) for Auth service and simulator endpoints.
-
-### Phase 3 - Observability & Operations (P2)
-- [x] Structured logging + request IDs across simulator/auth/front-end HTTP paths.
-- [x] Metrics for auth/billing success/failures, webhook latency logs, and freeroll sync attempts.
-- [x] Health checks and alert hooks for Stripe webhook failures and admin tx submit failures (metrics/logs exposed).
-- [x] Add security headers (CSP, HSTS, X-Frame-Options) for frontend hosting/CDN.
-
-### Phase 4 - UX/Compliance/QA (P2/P3)
-- [x] End-to-end tests for signup, billing, entitlement enforcement, and freeroll limit syncing.
-- [x] Validate mobile/desktop UX consistency for all games and side-bet drawers.
-- [x] Compliance gap analysis (KYC/AML, responsible gaming, geo-fencing if required).
-- [x] Draft QA and compliance checklists.
-
 ## Go-Live Workstreams (Merged from `golive.md`)
 
 ### Infrastructure & Deployment
-- [x] Containerize all deployable services (validator/node, simulator/indexer, executor, website build).
 - [ ] Deploy Auth.js service and Convex backend with persistent storage + backups.
-- [x] Define staging + production environments with independent configs and keys.
 - [ ] Add Infrastructure-as-Code (Terraform/Pulumi) and secrets management (SSM/Vault).
-- [x] Terminate TLS at the edge, enforce HTTPS/WSS, and enable HSTS.
-- [x] Replace local scripts with production-grade supervision (systemd/K8s).
-- [x] Add health checks that don't rely on missing runtime deps (Dockerfile curl gap).
-
-### Data & Persistence
-- [x] Convex schema + indexes for auth/billing/entitlements (`website/convex/schema.ts`).
-- [x] Explorer/event history persistence model + retention documented (`docs/persistence.md`).
-- [x] Migration plan from SQLite to shared Postgres documented (`docs/persistence.md`).
-- [x] Data access boundaries documented (`docs/persistence.md`).
-- [x] Backup + restore plan + RPO/RTO targets documented (`docs/persistence.md`).
-- [x] Backup + restore drills for Convex and explorer data.
 
 ### Scalability & Performance
-- [x] Backpressure controls and rate limits for simulator + auth (configurable caps).
-- [x] Separate read/indexer and write/validator paths for scale; add WS fanout (Redis/NATS).
-- [x] Add HTTP cache headers for explorer endpoints.
-- [x] Add Redis caching layer for high-traffic endpoints.
-- [x] Define SLOs + alert thresholds (`docs/observability.md`).
 - [ ] Load test with target concurrency and validate SLOs.
-- [x] Document resource sizing per component for 5k/20k/50k concurrency (`docs/resource_sizing.md`).
 
 ### Auth + Billing (Production)
-- [x] Auth.js v5 + Convex-backed entitlements + Stripe webhook sync.
-- [x] On-chain freeroll limit sync from entitlements.
-- [x] Migrate/replace simulator dev passkeys with production auth-only flows.
 - [ ] Production secrets + Stripe live key rollout and webhook verification.
 
 ### Security, Privacy, Compliance
-- [x] Service-token gating, origin allowlists, and rate limits for auth + Convex + simulator.
-- [x] Frontend security headers baseline via `website/public/_headers`.
-- [x] Move private keys out of the browser or enforce dev-only key handling.
-- [x] Audit logging for privileged actions (admin txs, billing, policy updates).
-- [x] Update `SECURITY.md` with Null/Space disclosure contacts and bounty policy.
 - [ ] Compliance implementation: KYC/AML and responsible gaming controls if required.
 
-### UI/UX Usability
-- [x] Side-bet drawer alignment + breakpoint smoke automation.
-- [x] Authoritative logs consumption across all games (remove any frontend re-sims).
-- [x] Onboarding baseline: connection status + offline handling + retry CTA.
-- [x] Onboarding flow polish (wallet/auth status copy, recovery UX, offline fallback).
-- [x] Accessibility baseline: global focus-visible styling.
-- [x] Accessibility pass (contrast, keyboard navigation, mobile log readability).
-
 ### Observability & Operations
-- [x] Request IDs + structured logging + auth metrics endpoint.
-- [x] Prometheus metrics endpoints + local Grafana stack (`/metrics/prometheus`, `docker/observability/`).
-- [x] SLO dashboards + alert thresholds documented (`docs/observability.md`).
-- [x] Log aggregation + alerting plan documented (`docs/observability.md`).
-- [x] Local Loki/Promtail stack for log aggregation.
 - [ ] Deploy metrics/log aggregation + alerting in staging/prod.
-- [x] Incident runbooks and on-call rotations documented (`docs/runbooks.md`).
 
 ### Testing, QA, Release Management
-- [x] E2E auth/billing + freeroll enforcement scripts.
-- [x] Layout + load-test smoke scripts.
-- [x] CI/CD for Rust + web + wasm builds and tests.
-- [x] Dependency scanning in CI (cargo audit + npm audit warn-only).
-- [x] Release rollback plan documented (`docs/release.md`).
-- [x] Staging environment plan documented (`docs/release.md`).
 - [ ] Staging environment with production-like traffic.
-- [x] SAST/code scanning and filesystem vulnerability scans in CI (Semgrep/Trivy, warn-only).
 
 ## Self-Hosted Convex Backend Steps
 - [ ] Provision a host and persistent volumes for Convex backend + dashboard.
