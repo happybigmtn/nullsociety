@@ -5,9 +5,9 @@
  * Note: This module encodes higher-level casino instructions (CasinoStartGame, CasinoGameMove).
  * Game-specific payloads should defer to @nullspace/protocol where possible.
  */
-import { HiLoMove } from '@nullspace/constants';
 import { InstructionTag, GameType, PlayerAction } from './constants.js';
-import { encodeGameMovePayload } from '@nullspace/protocol';
+import { encodeVarint } from './transactions.js';
+import { encodeGameMovePayload, encodeGameActionPayload } from '@nullspace/protocol';
 import type { BlackjackMoveAction } from '@nullspace/protocol/encode';
 
 /**
@@ -107,6 +107,116 @@ export function encodeCasinoJoinTournament(tournamentId: bigint): Uint8Array {
 }
 
 // ============================================================
+// Global table instruction encoders
+// ============================================================
+
+export interface GlobalTableConfigInput {
+  gameType: GameType;
+  bettingMs: number;
+  lockMs: number;
+  payoutMs: number;
+  cooldownMs: number;
+  minBet: bigint;
+  maxBet: bigint;
+  maxBetsPerRound: number;
+}
+
+export interface GlobalTableBetInput {
+  betType: number;
+  target: number;
+  amount: bigint;
+}
+
+export function encodeGlobalTableInit(config: GlobalTableConfigInput): Uint8Array {
+  const result = new Uint8Array(1 + 1 + (8 * 6) + 1);
+  const view = new DataView(result.buffer);
+
+  result[0] = InstructionTag.GlobalTableInit;
+  result[1] = config.gameType;
+  view.setBigUint64(2, BigInt(config.bettingMs), false);
+  view.setBigUint64(10, BigInt(config.lockMs), false);
+  view.setBigUint64(18, BigInt(config.payoutMs), false);
+  view.setBigUint64(26, BigInt(config.cooldownMs), false);
+  view.setBigUint64(34, config.minBet, false);
+  view.setBigUint64(42, config.maxBet, false);
+  result[50] = config.maxBetsPerRound;
+
+  return result;
+}
+
+export function encodeGlobalTableOpenRound(gameType: GameType): Uint8Array {
+  const result = new Uint8Array(2);
+  result[0] = InstructionTag.GlobalTableOpenRound;
+  result[1] = gameType;
+  return result;
+}
+
+export function encodeGlobalTableSubmitBets(
+  gameType: GameType,
+  roundId: bigint,
+  bets: GlobalTableBetInput[]
+): Uint8Array {
+  const lenVarint = encodeVarint(bets.length);
+  const result = new Uint8Array(1 + 1 + 8 + lenVarint.length + bets.length * 10);
+  const view = new DataView(result.buffer);
+
+  let offset = 0;
+  result[offset] = InstructionTag.GlobalTableSubmitBets;
+  offset += 1;
+  result[offset] = gameType;
+  offset += 1;
+  view.setBigUint64(offset, roundId, false);
+  offset += 8;
+  result.set(lenVarint, offset);
+  offset += lenVarint.length;
+
+  for (const bet of bets) {
+    result[offset] = bet.betType;
+    result[offset + 1] = bet.target;
+    view.setBigUint64(offset + 2, bet.amount, false);
+    offset += 10;
+  }
+
+  return result;
+}
+
+export function encodeGlobalTableLock(gameType: GameType, roundId: bigint): Uint8Array {
+  const result = new Uint8Array(10);
+  const view = new DataView(result.buffer);
+  result[0] = InstructionTag.GlobalTableLock;
+  result[1] = gameType;
+  view.setBigUint64(2, roundId, false);
+  return result;
+}
+
+export function encodeGlobalTableReveal(gameType: GameType, roundId: bigint): Uint8Array {
+  const result = new Uint8Array(10);
+  const view = new DataView(result.buffer);
+  result[0] = InstructionTag.GlobalTableReveal;
+  result[1] = gameType;
+  view.setBigUint64(2, roundId, false);
+  return result;
+}
+
+export function encodeGlobalTableSettle(gameType: GameType, roundId: bigint): Uint8Array {
+  const result = new Uint8Array(10);
+  const view = new DataView(result.buffer);
+  result[0] = InstructionTag.GlobalTableSettle;
+  result[1] = gameType;
+  view.setBigUint64(2, roundId, false);
+  return result;
+}
+
+export function encodeGlobalTableFinalize(gameType: GameType, roundId: bigint): Uint8Array {
+  const result = new Uint8Array(10);
+  const view = new DataView(result.buffer);
+  result[0] = InstructionTag.GlobalTableFinalize;
+  result[1] = gameType;
+  view.setBigUint64(2, roundId, false);
+  return result;
+}
+
+// ============================================================
 // Game-specific move payload builders
 // ============================================================
 
@@ -126,8 +236,10 @@ export function buildBlackjackPayload(move: BlackjackMoveAction): Uint8Array {
  * Single byte: 0=higher, 1=lower, 2=cashout, 3=same
  */
 export function buildHiLoPayload(guess: 'higher' | 'lower' | 'same'): Uint8Array {
-  const guessMap = { higher: HiLoMove.Higher, lower: HiLoMove.Lower, same: HiLoMove.Same };
-  return new Uint8Array([guessMap[guess]]);
+  return encodeGameActionPayload({
+    game: 'hilo',
+    action: guess,
+  });
 }
 
 /**
@@ -171,11 +283,11 @@ export function buildRoulettePayload(bets: RouletteBet[]): Uint8Array {
  * 5 bits for which cards to hold (bit 0 = card 0, etc.)
  */
 export function buildVideoPokerPayload(holds: boolean[]): Uint8Array {
-  let holdBits = 0;
-  for (let i = 0; i < 5 && i < holds.length; i++) {
-    if (holds[i]) holdBits |= (1 << i);
-  }
-  return new Uint8Array([holdBits]);
+  return encodeGameActionPayload({
+    game: 'videopoker',
+    action: 'hold',
+    holds,
+  });
 }
 
 /**
@@ -237,7 +349,10 @@ export function buildSicBoPayload(bets: SicBoBet[]): Uint8Array {
  * 0 = surrender, 1 = go to war
  */
 export function buildCasinoWarPayload(goToWar: boolean): Uint8Array {
-  return new Uint8Array([goToWar ? 1 : 0]);
+  return encodeGameActionPayload({
+    game: 'casinowar',
+    action: goToWar ? 'war' : 'surrender',
+  });
 }
 
 /**
@@ -245,7 +360,10 @@ export function buildCasinoWarPayload(goToWar: boolean): Uint8Array {
  * 0 = fold, 1 = play
  */
 export function buildThreeCardPayload(play: boolean): Uint8Array {
-  return new Uint8Array([play ? 1 : 0]);
+  return encodeGameActionPayload({
+    game: 'threecard',
+    action: play ? 'play' : 'fold',
+  });
 }
 
 /**
@@ -255,5 +373,13 @@ export function buildThreeCardPayload(play: boolean): Uint8Array {
  * multiplier: 4x, 3x, 2x, 1x preflop/flop/river
  */
 export function buildUltimateHoldemPayload(action: 'check' | 'bet', multiplier: number = 1): Uint8Array {
-  return new Uint8Array([action === 'bet' ? 1 : 0, multiplier]);
+  if (action === 'check') {
+    return encodeGameActionPayload({ game: 'ultimateholdem', action: 'check' });
+  }
+  const normalized = multiplier === 4 || multiplier === 3 || multiplier === 2 ? multiplier : 1;
+  return encodeGameActionPayload({
+    game: 'ultimateholdem',
+    action: 'bet',
+    multiplier: normalized,
+  });
 }

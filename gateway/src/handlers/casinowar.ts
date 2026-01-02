@@ -7,12 +7,12 @@ import { GameHandler, type HandlerContext, type HandleResult } from './base.js';
 import { GameType } from '../codec/index.js';
 import { generateSessionId } from '../codec/transactions.js';
 import { ErrorCodes, createError } from '../types/errors.js';
-import { CasinoWarMove as SharedCasinoWarMove } from '@nullspace/constants';
 import type {
   CasinoWarDealRequest,
   CasinoWarLegacyDealRequest,
   OutboundMessage,
 } from '@nullspace/protocol/mobile';
+import { encodeGameActionPayload } from '@nullspace/protocol';
 
 export class CasinoWarHandler extends GameHandler {
   constructor() {
@@ -59,16 +59,18 @@ export class CasinoWarHandler extends GameHandler {
     }
 
     if (tieBet > 0) {
-      const tiePayload = new Uint8Array(9);
-      tiePayload[0] = SharedCasinoWarMove.SetTieBet;
-      new DataView(tiePayload.buffer).setBigUint64(1, BigInt(tieBet), false);
+      const tiePayload = encodeGameActionPayload({
+        game: 'casinowar',
+        action: 'set_tie_bet',
+        amount: BigInt(tieBet),
+      });
       const tieResult = await this.makeMove(ctx, tiePayload);
       if (!tieResult.success) {
         return tieResult;
       }
     }
 
-    const dealPayload = new Uint8Array([SharedCasinoWarMove.Play]);
+    const dealPayload = encodeGameActionPayload({ game: 'casinowar', action: 'play' });
     const dealResult = await this.makeMove(ctx, dealPayload);
 
     if (!dealResult.success) {
@@ -89,12 +91,12 @@ export class CasinoWarHandler extends GameHandler {
 
   private async handleWar(ctx: HandlerContext): Promise<HandleResult> {
     // Go to war action
-    const payload = new Uint8Array([SharedCasinoWarMove.War]);
+    const payload = encodeGameActionPayload({ game: 'casinowar', action: 'war' });
     return this.makeMove(ctx, payload);
   }
 
   private async handleSurrender(ctx: HandlerContext): Promise<HandleResult> {
-    const payload = new Uint8Array([SharedCasinoWarMove.Surrender]);
+    const payload = encodeGameActionPayload({ game: 'casinowar', action: 'surrender' });
     return this.makeMove(ctx, payload);
   }
 }

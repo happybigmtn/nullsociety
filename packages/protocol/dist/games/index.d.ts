@@ -37,21 +37,21 @@ export declare const GAME_CODECS: readonly [GameCodec<import("zod").ZodObject<{
     requestId: import("zod").ZodOptional<import("zod").ZodString>;
 }, "strip", import("zod").ZodTypeAny, {
     number: number;
+    betType: number;
+    amount: string;
     type: "game_move";
     sessionId: string;
     game: "roulette";
     move: "place_bet";
-    betType: number;
-    amount: string;
     requestId?: string | undefined;
 }, {
     number: number;
+    betType: number;
+    amount: string;
     type: "game_move";
     sessionId: string;
     game: "roulette";
     move: "place_bet";
-    betType: number;
-    amount: string;
     requestId?: string | undefined;
 }>, import("zod").ZodObject<{
     type: import("zod").ZodLiteral<"game_move">;
@@ -73,12 +73,12 @@ export declare const GAME_CODECS: readonly [GameCodec<import("zod").ZodObject<{
     requestId?: string | undefined;
 }>]>, {
     number: number;
+    betType: number;
+    amount: string;
     type: "game_move";
     sessionId: string;
     game: "roulette";
     move: "place_bet";
-    betType: number;
-    amount: string;
     requestId?: string | undefined;
 } | {
     type: "game_move";
@@ -96,21 +96,21 @@ export declare const GAME_CODECS: readonly [GameCodec<import("zod").ZodObject<{
     amount: import("zod").ZodEffects<import("zod").ZodEffects<import("zod").ZodString, string, string>, string, string>;
     requestId: import("zod").ZodOptional<import("zod").ZodString>;
 }, "strip", import("zod").ZodTypeAny, {
+    betType: number;
+    amount: string;
     type: "game_move";
     sessionId: string;
     game: "craps";
     move: "place_bet";
-    betType: number;
-    amount: string;
     requestId?: string | undefined;
     target?: number | undefined;
 }, {
+    betType: number;
+    amount: string;
     type: "game_move";
     sessionId: string;
     game: "craps";
     move: "place_bet";
-    betType: number;
-    amount: string;
     requestId?: string | undefined;
     target?: number | undefined;
 }>, import("zod").ZodObject<{
@@ -121,18 +121,18 @@ export declare const GAME_CODECS: readonly [GameCodec<import("zod").ZodObject<{
     amount: import("zod").ZodEffects<import("zod").ZodEffects<import("zod").ZodString, string, string>, string, string>;
     requestId: import("zod").ZodOptional<import("zod").ZodString>;
 }, "strip", import("zod").ZodTypeAny, {
+    amount: string;
     type: "game_move";
     sessionId: string;
     game: "craps";
     move: "add_odds";
-    amount: string;
     requestId?: string | undefined;
 }, {
+    amount: string;
     type: "game_move";
     sessionId: string;
     game: "craps";
     move: "add_odds";
-    amount: string;
     requestId?: string | undefined;
 }>, import("zod").ZodObject<{
     type: import("zod").ZodLiteral<"game_move">;
@@ -171,20 +171,20 @@ export declare const GAME_CODECS: readonly [GameCodec<import("zod").ZodObject<{
     move: "clear_bets";
     requestId?: string | undefined;
 }>]>, {
+    betType: number;
+    amount: string;
     type: "game_move";
     sessionId: string;
     game: "craps";
     move: "place_bet";
-    betType: number;
-    amount: string;
     requestId?: string | undefined;
     target?: number | undefined;
 } | {
+    amount: string;
     type: "game_move";
     sessionId: string;
     game: "craps";
     move: "add_odds";
-    amount: string;
     requestId?: string | undefined;
 } | {
     type: "game_move";
@@ -239,21 +239,21 @@ export declare const GAME_CODECS_BY_NAME: {
         requestId: import("zod").ZodOptional<import("zod").ZodString>;
     }, "strip", import("zod").ZodTypeAny, {
         number: number;
+        betType: number;
+        amount: string;
         type: "game_move";
         sessionId: string;
         game: "roulette";
         move: "place_bet";
-        betType: number;
-        amount: string;
         requestId?: string | undefined;
     }, {
         number: number;
+        betType: number;
+        amount: string;
         type: "game_move";
         sessionId: string;
         game: "roulette";
         move: "place_bet";
-        betType: number;
-        amount: string;
         requestId?: string | undefined;
     }>, import("zod").ZodObject<{
         type: import("zod").ZodLiteral<"game_move">;
@@ -275,12 +275,12 @@ export declare const GAME_CODECS_BY_NAME: {
         requestId?: string | undefined;
     }>]>, {
         number: number;
+        betType: number;
+        amount: string;
         type: "game_move";
         sessionId: string;
         game: "roulette";
         move: "place_bet";
-        betType: number;
-        amount: string;
         requestId?: string | undefined;
     } | {
         type: "game_move";
@@ -299,21 +299,21 @@ export declare const GAME_CODECS_BY_NAME: {
         amount: import("zod").ZodEffects<import("zod").ZodEffects<import("zod").ZodString, string, string>, string, string>;
         requestId: import("zod").ZodOptional<import("zod").ZodString>;
     }, "strip", import("zod").ZodTypeAny, {
+        betType: number;
+        amount: string;
         type: "game_move";
         sessionId: string;
         game: "craps";
         move: "place_bet";
-        betType: number;
-        amount: string;
         requestId?: string | undefined;
         target?: number | undefined;
     }, {
+        betType: number;
+        amount: string;
         type: "game_move";
         sessionId: string;
         game: "craps";
         move: "place_bet";
-        betType: number;
-        amount: string;
         requestId?: string | undefined;
         target?: number | undefined;
     }>, import("zod").ZodObject<{
@@ -324,18 +324,18 @@ export declare const GAME_CODECS_BY_NAME: {
         amount: import("zod").ZodEffects<import("zod").ZodEffects<import("zod").ZodString, string, string>, string, string>;
         requestId: import("zod").ZodOptional<import("zod").ZodString>;
     }, "strip", import("zod").ZodTypeAny, {
+        amount: string;
         type: "game_move";
         sessionId: string;
         game: "craps";
         move: "add_odds";
-        amount: string;
         requestId?: string | undefined;
     }, {
+        amount: string;
         type: "game_move";
         sessionId: string;
         game: "craps";
         move: "add_odds";
-        amount: string;
         requestId?: string | undefined;
     }>, import("zod").ZodObject<{
         type: import("zod").ZodLiteral<"game_move">;
@@ -374,20 +374,20 @@ export declare const GAME_CODECS_BY_NAME: {
         move: "clear_bets";
         requestId?: string | undefined;
     }>]>, {
+        betType: number;
+        amount: string;
         type: "game_move";
         sessionId: string;
         game: "craps";
         move: "place_bet";
-        betType: number;
-        amount: string;
         requestId?: string | undefined;
         target?: number | undefined;
     } | {
+        amount: string;
         type: "game_move";
         sessionId: string;
         game: "craps";
         move: "add_odds";
-        amount: string;
         requestId?: string | undefined;
     } | {
         type: "game_move";
@@ -410,5 +410,6 @@ export * from './blackjack.js';
 export * from './roulette.js';
 export * from './craps.js';
 export * from './atomic.js';
+export * from './actions.js';
 export * from './types.js';
 //# sourceMappingURL=index.d.ts.map

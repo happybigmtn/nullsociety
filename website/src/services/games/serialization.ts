@@ -30,8 +30,7 @@ export const getBaccaratBetsToPlace = (
       case 'P_DRAGON': betType = 6; break;
       case 'B_DRAGON': betType = 7; break;
       case 'PANDA8': betType = 8; break;
-      case 'P_PERFECT_PAIR': betType = 9; break;
-      case 'B_PERFECT_PAIR': betType = 10; break;
+      case 'PERFECT_PAIR': betType = 9; break;
       default: continue;
     }
     bets.push({ betType, amount: sideBet.amount });

@@ -10,10 +10,12 @@ This roadmap covers deployment, data, scalability, UI/UX usability, security, an
   protocol, persists nonces in `GATEWAY_DATA_DIR`, and uses configurable session
   rate limits and event wait timeouts (`GATEWAY_SESSION_RATE_LIMIT_*`,
   `GATEWAY_EVENT_TIMEOUT_MS`).
+- Live Table: `services/live-table` WebSocket service for live craps rounds (optional).
+- Ops: `services/ops` analytics + league/referral service (optional).
 - Frontend: `website` (Vite + React + WASM) consuming simulator APIs and WebSockets.
 - Mobile: `mobile` (Expo/native) consuming the gateway WebSocket API.
 - Dev-only auth: simulator passkeys are feature-gated, store raw Ed25519 keys in memory, and are not production-safe.
-- No centralized DB for accounts, billing, or analytics; no production deployment pipeline; Dockerfile only targets simulator.
+- No centralized DB for accounts, billing, or analytics; deployment pipeline is still manual (CI builds GHCR images but no automated rollout).
 - Convex schema + functions, Stripe webhook handling, Auth.js v5 service, and billing UI are implemented; on-chain freeroll limits can be synced from entitlements, but Stripe price IDs and production infra are still pending.
 
 ## Decisions to Lock Early (P0)
@@ -27,7 +29,8 @@ This roadmap covers deployment, data, scalability, UI/UX usability, security, an
 
 ### 1) Infrastructure & Deployment
 - Build real deployment topology: validators, indexer/explorer, API gateway, and frontend host/CDN.
-- Containerize **all** deployable services (node, simulator/indexer, executor, gateway, website build).
+- Containerize **all** deployable services (node, simulator/indexer, executor, gateway, website build, auth, ops, live-table).
+- CI builds GHCR images via `.github/workflows/build-images.yml`; configure `VITE_*` vars/secrets and promote tags per environment.
 - Deploy the Auth.js v5 service (see `services/auth`) alongside Convex and Stripe webhooks.
 - Deploy a self-hosted Convex backend with persistent storage, backups, and staging/prod isolation.
   - Source: open-source Convex backend (`get-convex/convex-backend`), follow its self-hosted README.
@@ -36,7 +39,7 @@ This roadmap covers deployment, data, scalability, UI/UX usability, security, an
 - Define staging + production environments with independent configs and keys.
 - Terminate TLS at the edge, enforce HTTPS/WSS, and enable HSTS.
 - Replace local scripts with production-grade process supervision (systemd/K8s).
-- Add health checks that do not rely on missing runtime deps (current Dockerfile lacks curl).
+- Add/validate health checks that do not rely on missing runtime deps (Docker images now include `curl`).
 - Standardize gateway envs: `GATEWAY_DATA_DIR`, `GATEWAY_EVENT_TIMEOUT_MS`,
   `GATEWAY_SESSION_RATE_LIMIT_POINTS`, `GATEWAY_SESSION_RATE_LIMIT_WINDOW_MS`,
   `GATEWAY_SESSION_RATE_LIMIT_BLOCK_MS`, `MAX_CONNECTIONS_PER_IP`, and

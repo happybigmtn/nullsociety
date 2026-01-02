@@ -25,6 +25,10 @@ export type BlackjackParsedState = {
     version: number;
     stage: number;
     sideBet21Plus3: number;
+    sideBetLuckyLadies: number;
+    sideBetPerfectPairs: number;
+    sideBetBustIt: number;
+    sideBetRoyalMatch: number;
     initPlayerCards: [number, number];
     activeHandIndex: number;
     hands: BlackjackHand[];

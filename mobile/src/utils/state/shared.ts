@@ -27,6 +27,9 @@ export class SafeReader {
       throw new Error(`SafeReader: insufficient data for ${field} at ${this.offset}`);
     }
     const value = this.data[this.offset];
+    if (value === undefined) {
+      throw new Error(`SafeReader: insufficient data for ${field} at ${this.offset}`);
+    }
     this.offset += 1;
     return value;
   }
@@ -35,7 +38,11 @@ export class SafeReader {
     if (offset < 0 || offset >= this.data.length) {
       throw new Error(`SafeReader: insufficient data for ${field} at ${offset}`);
     }
-    return this.data[offset];
+    const value = this.data[offset];
+    if (value === undefined) {
+      throw new Error(`SafeReader: insufficient data for ${field} at ${offset}`);
+    }
+    return value;
   }
 
   readBytes(length: number, field: string): Uint8Array {

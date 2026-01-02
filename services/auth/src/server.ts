@@ -187,6 +187,13 @@ const requireAllowedOrigin: express.RequestHandler = (req, res, next) => {
 };
 
 const metricsAuthToken = process.env.METRICS_AUTH_TOKEN ?? "";
+const requireMetricsAuthToken =
+  String(process.env.AUTH_REQUIRE_METRICS_AUTH ?? "").toLowerCase() === "true" ||
+  String(process.env.AUTH_REQUIRE_METRICS_AUTH ?? "") === "1" ||
+  process.env.NODE_ENV === "production";
+if (requireMetricsAuthToken && !metricsAuthToken) {
+  throw new Error("METRICS_AUTH_TOKEN must be set when metrics auth is required");
+}
 const requireMetricsAuth: express.RequestHandler = (req, res, next) => {
   if (!metricsAuthToken) {
     next();
@@ -505,6 +512,7 @@ const authConfig: ExpressAuthConfig = {
 };
 
 const app = express();
+app.disable("x-powered-by");
 app.set("trust proxy", true);
 app.use((req, res, next) => {
   const incoming = req.headers["x-request-id"];

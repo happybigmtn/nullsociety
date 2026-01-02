@@ -7,15 +7,34 @@
  * Note: @nullspace/protocol decode helpers are used by clients for state rendering, but
  * the gateway Update/FilteredEvents parsing is unique to this module.
  */
+import { logDebug, logError, logWarn } from '../logger.js';
 
 /**
  * Event tags matching Rust nullspace_types::execution::tags::event
  */
 export const EVENT_TAGS = {
+  CASINO_PLAYER_REGISTERED: 20,
   CASINO_GAME_STARTED: 21,
   CASINO_GAME_MOVED: 22,
   CASINO_GAME_COMPLETED: 23,
+  CASINO_LEADERBOARD_UPDATED: 24,
+  TOURNAMENT_STARTED: 25,
+  PLAYER_JOINED: 26,
+  TOURNAMENT_PHASE_CHANGED: 27,
+  TOURNAMENT_ENDED: 28,
   CASINO_ERROR: 29,
+  CASINO_DEPOSITED: 41,
+  PLAYER_MODIFIER_TOGGLED: 42,
+} as const;
+
+export const GLOBAL_TABLE_EVENT_TAGS = {
+  GLOBAL_TABLE_ROUND_OPENED: 60,
+  GLOBAL_TABLE_BET_ACCEPTED: 61,
+  GLOBAL_TABLE_BET_REJECTED: 62,
+  GLOBAL_TABLE_LOCKED: 63,
+  GLOBAL_TABLE_OUTCOME: 64,
+  GLOBAL_TABLE_PLAYER_SETTLED: 65,
+  GLOBAL_TABLE_FINALIZED: 66,
 } as const;
 
 /**
@@ -48,6 +67,75 @@ export interface CasinoGameEvent {
   errorMessage?: string;
 }
 
+export interface GlobalTableBet {
+  betType: number;
+  target: number;
+  amount: bigint;
+}
+
+export interface GlobalTableTotal {
+  betType: number;
+  target: number;
+  amount: bigint;
+}
+
+export interface GlobalTableRound {
+  gameType: number;
+  roundId: bigint;
+  phase: number;
+  phaseEndsAtMs: bigint;
+  mainPoint: number;
+  d1: number;
+  d2: number;
+  madePointsMask: number;
+  epochPointEstablished: boolean;
+  fieldPaytable: number;
+  totals: GlobalTableTotal[];
+}
+
+export type GlobalTableEvent =
+  | {
+      type: 'round_opened';
+      round: GlobalTableRound;
+    }
+  | {
+      type: 'bet_accepted';
+      player: Uint8Array;
+      roundId: bigint;
+      bets: GlobalTableBet[];
+      balanceSnapshot?: { chips: bigint; vusdt: bigint; rng: bigint };
+    }
+  | {
+      type: 'bet_rejected';
+      player: Uint8Array;
+      roundId: bigint;
+      errorCode: number;
+      message: string;
+    }
+  | {
+      type: 'locked';
+      gameType: number;
+      roundId: bigint;
+      phaseEndsAtMs: bigint;
+    }
+  | {
+      type: 'outcome';
+      round: GlobalTableRound;
+    }
+  | {
+      type: 'player_settled';
+      player: Uint8Array;
+      roundId: bigint;
+      payout: bigint;
+      balanceSnapshot?: { chips: bigint; vusdt: bigint; rng: bigint };
+      myBets: GlobalTableBet[];
+    }
+  | {
+      type: 'finalized';
+      gameType: number;
+      roundId: bigint;
+    };
+
 /**
  * Binary reader helper class
  */
@@ -74,6 +162,13 @@ class BinaryReader {
   readU16LE(): number {
     if (this.remaining < 2) throw new Error('End of buffer');
     const value = this.view.getUint16(this.offset, true);
+    this.offset += 2;
+    return value;
+  }
+
+  readU16BE(): number {
+    if (this.remaining < 2) throw new Error('End of buffer');
+    const value = this.view.getUint16(this.offset, false);
     this.offset += 2;
     return value;
   }
@@ -187,6 +282,34 @@ class BinaryReader {
     return strings;
   }
 
+  readStringU32(): string {
+    const length = this.readU32BE();
+    if (length > 10000) {
+      throw new Error(`String length ${length} too large (remaining=${this.remaining})`);
+    }
+    return new TextDecoder().decode(this.readBytes(length));
+  }
+
+  readStringU32Bytes(): void {
+    const length = this.readU32BE();
+    if (length > 10000) {
+      throw new Error(`String length ${length} too large (remaining=${this.remaining})`);
+    }
+    this.skip(length);
+  }
+
+  readStringVecU32(): string[] {
+    const count = this.readU32BE();
+    const strings: string[] = [];
+    if (count > 10000) {
+      throw new Error(`String vec length ${count} too large (remaining=${this.remaining})`);
+    }
+    for (let i = 0; i < count; i += 1) {
+      strings.push(this.readStringU32());
+    }
+    return strings;
+  }
+
   readOptionU64LE(): bigint | null {
     const hasValue = this.readBool();
     if (hasValue) {
@@ -219,6 +342,10 @@ class BinaryReader {
   }
 }
 
+const DIGEST_SIZE = 32;
+const BLS_G1_SIGNATURE_SIZE = 48;
+const ED25519_SIGNATURE_SIZE = 64;
+
 /**
  * Parse a CasinoGameStarted event
  * Uses Big Endian for u64 fields (commonware-codec format)
@@ -248,7 +375,7 @@ function parseCasinoGameMoved(reader: BinaryReader): CasinoGameEvent {
   const sessionId = reader.readU64BE();
   const moveNumber = reader.readU32BE();
   const newState = reader.readVec();
-  const logs = reader.readStringVec();
+  const logs = reader.readStringVecU32();
   const balanceSnapshot = reader.readPlayerBalanceSnapshot();
 
   return {
@@ -273,7 +400,7 @@ function parseCasinoGameCompleted(reader: BinaryReader): CasinoGameEvent {
   const finalChips = reader.readU64BE();
   const wasShielded = reader.readBool();
   const wasDoubled = reader.readBool();
-  const logs = reader.readStringVec();
+  const logs = reader.readStringVecU32();
   const balanceSnapshot = reader.readPlayerBalanceSnapshot();
 
   return {
@@ -305,17 +432,15 @@ function parseCasinoError(reader: BinaryReader): CasinoGameEvent {
   // Try to read errorMessage, but it may fail on false positives
   let errorMessage = '';
   try {
-    // Peek at the string length first
     if (reader.remaining >= 4) {
       const view = new DataView(
         reader['data'].buffer,
         reader['data'].byteOffset + reader['offset'],
         4
       );
-      const length = view.getUint32(0, true);
-      // Only try to read if length is reasonable (< 1000 bytes)
+      const length = view.getUint32(0, false);
       if (length <= 1000 && length <= reader.remaining - 4) {
-        errorMessage = reader.readString();
+        errorMessage = reader.readStringU32();
       }
     }
   } catch {
@@ -329,6 +454,687 @@ function parseCasinoError(reader: BinaryReader): CasinoGameEvent {
     errorCode,
     errorMessage,
   };
+}
+
+function skipProgress(reader: BinaryReader): void {
+  // Progress is fixed-size: view, height, 3 digests, 4 u64s (total 144 bytes)
+  reader.readU64BE(); // view
+  reader.readU64BE(); // height
+  reader.readBytes(DIGEST_SIZE); // block_digest
+  reader.readBytes(DIGEST_SIZE); // state_root
+  reader.readU64BE(); // state_start_op
+  reader.readU64BE(); // state_end_op
+  reader.readBytes(DIGEST_SIZE); // events_root
+  reader.readU64BE(); // events_start_op
+  reader.readU64BE(); // events_end_op
+}
+
+function skipCertificate(reader: BinaryReader): void {
+  // Certificate<Item<Digest>, Signature> with MinSig (G1, 48 bytes)
+  reader.readVarint(); // Item index (UInt)
+  reader.readBytes(DIGEST_SIZE); // Item digest
+  reader.readBytes(BLS_G1_SIGNATURE_SIZE); // Signature (G1)
+}
+
+function skipProof(reader: BinaryReader): void {
+  // Proof<Digest> = UInt(size) + Vec<Digest>
+  reader.readVarint(); // size (Position)
+  const digestCount = reader.readVarint();
+  const bytes = digestCount * DIGEST_SIZE;
+  if (bytes > reader.remaining) {
+    throw new Error(`Proof digest count ${digestCount} too large (remaining=${reader.remaining})`);
+  }
+  reader.skip(bytes);
+}
+
+function skipPolicyState(reader: BinaryReader): void {
+  for (let i = 0; i < 19; i += 1) {
+    reader.readU16BE();
+  }
+  reader.readU64BE(); // credit_vest_secs
+  reader.readU64BE(); // credit_expiry_secs
+  reader.readBool(); // bridge_paused
+  reader.readU64BE(); // bridge_daily_limit
+  reader.readU64BE(); // bridge_daily_limit_per_account
+  reader.readU64BE(); // bridge_min_withdraw
+  reader.readU64BE(); // bridge_max_withdraw
+  reader.readU64BE(); // bridge_delay_secs
+  reader.readBool(); // oracle_enabled
+  reader.readU16BE(); // oracle_max_deviation_bps
+  reader.readU64BE(); // oracle_stale_secs
+}
+
+function skipTreasuryState(reader: BinaryReader): void {
+  for (let i = 0; i < 6; i += 1) {
+    reader.readU64BE();
+  }
+}
+
+function skipTreasuryVestingState(reader: BinaryReader): void {
+  for (let i = 0; i < 18; i += 1) {
+    reader.readU64BE();
+  }
+}
+
+function skipGlobalTableConfig(reader: BinaryReader): void {
+  reader.readU8(); // game_type
+  reader.readU64BE(); // betting_ms
+  reader.readU64BE(); // lock_ms
+  reader.readU64BE(); // payout_ms
+  reader.readU64BE(); // cooldown_ms
+  reader.readU64BE(); // min_bet
+  reader.readU64BE(); // max_bet
+  reader.readU8(); // max_bets_per_round
+}
+
+function skipInstruction(reader: BinaryReader): void {
+  const tag = reader.readU8();
+  switch (tag) {
+    case 10: // CasinoRegister
+      reader.readStringU32Bytes();
+      return;
+    case 11: // CasinoDeposit
+      reader.readU64BE();
+      return;
+    case 12: // CasinoStartGame
+      reader.readU8();
+      reader.readU64BE();
+      reader.readU64BE();
+      return;
+    case 13: { // CasinoGameMove
+      reader.readU64BE();
+      const payloadLen = reader.readU32BE();
+      reader.skip(payloadLen);
+      return;
+    }
+    case 14: // CasinoPlayerAction
+      reader.readU8();
+      return;
+    case 15: // CasinoSetTournamentLimit
+      reader.readPublicKey();
+      reader.readU8();
+      return;
+    case 16: // CasinoJoinTournament
+      reader.readU64BE();
+      return;
+    case 17: // CasinoStartTournament
+      reader.readU64BE();
+      reader.readU64BE();
+      reader.readU64BE();
+      return;
+    case 18: // Stake
+      reader.readU64BE();
+      reader.readU64BE();
+      return;
+    case 19: // Unstake
+    case 20: // ClaimRewards
+    case 21: // ProcessEpoch
+    case 22: // CreateVault
+      return;
+    case 23: // DepositCollateral
+    case 24: // BorrowUSDT
+    case 25: // RepayUSDT
+      reader.readU64BE();
+      return;
+    case 26: // Swap
+      reader.readU64BE();
+      reader.readU64BE();
+      reader.readBool();
+      return;
+    case 27: // AddLiquidity
+      reader.readU64BE();
+      reader.readU64BE();
+      return;
+    case 28: // RemoveLiquidity
+      reader.readU64BE();
+      return;
+    case 29: // CasinoEndTournament
+      reader.readU64BE();
+      return;
+    case 30: // LiquidateVault
+      reader.readPublicKey();
+      return;
+    case 31: // SetPolicy
+      skipPolicyState(reader);
+      return;
+    case 32: // SetTreasury
+      skipTreasuryState(reader);
+      return;
+    case 33: // FundRecoveryPool
+      reader.readU64BE();
+      return;
+    case 34: // RetireVaultDebt
+      reader.readPublicKey();
+      reader.readU64BE();
+      return;
+    case 35: // RetireWorstVaultDebt
+    case 36: // DepositSavings
+    case 37: // WithdrawSavings
+      reader.readU64BE();
+      return;
+    case 38: // ClaimSavingsRewards
+      return;
+    case 39: // SeedAmm
+      reader.readU64BE();
+      reader.readU64BE();
+      reader.readU64BE();
+      reader.readU64BE();
+      return;
+    case 40: // FinalizeAmmBootstrap
+      return;
+    case 41: // SetTreasuryVesting
+      skipTreasuryVestingState(reader);
+      return;
+    case 42: // ReleaseTreasuryAllocation
+      reader.readU8(); // bucket
+      reader.readU64BE();
+      return;
+    case 43: // BridgeWithdraw
+      reader.readU64BE();
+      reader.readVec();
+      return;
+    case 44: // BridgeDeposit
+      reader.readPublicKey();
+      reader.readU64BE();
+      reader.readVec();
+      return;
+    case 45: // FinalizeBridgeWithdrawal
+      reader.readU64BE();
+      reader.readVec();
+      return;
+    case 46: // UpdateOracle
+      reader.readU64BE();
+      reader.readU64BE();
+      reader.readU64BE();
+      reader.readVec();
+      return;
+    case 60: // GlobalTableInit
+      skipGlobalTableConfig(reader);
+      return;
+    case 61: // GlobalTableOpenRound
+      reader.readU8();
+      return;
+    case 62: { // GlobalTableSubmitBets
+      reader.readU8();
+      reader.readU64BE();
+      const betsLen = reader.readVarint();
+      for (let i = 0; i < betsLen; i += 1) {
+        reader.readU8();
+        reader.readU8();
+        reader.readU64BE();
+      }
+      return;
+    }
+    case 63: // GlobalTableLock
+    case 64: // GlobalTableReveal
+    case 65: // GlobalTableSettle
+    case 66: // GlobalTableFinalize
+      reader.readU8();
+      reader.readU64BE();
+      return;
+    default:
+      throw new Error(`Unknown instruction tag ${tag}`);
+  }
+}
+
+function skipTransaction(reader: BinaryReader): void {
+  reader.readU64BE(); // nonce
+  skipInstruction(reader);
+  reader.readPublicKey(); // public key
+  reader.readBytes(ED25519_SIGNATURE_SIZE); // signature
+}
+
+function skipCasinoLeaderboard(reader: BinaryReader): void {
+  const count = reader.readVarint();
+  for (let i = 0; i < count; i += 1) {
+    reader.readPublicKey();
+    reader.readStringU32Bytes();
+    reader.readU64BE();
+    reader.readU32BE();
+  }
+}
+
+function skipTournamentRankings(reader: BinaryReader): void {
+  const count = reader.readVarint();
+  for (let i = 0; i < count; i += 1) {
+    reader.readPublicKey();
+    reader.readU64BE();
+  }
+}
+
+function skipEventByTag(reader: BinaryReader, tag: number): void {
+  switch (tag) {
+    case EVENT_TAGS.CASINO_PLAYER_REGISTERED:
+      reader.readPublicKey();
+      reader.readStringU32Bytes();
+      return;
+    case EVENT_TAGS.CASINO_DEPOSITED:
+      reader.readPublicKey();
+      reader.readU64BE();
+      reader.readU64BE();
+      return;
+    case EVENT_TAGS.CASINO_LEADERBOARD_UPDATED:
+      skipCasinoLeaderboard(reader);
+      return;
+    case EVENT_TAGS.PLAYER_MODIFIER_TOGGLED:
+      reader.readPublicKey();
+      reader.readU8(); // action
+      reader.readBool();
+      reader.readBool();
+      reader.readBool();
+      return;
+    case EVENT_TAGS.TOURNAMENT_STARTED:
+      reader.readU64BE();
+      reader.readU64BE();
+      return;
+    case EVENT_TAGS.PLAYER_JOINED:
+      reader.readU64BE();
+      reader.readPublicKey();
+      return;
+    case EVENT_TAGS.TOURNAMENT_PHASE_CHANGED:
+      reader.readU64BE();
+      reader.readU8(); // phase
+      return;
+    case EVENT_TAGS.TOURNAMENT_ENDED:
+      reader.readU64BE();
+      skipTournamentRankings(reader);
+      return;
+    default:
+      throw new Error(`Unknown event tag ${tag}`);
+  }
+}
+
+function parseCasinoEventWithTag(reader: BinaryReader, tag: number): CasinoGameEvent | null {
+  switch (tag) {
+    case EVENT_TAGS.CASINO_GAME_STARTED:
+      return parseCasinoGameStarted(reader);
+    case EVENT_TAGS.CASINO_GAME_MOVED:
+      return parseCasinoGameMoved(reader);
+    case EVENT_TAGS.CASINO_GAME_COMPLETED:
+      return parseCasinoGameCompleted(reader);
+    case EVENT_TAGS.CASINO_ERROR:
+      return parseCasinoError(reader);
+    default:
+      return null;
+  }
+}
+
+function parseGlobalTableEventWithTag(
+  reader: BinaryReader,
+  tag: number
+): GlobalTableEvent | null {
+  switch (tag) {
+    case GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_ROUND_OPENED:
+      return { type: 'round_opened', round: parseGlobalTableRound(reader) };
+    case GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_BET_ACCEPTED: {
+      const player = reader.readPublicKey();
+      const roundId = reader.readU64BE();
+      const betsLen = reader.readVarint();
+      const bets: GlobalTableBet[] = [];
+      for (let i = 0; i < betsLen; i += 1) {
+        bets.push(readGlobalTableBet(reader));
+      }
+      const balanceSnapshot = reader.readPlayerBalanceSnapshot();
+      return {
+        type: 'bet_accepted',
+        player,
+        roundId,
+        bets,
+        balanceSnapshot,
+      };
+    }
+    case GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_BET_REJECTED: {
+      const player = reader.readPublicKey();
+      const roundId = reader.readU64BE();
+      const errorCode = reader.readU8();
+      const message = reader.readStringU32();
+      return {
+        type: 'bet_rejected',
+        player,
+        roundId,
+        errorCode,
+        message,
+      };
+    }
+    case GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_LOCKED:
+      return {
+        type: 'locked',
+        gameType: reader.readU8(),
+        roundId: reader.readU64BE(),
+        phaseEndsAtMs: reader.readU64BE(),
+      };
+    case GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_OUTCOME:
+      return { type: 'outcome', round: parseGlobalTableRound(reader) };
+    case GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_PLAYER_SETTLED: {
+      const player = reader.readPublicKey();
+      const roundId = reader.readU64BE();
+      const payout = reader.readI64BE();
+      const balanceSnapshot = reader.readPlayerBalanceSnapshot();
+      const myBetsLen = reader.readVarint();
+      const myBets: GlobalTableBet[] = [];
+      for (let i = 0; i < myBetsLen; i += 1) {
+        myBets.push(readGlobalTableBet(reader));
+      }
+      return {
+        type: 'player_settled',
+        player,
+        roundId,
+        payout,
+        balanceSnapshot,
+        myBets,
+      };
+    }
+    case GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_FINALIZED:
+      return {
+        type: 'finalized',
+        gameType: reader.readU8(),
+        roundId: reader.readU64BE(),
+      };
+    default:
+      return null;
+  }
+}
+
+function decodeFilteredEvents(
+  data: Uint8Array
+): { casino: CasinoGameEvent[]; global: GlobalTableEvent[] } {
+  const casino: CasinoGameEvent[] = [];
+  const global: GlobalTableEvent[] = [];
+
+  if (data.length === 0 || data[0] !== 0x02) {
+    return { casino, global };
+  }
+
+  const reader = new BinaryReader(data);
+  reader.readU8(); // Update::FilteredEvents tag
+
+  skipProgress(reader);
+  skipCertificate(reader);
+  skipProof(reader);
+
+  const opsLen = reader.readVarint();
+  for (let i = 0; i < opsLen; i += 1) {
+    reader.readU64BE(); // location
+    const context = reader.readU8();
+    if (context === 0x05) {
+      const outputKind = reader.readU8();
+      if (outputKind === 0x00) {
+        const tag = reader.readU8();
+        const casinoEvent = parseCasinoEventWithTag(reader, tag);
+        if (casinoEvent) {
+          if (validateEvent(casinoEvent)) {
+            casino.push(casinoEvent);
+          }
+          continue;
+        }
+
+        const globalEvent = parseGlobalTableEventWithTag(reader, tag);
+        if (globalEvent) {
+          if (validateGlobalTableEvent(globalEvent)) {
+            global.push(globalEvent);
+          }
+          continue;
+        }
+
+        skipEventByTag(reader, tag);
+      } else if (outputKind === 0x01) {
+        skipTransaction(reader);
+      } else if (outputKind === 0x02) {
+        reader.readU64BE();
+        reader.readU64BE();
+      } else {
+        throw new Error(`Unexpected Output kind ${outputKind} in FilteredEvents`);
+      }
+    } else if (context === 0x04) {
+      const hasValue = reader.readBool();
+      if (!hasValue) {
+        continue;
+      }
+      const outputKind = reader.readU8();
+      if (outputKind === 0x00) {
+        const tag = reader.readU8();
+        const casinoEvent = parseCasinoEventWithTag(reader, tag);
+        if (casinoEvent) {
+          if (validateEvent(casinoEvent)) {
+            casino.push(casinoEvent);
+          }
+          continue;
+        }
+        const globalEvent = parseGlobalTableEventWithTag(reader, tag);
+        if (globalEvent) {
+          if (validateGlobalTableEvent(globalEvent)) {
+            global.push(globalEvent);
+          }
+          continue;
+        }
+        skipEventByTag(reader, tag);
+      } else if (outputKind === 0x01) {
+        skipTransaction(reader);
+      } else if (outputKind === 0x02) {
+        reader.readU64BE();
+        reader.readU64BE();
+      } else {
+        throw new Error(`Unexpected Output kind ${outputKind} in FilteredEvents commit`);
+      }
+    } else {
+      throw new Error(`Unknown keyless op context ${context}`);
+    }
+  }
+
+  return { casino, global };
+}
+
+function decodeEvents(
+  data: Uint8Array
+): { casino: CasinoGameEvent[]; global: GlobalTableEvent[] } {
+  const casino: CasinoGameEvent[] = [];
+  const global: GlobalTableEvent[] = [];
+
+  if (data.length === 0 || data[0] !== 0x01) {
+    return { casino, global };
+  }
+
+  const reader = new BinaryReader(data);
+  reader.readU8(); // Update::Events tag
+
+  skipProgress(reader);
+  skipCertificate(reader);
+  skipProof(reader);
+
+  const opsLen = reader.readVarint();
+  for (let i = 0; i < opsLen; i += 1) {
+    const context = reader.readU8();
+    if (context === 0x05) {
+      const outputKind = reader.readU8();
+      if (outputKind === 0x00) {
+        const tag = reader.readU8();
+        const casinoEvent = parseCasinoEventWithTag(reader, tag);
+        if (casinoEvent) {
+          if (validateEvent(casinoEvent)) {
+            casino.push(casinoEvent);
+          }
+          continue;
+        }
+
+        const globalEvent = parseGlobalTableEventWithTag(reader, tag);
+        if (globalEvent) {
+          if (validateGlobalTableEvent(globalEvent)) {
+            global.push(globalEvent);
+          }
+          continue;
+        }
+
+        skipEventByTag(reader, tag);
+      } else if (outputKind === 0x01) {
+        skipTransaction(reader);
+      } else if (outputKind === 0x02) {
+        reader.readU64BE();
+        reader.readU64BE();
+      } else {
+        throw new Error(`Unexpected Output kind ${outputKind} in Events`);
+      }
+    } else if (context === 0x04) {
+      const hasValue = reader.readBool();
+      if (!hasValue) {
+        continue;
+      }
+      const outputKind = reader.readU8();
+      if (outputKind === 0x00) {
+        const tag = reader.readU8();
+        const casinoEvent = parseCasinoEventWithTag(reader, tag);
+        if (casinoEvent) {
+          if (validateEvent(casinoEvent)) {
+            casino.push(casinoEvent);
+          }
+          continue;
+        }
+        const globalEvent = parseGlobalTableEventWithTag(reader, tag);
+        if (globalEvent) {
+          if (validateGlobalTableEvent(globalEvent)) {
+            global.push(globalEvent);
+          }
+          continue;
+        }
+        skipEventByTag(reader, tag);
+      } else if (outputKind === 0x01) {
+        skipTransaction(reader);
+      } else if (outputKind === 0x02) {
+        reader.readU64BE();
+        reader.readU64BE();
+      } else {
+        throw new Error(`Unexpected Output kind ${outputKind} in Events commit`);
+      }
+    } else {
+      throw new Error(`Unknown keyless op context ${context}`);
+    }
+  }
+
+  return { casino, global };
+}
+
+function readGlobalTableBet(reader: BinaryReader): GlobalTableBet {
+  return {
+    betType: reader.readU8(),
+    target: reader.readU8(),
+    amount: reader.readU64BE(),
+  };
+}
+
+function readGlobalTableTotal(reader: BinaryReader): GlobalTableTotal {
+  return {
+    betType: reader.readU8(),
+    target: reader.readU8(),
+    amount: reader.readU64BE(),
+  };
+}
+
+function parseGlobalTableRound(reader: BinaryReader): GlobalTableRound {
+  const gameType = reader.readU8();
+  const roundId = reader.readU64BE();
+  const phase = reader.readU8();
+  const phaseEndsAtMs = reader.readU64BE();
+  const mainPoint = reader.readU8();
+  const d1 = reader.readU8();
+  const d2 = reader.readU8();
+  const madePointsMask = reader.readU8();
+  const epochPointEstablished = reader.readBool();
+  const fieldPaytable = reader.readU8();
+  // roll seed (Vec<u8>)
+  reader.readVec();
+  const totalsLen = reader.readVarint();
+  const totals: GlobalTableTotal[] = [];
+  for (let i = 0; i < totalsLen; i += 1) {
+    totals.push(readGlobalTableTotal(reader));
+  }
+
+  return {
+    gameType,
+    roundId,
+    phase,
+    phaseEndsAtMs,
+    mainPoint,
+    d1,
+    d2,
+    madePointsMask,
+    epochPointEstablished,
+    fieldPaytable,
+    totals,
+  };
+}
+
+function parseGlobalTableEvent(reader: BinaryReader): GlobalTableEvent | null {
+  const tag = reader.readU8();
+
+  switch (tag) {
+    case GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_ROUND_OPENED:
+      return { type: 'round_opened', round: parseGlobalTableRound(reader) };
+    case GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_BET_ACCEPTED: {
+      const player = reader.readPublicKey();
+      const roundId = reader.readU64BE();
+      const betsLen = reader.readVarint();
+      const bets: GlobalTableBet[] = [];
+      for (let i = 0; i < betsLen; i += 1) {
+        bets.push(readGlobalTableBet(reader));
+      }
+      const balanceSnapshot = reader.readPlayerBalanceSnapshot();
+      return {
+        type: 'bet_accepted',
+        player,
+        roundId,
+        bets,
+        balanceSnapshot,
+      };
+    }
+    case GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_BET_REJECTED: {
+      const player = reader.readPublicKey();
+      const roundId = reader.readU64BE();
+      const errorCode = reader.readU8();
+      const message = reader.readStringU32();
+      return {
+        type: 'bet_rejected',
+        player,
+        roundId,
+        errorCode,
+        message,
+      };
+    }
+    case GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_LOCKED:
+      return {
+        type: 'locked',
+        gameType: reader.readU8(),
+        roundId: reader.readU64BE(),
+        phaseEndsAtMs: reader.readU64BE(),
+      };
+    case GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_OUTCOME:
+      return { type: 'outcome', round: parseGlobalTableRound(reader) };
+    case GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_PLAYER_SETTLED: {
+      const player = reader.readPublicKey();
+      const roundId = reader.readU64BE();
+      const payout = reader.readI64BE();
+      const balanceSnapshot = reader.readPlayerBalanceSnapshot();
+      const myBetsLen = reader.readVarint();
+      const myBets: GlobalTableBet[] = [];
+      for (let i = 0; i < myBetsLen; i += 1) {
+        myBets.push(readGlobalTableBet(reader));
+      }
+      return {
+        type: 'player_settled',
+        player,
+        roundId,
+        payout,
+        balanceSnapshot,
+        myBets,
+      };
+    }
+    case GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_FINALIZED:
+      return {
+        type: 'finalized',
+        gameType: reader.readU8(),
+        roundId: reader.readU64BE(),
+      };
+    default:
+      return null;
+  }
 }
 
 /**
@@ -396,6 +1202,28 @@ export function extractCasinoEvents(data: Uint8Array): CasinoGameEvent[] {
     return events;
   }
 
+  if (data[0] === 0x01) {
+    try {
+      const decoded = decodeEvents(data);
+      if (decoded.casino.length > 0) {
+        return decoded.casino;
+      }
+    } catch (err) {
+      logWarn('[extractCasinoEvents] Failed to decode Events:', err);
+    }
+  }
+
+  if (data[0] === 0x02) {
+    try {
+      const decoded = decodeFilteredEvents(data);
+      if (decoded.casino.length > 0) {
+        return decoded.casino;
+      }
+    } catch (err) {
+      logWarn('[extractCasinoEvents] Failed to decode FilteredEvents:', err);
+    }
+  }
+
   // The events_proof_ops Vec is at the END of the message after ~700-900 bytes of header
   // Structure: [Vec length: u32][item1][item2]...
   // Each item: [u64 location][Output discriminant][if Event: tag + event_data]
@@ -415,13 +1243,13 @@ export function extractCasinoEvents(data: Uint8Array): CasinoGameEvent[] {
         const ctx = Array.from(data.slice(d, Math.min(d + 20, data.length)))
           .map((x) => x.toString(16).padStart(2, '0'))
           .join(' ');
-        console.log(`[extractCasinoEvents] Found [05 00 ${tag.toString(16)}] at ${d}: ${ctx}`);
+        logDebug(`[extractCasinoEvents] Found [05 00 ${tag.toString(16)}] at ${d}: ${ctx}`);
       }
     }
   }
 
   // Scan backwards for [05][00][tag] pattern (Keyless::Append + Output::Event + tag)
-  for (let i = data.length - 60; i >= scanStart; i--) {
+  for (let i = Math.max(0, data.length - 3); i >= scanStart; i--) {
     if (data[i] === 0x05 && data[i + 1] === 0x00) {
       const eventTag = data[i + 2];
       if (
@@ -436,7 +1264,7 @@ export function extractCasinoEvents(data: Uint8Array): CasinoGameEvent[] {
           const event = parseEvent(reader);
 
           if (event && validateEvent(event)) {
-            console.log(
+            logDebug(
               `[extractCasinoEvents] Found ${event.type} via fallback at ${i}: session=${event.sessionId}`,
               event.type === 'error' ? `error=${event.errorCode} msg=${event.errorMessage}` : ''
             );
@@ -455,7 +1283,69 @@ export function extractCasinoEvents(data: Uint8Array): CasinoGameEvent[] {
     const last150 = Array.from(data.slice(Math.max(0, data.length - 150)))
       .map((x) => x.toString(16).padStart(2, '0'))
       .join(' ');
-    console.log(`[extractCasinoEvents] No events in ${data.length}b FilteredEvents. Last 150 bytes: ${last150}`);
+    logDebug(`[extractCasinoEvents] No events in ${data.length}b FilteredEvents. Last 150 bytes: ${last150}`);
+  }
+
+  return events;
+}
+
+export function extractGlobalTableEvents(data: Uint8Array): GlobalTableEvent[] {
+  const events: GlobalTableEvent[] = [];
+
+  if (data.length === 0) {
+    return events;
+  }
+
+  if (data[0] === 0x00) {
+    return events;
+  }
+
+  if (data[0] === 0x01) {
+    try {
+      const decoded = decodeEvents(data);
+      if (decoded.global.length > 0) {
+        return decoded.global;
+      }
+    } catch (err) {
+      logWarn('[extractGlobalTableEvents] Failed to decode Events:', err);
+    }
+  }
+
+  if (data[0] === 0x02) {
+    try {
+      const decoded = decodeFilteredEvents(data);
+      if (decoded.global.length > 0) {
+        return decoded.global;
+      }
+    } catch (err) {
+      logWarn('[extractGlobalTableEvents] Failed to decode FilteredEvents:', err);
+    }
+  }
+
+  for (let i = Math.max(0, data.length - 3); i >= 0; i--) {
+    if (data[i] === 0x05 && data[i + 1] === 0x00) {
+      const tag = data[i + 2];
+      if (
+        tag === GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_ROUND_OPENED ||
+        tag === GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_BET_ACCEPTED ||
+        tag === GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_BET_REJECTED ||
+        tag === GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_LOCKED ||
+        tag === GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_OUTCOME ||
+        tag === GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_PLAYER_SETTLED ||
+        tag === GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_FINALIZED
+      ) {
+        try {
+          const reader = new BinaryReader(data.slice(i + 2));
+          const event = parseGlobalTableEvent(reader);
+          if (event && validateGlobalTableEvent(event)) {
+            events.push(event);
+            return events;
+          }
+        } catch {
+          // ignore false positives
+        }
+      }
+    }
   }
 
   return events;
@@ -484,6 +1374,16 @@ function validateEvent(event: CasinoGameEvent): boolean {
   return true;
 }
 
+function validateGlobalTableEvent(event: GlobalTableEvent): boolean {
+  if (event.type === 'round_opened' || event.type === 'outcome') {
+    return event.round.roundId !== 0n;
+  }
+  if ('roundId' in event) {
+    return event.roundId !== 0n;
+  }
+  return true;
+}
+
 /**
  * Parse a single casino game event from raw event data
  * (when we know the exact boundary of the event)
@@ -493,7 +1393,7 @@ export function parseCasinoEvent(data: Uint8Array): CasinoGameEvent | null {
     const reader = new BinaryReader(data);
     return parseOutput(reader);
   } catch (err) {
-    console.error('Failed to parse casino event:', err);
+      logError('Failed to parse casino event:', err);
     return null;
   }
 }

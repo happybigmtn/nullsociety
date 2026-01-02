@@ -5,11 +5,11 @@
  * to the backend and returning real on-chain game results via the updates stream.
  */
 import { GameHandler, type HandlerContext, type HandleResult } from './base.js';
-import { GameType, buildHiLoPayload } from '../codec/index.js';
+import { GameType } from '../codec/index.js';
 import { generateSessionId } from '../codec/transactions.js';
 import { ErrorCodes, createError } from '../types/errors.js';
 import type { HiLoBetRequest, HiLoDealRequest, OutboundMessage } from '@nullspace/protocol/mobile';
-import { HiLoMove as SharedHiLoMove } from '@nullspace/constants';
+import { encodeGameActionPayload } from '@nullspace/protocol';
 
 export class HiLoHandler extends GameHandler {
   constructor() {
@@ -79,7 +79,7 @@ export class HiLoHandler extends GameHandler {
     }
 
     // Make the guess - base handler waits for real CasinoGameMoved/Completed events
-    const payload = buildHiLoPayload(choice);
+    const payload = encodeGameActionPayload({ game: 'hilo', action: choice });
     return this.makeMove(ctx, payload);
   }
 
@@ -87,12 +87,12 @@ export class HiLoHandler extends GameHandler {
     ctx: HandlerContext,
     guess: 'higher' | 'lower' | 'same'
   ): Promise<HandleResult> {
-    const payload = buildHiLoPayload(guess);
+    const payload = encodeGameActionPayload({ game: 'hilo', action: guess });
     return this.makeMove(ctx, payload);
   }
 
   private async handleCashout(ctx: HandlerContext): Promise<HandleResult> {
-    const payload = new Uint8Array([SharedHiLoMove.Cashout]);
+    const payload = encodeGameActionPayload({ game: 'hilo', action: 'cashout' });
     return this.makeMove(ctx, payload);
   }
 }

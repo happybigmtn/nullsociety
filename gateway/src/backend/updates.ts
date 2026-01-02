@@ -11,10 +11,16 @@
  */
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
-import { extractCasinoEvents, type CasinoGameEvent } from '../codec/events.js';
+import {
+  extractCasinoEvents,
+  extractGlobalTableEvents,
+  type CasinoGameEvent,
+  type GlobalTableEvent,
+} from '../codec/events.js';
+import { logDebug, logError, logInfo, logWarn } from '../logger.js';
 
 // Re-export CasinoGameEvent for convenience
-export type { CasinoGameEvent } from '../codec/events.js';
+export type { CasinoGameEvent, GlobalTableEvent } from '../codec/events.js';
 
 /**
  * UpdatesFilter types matching backend
@@ -100,12 +106,20 @@ export class UpdatesClient extends EventEmitter {
   }
 
   /**
+   * Connect to the updates stream for all events
+   */
+  async connectForAll(): Promise<void> {
+    const filter = encodeUpdatesFilter(UpdatesFilterType.All);
+    return this.connect(filter);
+  }
+
+  /**
    * Connect to the updates stream with a hex-encoded filter
    */
   private connect(filter: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const wsUrl = `${this.url}/updates/${filter}`;
-      console.log(`[UpdatesClient] Connecting to ${wsUrl}`);
+      logInfo(`[UpdatesClient] Connecting to ${wsUrl}`);
 
       this.ws = new WebSocket(wsUrl, {
         headers: {
@@ -114,7 +128,7 @@ export class UpdatesClient extends EventEmitter {
       });
 
       this.ws.on('open', () => {
-        console.log('[UpdatesClient] Connected to updates stream');
+        logInfo('[UpdatesClient] Connected to updates stream');
         this.reconnectDelay = 1000; // Reset reconnect delay on successful connection
         resolve();
       });
@@ -124,7 +138,7 @@ export class UpdatesClient extends EventEmitter {
       });
 
       this.ws.on('close', () => {
-        console.log('[UpdatesClient] Connection closed');
+        logWarn('[UpdatesClient] Connection closed');
         this.emit('close');
         if (this.shouldReconnect) {
           this.scheduleReconnect(filter);
@@ -132,7 +146,7 @@ export class UpdatesClient extends EventEmitter {
       });
 
       this.ws.on('error', (err) => {
-        console.error('[UpdatesClient] WebSocket error:', err.message);
+        logError('[UpdatesClient] WebSocket error:', err.message);
         this.emit('error', err);
         if (this.ws?.readyState === WebSocket.CONNECTING) {
           reject(err);
@@ -150,11 +164,11 @@ export class UpdatesClient extends EventEmitter {
       const header = Array.from(data.slice(0, Math.min(10, data.length)))
         .map((b) => b.toString(16).padStart(2, '0'))
         .join(' ');
-      console.log(`[UpdatesClient] Received message: ${data.length} bytes, header: ${header}`);
+      logDebug(`[UpdatesClient] Received message: ${data.length} bytes, header: ${header}`);
       const events = extractCasinoEvents(new Uint8Array(data));
-      console.log(`[UpdatesClient] Extracted ${events.length} casino events`);
+      logDebug(`[UpdatesClient] Extracted ${events.length} casino events`);
       for (const event of events) {
-        console.log(`[UpdatesClient] Received event: ${event.type} for session ${event.sessionId}`);
+        logDebug(`[UpdatesClient] Received event: ${event.type} for session ${event.sessionId}`);
 
         // Store for session-based waiting FIRST (before emit to avoid race)
         const pending = this.pendingEvents.get(event.sessionId) ?? [];
@@ -164,8 +178,16 @@ export class UpdatesClient extends EventEmitter {
         // Then emit for listeners
         this.emit('gameEvent', event);
       }
+
+      const globalEvents = extractGlobalTableEvents(new Uint8Array(data));
+      if (globalEvents.length > 0) {
+        logDebug(`[UpdatesClient] Extracted ${globalEvents.length} global table events`);
+        for (const event of globalEvents) {
+          this.emit('globalTableEvent', event);
+        }
+      }
     } catch (err) {
-      console.error('[UpdatesClient] Failed to parse events:', err);
+      logError('[UpdatesClient] Failed to parse events:', err);
     }
   }
 
@@ -360,11 +382,11 @@ export class UpdatesClient extends EventEmitter {
    * Schedule a reconnection attempt
    */
   private scheduleReconnect(filter: string): void {
-    console.log(`[UpdatesClient] Reconnecting in ${this.reconnectDelay}ms...`);
+    logWarn(`[UpdatesClient] Reconnecting in ${this.reconnectDelay}ms...`);
     setTimeout(() => {
       if (this.shouldReconnect) {
         this.connect(filter).catch((err) => {
-          console.error('[UpdatesClient] Reconnection failed:', err.message);
+          logError('[UpdatesClient] Reconnection failed:', err.message);
         });
       }
     }, this.reconnectDelay);

@@ -1,3 +1,5 @@
+import { logDebug } from '../logger.js';
+
 /**
  * Connection Limiter
  *
@@ -75,7 +77,7 @@ export class ConnectionLimiter {
     ipConnections.add(connectionId);
     this.totalConnections++;
 
-    console.log(
+    logDebug(
       `[Limiter] Connection registered: ${connectionId} from ${normalizedIp} ` +
       `(IP: ${ipConnections.size}/${this.config.maxConnectionsPerIp}, ` +
       `Total: ${this.totalConnections}/${this.config.maxTotalSessions})`
@@ -98,7 +100,7 @@ export class ConnectionLimiter {
           this.connectionsByIp.delete(normalizedIp);
         }
 
-        console.log(
+        logDebug(
           `[Limiter] Connection unregistered: ${connectionId} from ${normalizedIp} ` +
           `(Total: ${this.totalConnections}/${this.config.maxTotalSessions})`
         );

@@ -8,6 +8,27 @@ import { describe, it, expect } from 'vitest';
 const GATEWAY_PORT = process.env.TEST_GATEWAY_PORT || '9010';
 const GATEWAY_URL = `ws://localhost:${GATEWAY_PORT}`;
 const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
+const TEST_TIMEOUT_MS = (() => {
+  const raw = process.env.TEST_TIMEOUT_MS;
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1_200_000;
+})();
+const RESPONSE_TIMEOUT_MS = (() => {
+  const raw = process.env.TEST_RESPONSE_TIMEOUT_MS;
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 60000;
+})();
+const BET_TIMEOUT_MS = (() => {
+  const raw = process.env.TEST_BET_TIMEOUT_MS;
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+})();
+const TEST_GAMES = new Set(
+  (process.env.TEST_GAMES ?? '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+);
 
 interface TestResult {
   game: string;
@@ -27,7 +48,11 @@ function createConnection(): Promise<WebSocket> {
   });
 }
 
-function sendAndReceive(ws: WebSocket, msg: unknown, timeout = 60000): Promise<Record<string, unknown>> {
+function sendAndReceive(
+  ws: WebSocket,
+  msg: unknown,
+  timeout = RESPONSE_TIMEOUT_MS
+): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Response timeout')), timeout);
 
@@ -77,8 +102,9 @@ async function testBet(
   moveMsg?: Record<string, unknown>
 ): Promise<TestResult> {
   let ws: WebSocket | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  try {
+  const run = async (): Promise<TestResult> => {
     ws = await createConnection();
     await waitForReady(ws);
 
@@ -125,6 +151,19 @@ async function testBet(
       response: `${startResponse.type} → ${moveResponse.type}`,
       payout: payout !== undefined ? String(payout) : undefined,
     };
+  };
+
+  try {
+    if (BET_TIMEOUT_MS > 0) {
+      return await Promise.race([
+        run(),
+        new Promise<TestResult>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Bet timeout')), BET_TIMEOUT_MS);
+        }),
+      ]);
+    }
+
+    return await run();
   } catch (err) {
     return {
       game,
@@ -133,6 +172,7 @@ async function testBet(
       error: err instanceof Error ? err.message : String(err),
     };
   } finally {
+    if (timeoutId) clearTimeout(timeoutId);
     if (ws) ws.close();
   }
 }
@@ -199,8 +239,7 @@ const BACCARAT_BETS = [
   { name: 'Player Dragon', type: 'P_DRAGON' },
   { name: 'Banker Dragon', type: 'B_DRAGON' },
   { name: 'Panda 8', type: 'PANDA8' },
-  { name: 'Player Perfect Pair', type: 'P_PERFECT_PAIR' },
-  { name: 'Banker Perfect Pair', type: 'B_PERFECT_PAIR' },
+  { name: 'Perfect Pair', type: 'PERFECT_PAIR' },
 ];
 
 // ============================================================
@@ -491,16 +530,17 @@ async function runAllTests(): Promise<TestResult[]> {
   console.log('╠════════════════════════════════════════════════════════════╣');
 
   const allResults: TestResult[] = [];
+  const include = (key: string) => TEST_GAMES.size === 0 || TEST_GAMES.has(key);
 
   // Run tests for each game category
-  allResults.push(...await runBaccaratTests());
-  allResults.push(...await runCrapsTests());
-  allResults.push(...await runRouletteTests());
-  allResults.push(...await runSicBoTests());
-  allResults.push(...await runThreeCardPokerTests());
-  allResults.push(...await runUltimateHoldemTests());
-  allResults.push(...await runBlackjackTests());
-  allResults.push(...await runOtherGamesTests());
+  if (include('baccarat')) allResults.push(...await runBaccaratTests());
+  if (include('craps')) allResults.push(...await runCrapsTests());
+  if (include('roulette')) allResults.push(...await runRouletteTests());
+  if (include('sicbo')) allResults.push(...await runSicBoTests());
+  if (include('threecard')) allResults.push(...await runThreeCardPokerTests());
+  if (include('ultimateholdem')) allResults.push(...await runUltimateHoldemTests());
+  if (include('blackjack')) allResults.push(...await runBlackjackTests());
+  if (include('other')) allResults.push(...await runOtherGamesTests());
 
   // Summary
   console.log('\n╠════════════════════════════════════════════════════════════╣');
@@ -527,6 +567,6 @@ describe.skipIf(!INTEGRATION_ENABLED)('Gateway bet type coverage', () => {
       const failed = results.filter((result) => result.status === 'failed');
       expect(failed).toEqual([]);
     },
-    1_200_000
+    TEST_TIMEOUT_MS
   );
 });

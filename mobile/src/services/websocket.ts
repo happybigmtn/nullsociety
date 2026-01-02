@@ -2,6 +2,7 @@
  * WebSocket connection manager with reconnection logic
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Constants from 'expo-constants';
 import { BaseMessageSchema } from '@nullspace/protocol/mobile';
 
 // Base message type for all game communications
@@ -86,7 +87,11 @@ export function useWebSocket<T extends GameMessage = GameMessage>(
     };
 
     ws.current.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      console.error('WebSocket error:', {
+        url,
+        readyState: ws.current?.readyState,
+        error,
+      });
     };
 
     ws.current.onclose = (event) => {
@@ -95,13 +100,22 @@ export function useWebSocket<T extends GameMessage = GameMessage>(
       // Don't reconnect if it was a clean close
       if (event.wasClean) {
         setConnectionState('disconnected');
+        console.warn('WebSocket closed cleanly', {
+          url,
+          code: event.code,
+          reason: event.reason,
+        });
         return;
       }
 
       // Check if we've exceeded max attempts
       if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
         setConnectionState('failed');
-        console.error('WebSocket reconnection failed after max attempts');
+        console.error('WebSocket reconnection failed after max attempts', {
+          url,
+          code: event.code,
+          reason: event.reason,
+        });
         return;
       }
 
@@ -118,6 +132,14 @@ export function useWebSocket<T extends GameMessage = GameMessage>(
         setReconnectAttempt(reconnectAttemptsRef.current);
         connect();
       }, delay);
+
+      console.warn('WebSocket disconnected, scheduling reconnect', {
+        url,
+        code: event.code,
+        reason: event.reason,
+        attempt: reconnectAttemptsRef.current + 1,
+        delay,
+      });
     };
   }, [url]);
 
@@ -166,5 +188,28 @@ export function useWebSocket<T extends GameMessage = GameMessage>(
  * Get WebSocket URL from environment
  */
 export function getWebSocketUrl(): string {
-  return process.env.EXPO_PUBLIC_WS_URL ?? 'wss://api.nullspace.casino/ws';
+  const configured = process.env.EXPO_PUBLIC_WS_URL;
+  if (configured) return configured;
+
+  if (__DEV__) {
+    const hostUri =
+      Constants.expoConfig?.hostUri ||
+      (Constants.expoGoConfig as { debuggerHost?: string } | undefined)?.debuggerHost ||
+      (Constants.manifest as { debuggerHost?: string } | undefined)?.debuggerHost ||
+      '';
+    if (hostUri) {
+      let host = hostUri;
+      if (host.includes('://')) {
+        const [, rest] = host.split('://');
+        host = rest ?? '';
+      }
+      host = host.split('/')[0] ?? '';
+      host = host.split(':')[0] ?? '';
+      if (host) {
+        return `ws://${host}:9010`;
+      }
+    }
+  }
+
+  return 'wss://api.nullspace.casino/ws';
 }

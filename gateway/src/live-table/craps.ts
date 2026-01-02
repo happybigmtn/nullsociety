@@ -1,0 +1,1507 @@
+/**
+ * Live-table Craps client (single global table).
+ *
+ * Delegates bet resolution to the live-table service, which reuses the on-chain
+ * execution logic for full parity with standard craps.
+ */
+import WebSocket from 'ws';
+import { readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { ed25519 } from '@noble/curves/ed25519';
+import { encodeCrapsBet, CRAPS_BET_TYPES, type CrapsBetName } from '@nullspace/constants/bet-types';
+import type { Session } from '../types/session.js';
+import type { HandleResult } from '../handlers/base.js';
+import type { SubmitClient } from '../backend/http.js';
+import { UpdatesClient, type GlobalTableEvent } from '../backend/updates.js';
+import { NonceManager } from '../session/nonce.js';
+import { createError, ErrorCodes } from '../types/errors.js';
+import {
+  GameType,
+  encodeCasinoRegister,
+  encodeGlobalTableFinalize,
+  encodeGlobalTableInit,
+  encodeGlobalTableLock,
+  encodeGlobalTableOpenRound,
+  encodeGlobalTableReveal,
+  encodeGlobalTableSettle,
+  encodeGlobalTableSubmitBets,
+  buildTransaction,
+  wrapSubmission,
+} from '../codec/index.js';
+import type { GlobalTableBet } from '../codec/events.js';
+
+const isTruthy = (value: string | undefined): boolean => {
+  if (!value) return false;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+};
+
+const readMs = (key: string, fallback: number): number => {
+  const raw = process.env[key];
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const readInt = (key: string, fallback: number): number => {
+  const raw = process.env[key];
+  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const readFloat = (key: string, fallback: number): number => {
+  const raw = process.env[key];
+  const parsed = raw ? Number.parseFloat(raw) : NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const NODE_ENV = process.env.NODE_ENV ?? 'development';
+const IS_PROD = NODE_ENV === 'production';
+
+const ONCHAIN = isTruthy(process.env.GATEWAY_LIVE_TABLE_CRAPS_ONCHAIN);
+const ENABLED = isTruthy(process.env.GATEWAY_LIVE_TABLE_CRAPS) || ONCHAIN;
+const ALLOW_ADMIN_KEY_ENV = !IS_PROD || isTruthy(process.env.GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV);
+const ADMIN_KEY_FILE = (process.env.GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE
+  ?? process.env.CASINO_ADMIN_PRIVATE_KEY_FILE
+  ?? '').trim() || null;
+
+if (IS_PROD && ENABLED && !ALLOW_ADMIN_KEY_ENV && !ADMIN_KEY_FILE) {
+  throw new Error(
+    'GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE (or CASINO_ADMIN_PRIVATE_KEY_FILE) must be set in production for live-table admin access',
+  );
+}
+
+const CONFIG = {
+  enabled: ENABLED,
+  onchain: ONCHAIN,
+  url: process.env.GATEWAY_LIVE_TABLE_CRAPS_URL ?? 'ws://127.0.0.1:9123/ws',
+  requestTimeoutMs: readMs('GATEWAY_LIVE_TABLE_TIMEOUT_MS', 5000),
+  reconnectMs: readMs('GATEWAY_LIVE_TABLE_RECONNECT_MS', 1500),
+  backendUrl: process.env.BACKEND_URL ?? 'http://localhost:8080',
+  tickMs: readMs('GATEWAY_LIVE_TABLE_TICK_MS', 1000),
+  bettingMs: readMs('GATEWAY_LIVE_TABLE_BETTING_MS', 20_000),
+  lockMs: readMs('GATEWAY_LIVE_TABLE_LOCK_MS', 2_000),
+  payoutMs: readMs('GATEWAY_LIVE_TABLE_PAYOUT_MS', 4_000),
+  cooldownMs: readMs('GATEWAY_LIVE_TABLE_COOLDOWN_MS', 4_000),
+  minBet: BigInt(readInt('GATEWAY_LIVE_TABLE_MIN_BET', 5)),
+  maxBet: BigInt(readInt('GATEWAY_LIVE_TABLE_MAX_BET', 1000)),
+  maxBetsPerRound: readInt('GATEWAY_LIVE_TABLE_MAX_BETS_PER_ROUND', 12),
+  settleBatchSize: readInt('GATEWAY_LIVE_TABLE_SETTLE_BATCH', 25),
+  botBatchSize: readInt('GATEWAY_LIVE_TABLE_BOT_BATCH', 10),
+  adminRetryMs: readMs('GATEWAY_LIVE_TABLE_ADMIN_RETRY_MS', 1500),
+  botCount: readInt('GATEWAY_LIVE_TABLE_BOT_COUNT', IS_PROD ? 0 : 100),
+  botBetMin: readInt('GATEWAY_LIVE_TABLE_BOT_BET_MIN', 5),
+  botBetMax: readInt('GATEWAY_LIVE_TABLE_BOT_BET_MAX', 25),
+  botBetsPerRoundMin: readInt('GATEWAY_LIVE_TABLE_BOT_BETS_MIN', 1),
+  botBetsPerRoundMax: readInt('GATEWAY_LIVE_TABLE_BOT_BETS_MAX', 3),
+  botParticipationRate: Math.max(0, Math.min(1, readFloat('GATEWAY_LIVE_TABLE_BOT_PARTICIPATION', 1))),
+};
+
+export interface LiveCrapsBetInput {
+  type: string | number;
+  amount: number;
+  target?: number;
+}
+
+interface LiveTableAck {
+  type: 'ack';
+  requestId: string;
+}
+
+interface LiveTableError {
+  type: 'error';
+  requestId: string;
+  code?: string;
+  message?: string;
+}
+
+interface LiveTableStateEvent {
+  type: 'state';
+  playerId?: string;
+  payload: Record<string, unknown>;
+}
+
+interface LiveTableResultEvent {
+  type: 'result';
+  playerId: string;
+  payload: Record<string, unknown>;
+}
+
+interface PendingRequest {
+  resolve: (result: HandleResult) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
+interface LiveTableDependencies {
+  submitClient: SubmitClient;
+  nonceManager: NonceManager;
+  backendUrl: string;
+  origin?: string;
+}
+
+interface BotState {
+  privateKey: Uint8Array;
+  publicKey: Uint8Array;
+  publicKeyHex: string;
+  registered: boolean;
+  balance?: bigint;
+  lastBetRoundId?: bigint;
+}
+
+interface SignerState {
+  privateKey: Uint8Array;
+  publicKey: Uint8Array;
+  publicKeyHex: string;
+}
+
+interface StoredBet {
+  betType: number;
+  target: number;
+  amount: bigint;
+}
+
+type LiveTablePhase = 'betting' | 'locked' | 'rolling' | 'payout' | 'cooldown';
+
+const betTypeToView = (
+  betType: number,
+  target: number
+): { type: string; target?: number } => {
+  switch (betType) {
+    case 0:
+      return { type: 'PASS' };
+    case 1:
+      return { type: 'DONT_PASS' };
+    case 2:
+      return { type: 'COME' };
+    case 3:
+      return { type: 'DONT_COME' };
+    case 4:
+      return { type: 'FIELD' };
+    case 5:
+      return { type: 'YES', target };
+    case 6:
+      return { type: 'NO', target };
+    case 7:
+      return { type: 'NEXT', target };
+    case 8:
+      return { type: 'HARDWAY', target: 4 };
+    case 9:
+      return { type: 'HARDWAY', target: 6 };
+    case 10:
+      return { type: 'HARDWAY', target: 8 };
+    case 11:
+      return { type: 'HARDWAY', target: 10 };
+    case 12:
+      return { type: 'FIRE' };
+    case 15:
+      return { type: 'ATS_SMALL' };
+    case 16:
+      return { type: 'ATS_TALL' };
+    case 17:
+      return { type: 'ATS_ALL' };
+    case 18:
+      return { type: 'MUGGSY' };
+    case 19:
+      return { type: 'DIFF_DOUBLES' };
+    case 20:
+      return { type: 'RIDE_LINE' };
+    case 21:
+      return { type: 'REPLAY' };
+    case 22:
+      return { type: 'HOT_ROLLER' };
+    default:
+      return { type: `BET_${betType}` };
+  }
+};
+
+const mapPhase = (phase: number): LiveTablePhase => {
+  switch (phase) {
+    case 0:
+      return 'betting';
+    case 1:
+      return 'locked';
+    case 2:
+      return 'rolling';
+    case 3:
+      return 'payout';
+    case 4:
+      return 'cooldown';
+    default:
+      return 'betting';
+  }
+};
+
+const parseHexKey = (raw?: string): Uint8Array | null => {
+  if (!raw) return null;
+  const cleaned = raw.startsWith('0x') ? raw.slice(2) : raw;
+  if (cleaned.length !== 64) return null;
+  try {
+    return Uint8Array.from(Buffer.from(cleaned, 'hex'));
+  } catch {
+    return null;
+  }
+};
+
+const YES_NO_TARGETS = [4, 5, 6, 8, 9, 10];
+const NEXT_TARGETS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+const HARDWAY_TARGETS = [4, 6, 8, 10];
+const BOT_BET_TYPES: CrapsBetName[] = [
+  'PASS',
+  'DONT_PASS',
+  'COME',
+  'DONT_COME',
+  'FIELD',
+  'YES',
+  'NO',
+  'NEXT',
+  'HARDWAY',
+  'FIRE',
+  'ATS_SMALL',
+  'ATS_TALL',
+  'ATS_ALL',
+  'MUGGSY',
+  'DIFF_DOUBLES',
+  'RIDE_LINE',
+  'REPLAY',
+  'HOT_ROLLER',
+];
+
+const betKey = (betType: number, target: number): string => `${betType}:${target}`;
+
+const toNumber = (value: bigint | number): number => (
+  typeof value === 'bigint' ? Number(value) : value
+);
+
+export class LiveCrapsTable {
+  private enabled = CONFIG.enabled;
+  private url = CONFIG.url;
+  private ws: WebSocket | null = null;
+  private connecting: Promise<void> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private shouldReconnect = true;
+  private pending = new Map<string, PendingRequest>();
+  private sessions = new Map<string, Session>();
+
+  configure(_deps: LiveTableDependencies): void {
+    // Off-chain live table does not require gateway dependencies.
+  }
+
+  async join(session: Session): Promise<HandleResult> {
+    if (!this.enabled) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.INVALID_MESSAGE, 'LIVE_TABLE_DISABLED'),
+      };
+    }
+
+    this.sessions.set(session.id, session);
+
+    try {
+      await this.ensureConnected();
+    } catch (err) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.INVALID_MESSAGE, 'LIVE_TABLE_UNAVAILABLE'),
+      };
+    }
+
+    const requestId = randomUUID();
+    const payload = {
+      type: 'join',
+      requestId,
+      playerId: session.id,
+      balance: session.balance.toString(),
+    };
+
+    return this.sendRequest(payload, requestId);
+  }
+
+  async leave(session: Session): Promise<HandleResult> {
+    this.sessions.delete(session.id);
+    this.sendFireAndForget({
+      type: 'leave',
+      requestId: randomUUID(),
+      playerId: session.id,
+    });
+    this.closeIfIdle();
+    return { success: true };
+  }
+
+  removeSession(session: Session): void {
+    this.sessions.delete(session.id);
+    this.sendFireAndForget({
+      type: 'leave',
+      requestId: randomUUID(),
+      playerId: session.id,
+    });
+    this.closeIfIdle();
+  }
+
+  async placeBets(session: Session, bets: LiveCrapsBetInput[]): Promise<HandleResult> {
+    if (!this.enabled) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.INVALID_MESSAGE, 'LIVE_TABLE_DISABLED'),
+      };
+    }
+
+    if (!this.sessions.has(session.id)) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.INVALID_MESSAGE, 'NOT_SUBSCRIBED'),
+      };
+    }
+
+    try {
+      await this.ensureConnected();
+    } catch (err) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.INVALID_MESSAGE, 'LIVE_TABLE_UNAVAILABLE'),
+      };
+    }
+
+    const requestId = randomUUID();
+    const payload = {
+      type: 'bet',
+      requestId,
+      playerId: session.id,
+      bets,
+    };
+
+    return this.sendRequest(payload, requestId);
+  }
+
+  private async ensureConnected(): Promise<void> {
+    this.shouldReconnect = true;
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      return;
+    }
+
+    if (this.connecting) {
+      return this.connecting;
+    }
+
+    this.connecting = new Promise((resolve, reject) => {
+      const ws = new WebSocket(this.url);
+      this.ws = ws;
+
+      ws.on('open', () => {
+        this.connecting = null;
+        resolve();
+      });
+
+      ws.on('message', (data: WebSocket.RawData) => {
+        this.handleMessage(data);
+      });
+
+      ws.on('close', () => {
+        this.ws = null;
+        this.connecting = null;
+        this.failPending('LIVE_TABLE_DISCONNECTED');
+        if (this.shouldReconnect && this.sessions.size > 0) {
+          this.scheduleReconnect();
+        }
+      });
+
+      ws.on('error', (err) => {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          this.connecting = null;
+          reject(err);
+        }
+      });
+    });
+
+    return this.connecting;
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer) {
+      return;
+    }
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.ensureConnected().catch(() => undefined);
+    }, CONFIG.reconnectMs);
+  }
+
+  private handleMessage(data: WebSocket.RawData): void {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(data.toString());
+    } catch (err) {
+      return;
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      return;
+    }
+
+    const message = parsed as Partial<LiveTableAck & LiveTableError & LiveTableStateEvent & LiveTableResultEvent>;
+
+    if (message.type === 'ack' && message.requestId) {
+      this.resolvePending(message.requestId, { success: true });
+      return;
+    }
+
+    if (message.type === 'error' && message.requestId) {
+      this.resolvePending(message.requestId, this.mapServiceError(message.code, message.message));
+      return;
+    }
+
+    if (message.type === 'state' && message.payload) {
+      this.handleStateEvent(message as LiveTableStateEvent);
+      return;
+    }
+
+    if (message.type === 'result' && message.payload && message.playerId) {
+      this.handleResultEvent(message as LiveTableResultEvent);
+    }
+  }
+
+  private handleStateEvent(event: LiveTableStateEvent): void {
+    if (event.playerId) {
+      const session = this.sessions.get(event.playerId);
+      if (session) {
+        this.updateSessionBalance(session, event.payload);
+        this.sendToSession(session, event.payload);
+      }
+      return;
+    }
+
+    for (const session of this.sessions.values()) {
+      this.sendToSession(session, event.payload);
+    }
+  }
+
+  private handleResultEvent(event: LiveTableResultEvent): void {
+    const session = this.sessions.get(event.playerId);
+    if (session) {
+      this.updateSessionBalance(session, event.payload);
+      this.sendToSession(session, event.payload);
+    }
+  }
+
+  private updateSessionBalance(session: Session, payload: Record<string, unknown>): void {
+    const raw = payload.balance;
+    if (typeof raw === 'string') {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) {
+        session.balance = BigInt(Math.floor(parsed));
+      }
+    } else if (typeof raw === 'number' && Number.isFinite(raw)) {
+      session.balance = BigInt(Math.floor(raw));
+    }
+  }
+
+  private sendToSession(session: Session, payload: Record<string, unknown>): void {
+    if (session.ws.readyState === session.ws.OPEN) {
+      session.ws.send(JSON.stringify(payload));
+    } else {
+      this.sessions.delete(session.id);
+    }
+  }
+
+  private sendRequest(payload: Record<string, unknown>, requestId: string): Promise<HandleResult> {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        this.pending.delete(requestId);
+        resolve({
+          success: false,
+          error: createError(ErrorCodes.INVALID_MESSAGE, 'LIVE_TABLE_TIMEOUT'),
+        });
+      }, CONFIG.requestTimeoutMs);
+
+      this.pending.set(requestId, { resolve, timeout });
+      if (!this.sendPayload(payload)) {
+        clearTimeout(timeout);
+        this.pending.delete(requestId);
+        resolve({
+          success: false,
+          error: createError(ErrorCodes.INVALID_MESSAGE, 'LIVE_TABLE_UNAVAILABLE'),
+        });
+      }
+    });
+  }
+
+  private sendFireAndForget(payload: Record<string, unknown>): void {
+    this.sendPayload(payload);
+  }
+
+  private sendPayload(payload: Record<string, unknown>): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+    this.ws.send(JSON.stringify(payload));
+    return true;
+  }
+
+  private resolvePending(requestId: string, result: HandleResult): void {
+    const pending = this.pending.get(requestId);
+    if (!pending) {
+      return;
+    }
+    clearTimeout(pending.timeout);
+    this.pending.delete(requestId);
+    pending.resolve(result);
+  }
+
+  private failPending(message: string): void {
+    for (const [requestId, pending] of this.pending.entries()) {
+      clearTimeout(pending.timeout);
+      pending.resolve({
+        success: false,
+        error: createError(ErrorCodes.INVALID_MESSAGE, message),
+      });
+      this.pending.delete(requestId);
+    }
+  }
+
+  private mapServiceError(code?: string, message?: string): HandleResult {
+    const errorMessage = message ?? code ?? 'LIVE_TABLE_ERROR';
+    switch (code) {
+      case 'INSUFFICIENT_BALANCE':
+        return { success: false, error: createError(ErrorCodes.INSUFFICIENT_BALANCE, errorMessage) };
+      case 'BETTING_CLOSED':
+      case 'INVALID_BET':
+      case 'INVALID_MOVE':
+        return { success: false, error: createError(ErrorCodes.INVALID_BET, errorMessage) };
+      case 'NOT_SUBSCRIBED':
+        return { success: false, error: createError(ErrorCodes.INVALID_MESSAGE, errorMessage) };
+      default:
+        return { success: false, error: createError(ErrorCodes.INVALID_MESSAGE, errorMessage) };
+    }
+  }
+
+  private closeIfIdle(): void {
+    if (this.sessions.size > 0) {
+      return;
+    }
+    this.shouldReconnect = false;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.close();
+    }
+  }
+}
+
+export class OnchainCrapsTable {
+  private enabled = CONFIG.enabled;
+  private deps: LiveTableDependencies | null = null;
+  private sessions = new Map<string, Session>();
+  private sessionsByKey = new Map<string, Set<string>>();
+  private updatesClient: UpdatesClient | null = null;
+  private startPromise: Promise<void> | null = null;
+  private started = false;
+
+  private admin: SignerState | null = null;
+  private roundId = 0n;
+  private phase: LiveTablePhase = 'cooldown';
+  private phaseEndsAt = 0;
+  private point: number | null = null;
+  private dice: [number, number] | null = null;
+
+  private totals = new Map<string, StoredBet>();
+  private playerBets = new Map<string, Map<string, StoredBet>>();
+  private activePlayers = new Set<string>();
+  private pendingSettlements = new Set<string>();
+  private settleInFlight = new Set<string>();
+
+  private bots: BotState[] = [];
+  private botsByKey = new Map<string, BotState>();
+  private botQueue: string[] = [];
+
+  private ticker: ReturnType<typeof setInterval> | null = null;
+  private tickRunning = false;
+
+  private lastAdminAttempt = {
+    open: 0,
+    lock: 0,
+    reveal: 0,
+    finalize: 0,
+  };
+
+  configure(deps: LiveTableDependencies): void {
+    this.deps = deps;
+    if (this.enabled) {
+      void this.ensureStarted().catch((err) => {
+        console.error('[LiveTable] Failed to start on-chain table:', err);
+      });
+    }
+  }
+
+  async join(session: Session): Promise<HandleResult> {
+    if (!this.enabled) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.INVALID_MESSAGE, 'LIVE_TABLE_DISABLED'),
+      };
+    }
+
+    this.sessions.set(session.id, session);
+    this.trackSessionKey(session);
+
+    try {
+      await this.ensureStarted();
+    } catch (err) {
+      this.removeSession(session);
+      return {
+        success: false,
+        error: createError(ErrorCodes.INVALID_MESSAGE, 'LIVE_TABLE_UNAVAILABLE'),
+      };
+    }
+
+    this.sendStateToSession(session);
+    return { success: true };
+  }
+
+  async leave(session: Session): Promise<HandleResult> {
+    this.removeSession(session);
+    return { success: true };
+  }
+
+  removeSession(session: Session): void {
+    this.sessions.delete(session.id);
+    this.untrackSessionKey(session);
+  }
+
+  async placeBets(session: Session, bets: LiveCrapsBetInput[]): Promise<HandleResult> {
+    if (!this.enabled) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.INVALID_MESSAGE, 'LIVE_TABLE_DISABLED'),
+      };
+    }
+
+    if (!this.sessions.has(session.id)) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.INVALID_MESSAGE, 'NOT_SUBSCRIBED'),
+      };
+    }
+
+    if (!session.registered) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.NOT_REGISTERED, 'Player not registered'),
+      };
+    }
+
+    try {
+      await this.ensureStarted();
+    } catch (err) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.INVALID_MESSAGE, 'LIVE_TABLE_UNAVAILABLE'),
+      };
+    }
+
+    if (this.roundId === 0n) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.INVALID_MESSAGE, 'LIVE_TABLE_NOT_READY'),
+      };
+    }
+
+    let normalized: { betType: number; target: number; amount: bigint }[] = [];
+    try {
+      normalized = this.normalizeBets(bets);
+    } catch (err) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.INVALID_BET, err instanceof Error ? err.message : 'Invalid bet'),
+      };
+    }
+
+    if (normalized.length === 0) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.INVALID_BET, 'No bets submitted'),
+      };
+    }
+
+    if (normalized.length > CONFIG.maxBetsPerRound) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.INVALID_BET, 'Too many bets submitted'),
+      };
+    }
+
+    const instruction = encodeGlobalTableSubmitBets(
+      GameType.Craps,
+      this.roundId,
+      normalized
+    );
+
+    const accepted = await this.submitInstruction(session, instruction);
+    if (!accepted) {
+      return {
+        success: false,
+        error: createError(ErrorCodes.TRANSACTION_REJECTED, 'Bet submission rejected'),
+      };
+    }
+
+    this.sendConfirmation(session.publicKeyHex, 'pending', 'Awaiting on-chain confirmation', session.balance, this.roundId);
+    return { success: true };
+  }
+
+  private async ensureStarted(): Promise<void> {
+    if (this.started) return;
+    if (this.startPromise) {
+      await this.startPromise;
+      return;
+    }
+    if (!this.deps) {
+      throw new Error('Live table dependencies not configured');
+    }
+
+    this.startPromise = (async () => {
+      const admin = this.buildAdminSigner();
+      if (!admin) {
+        throw new Error('Missing admin key');
+      }
+      this.admin = admin;
+
+      await this.deps!.nonceManager.syncFromBackend(admin.publicKeyHex, this.deps!.backendUrl)
+        .catch(() => undefined);
+
+      await this.connectUpdates();
+      await this.initGlobalTable();
+      await this.attemptOpenRound();
+      this.ensureBots();
+      void this.registerBots();
+
+      if (!this.ticker) {
+        this.ticker = setInterval(() => {
+          void this.tick();
+        }, CONFIG.tickMs);
+      }
+
+      this.started = true;
+    })();
+
+    try {
+      await this.startPromise;
+    } finally {
+      this.startPromise = null;
+    }
+  }
+
+  private buildAdminSigner(): SignerState | null {
+    if (this.admin) return this.admin;
+    const envKeyRaw = (process.env.GATEWAY_LIVE_TABLE_ADMIN_KEY
+      ?? process.env.CASINO_ADMIN_PRIVATE_KEY_HEX
+      ?? '').trim();
+    if (envKeyRaw && !ALLOW_ADMIN_KEY_ENV) {
+      throw new Error(
+        'Live-table admin key env vars are disabled in production. Use GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE or set GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV=1.',
+      );
+    }
+
+    let key: Uint8Array | null = null;
+    if (ADMIN_KEY_FILE) {
+      try {
+        const raw = readFileSync(ADMIN_KEY_FILE, 'utf8').trim();
+        key = parseHexKey(raw) ?? null;
+      } catch {
+        key = null;
+      }
+    }
+    if (!key && ALLOW_ADMIN_KEY_ENV) {
+      key = parseHexKey(envKeyRaw);
+    }
+
+    if (!key) return null;
+
+    const publicKey = ed25519.getPublicKey(key);
+    const publicKeyHex = Buffer.from(publicKey).toString('hex');
+    this.admin = { privateKey: key, publicKey, publicKeyHex };
+    return this.admin;
+  }
+
+  private ensureBots(): void {
+    if (CONFIG.botCount <= 0 || this.bots.length > 0) return;
+    for (let i = 0; i < CONFIG.botCount; i += 1) {
+      const privateKey = ed25519.utils.randomPrivateKey();
+      const publicKey = ed25519.getPublicKey(privateKey);
+      const publicKeyHex = Buffer.from(publicKey).toString('hex');
+      const bot: BotState = {
+        privateKey,
+        publicKey,
+        publicKeyHex,
+        registered: false,
+        balance: 1000n,
+      };
+      this.bots.push(bot);
+      this.botsByKey.set(publicKeyHex, bot);
+    }
+  }
+
+  private async registerBots(): Promise<void> {
+    if (!this.deps) return;
+    for (const bot of this.bots) {
+      if (!this.enabled) break;
+      if (bot.registered) continue;
+      await this.registerBot(bot);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
+  private async registerBot(bot: BotState): Promise<boolean> {
+    if (!this.deps || bot.registered) return bot.registered;
+
+    await this.deps.nonceManager.syncFromBackend(bot.publicKeyHex, this.deps.backendUrl)
+      .catch(() => undefined);
+
+    const name = `bot-${bot.publicKeyHex.slice(0, 6)}`;
+    const instruction = encodeCasinoRegister(name);
+    const accepted = await this.submitInstruction(bot, instruction);
+    if (accepted) {
+      bot.registered = true;
+      bot.balance = bot.balance ?? 1000n;
+    }
+    return accepted;
+  }
+
+  private async connectUpdates(): Promise<void> {
+    if (this.updatesClient) return;
+    if (!this.deps) throw new Error('Missing dependencies');
+    const updates = new UpdatesClient(this.deps.backendUrl, this.deps.origin);
+    updates.on('globalTableEvent', this.handleGlobalTableEvent);
+    updates.on('error', (err) => {
+      console.error('[LiveTable] Updates client error:', err);
+    });
+    this.updatesClient = updates;
+    await updates.connectForAll();
+  }
+
+  private async initGlobalTable(): Promise<void> {
+    if (!this.admin) return;
+    const instruction = encodeGlobalTableInit({
+      gameType: GameType.Craps,
+      bettingMs: CONFIG.bettingMs,
+      lockMs: CONFIG.lockMs,
+      payoutMs: CONFIG.payoutMs,
+      cooldownMs: CONFIG.cooldownMs,
+      minBet: CONFIG.minBet,
+      maxBet: CONFIG.maxBet,
+      maxBetsPerRound: CONFIG.maxBetsPerRound,
+    });
+
+    await this.submitInstruction(this.admin, instruction);
+  }
+
+  private async tick(): Promise<void> {
+    if (this.tickRunning) return;
+    this.tickRunning = true;
+    try {
+      const now = Date.now();
+
+      if (this.phase === 'betting' && now >= this.phaseEndsAt) {
+        await this.attemptLockRound();
+      } else if (this.phase === 'locked' && now >= this.phaseEndsAt) {
+        await this.attemptRevealRound();
+      } else if (this.phase === 'payout' && now >= this.phaseEndsAt) {
+        await this.attemptFinalizeRound();
+      } else if (this.phase === 'cooldown' && now >= this.phaseEndsAt) {
+        await this.attemptOpenRound();
+      }
+
+      await this.processSettlements();
+      await this.processBotBets();
+
+      if (this.sessions.size > 0) {
+        this.broadcastState();
+      }
+    } finally {
+      this.tickRunning = false;
+    }
+  }
+
+  private shouldAttempt(action: keyof typeof this.lastAdminAttempt): boolean {
+    const now = Date.now();
+    if (now - this.lastAdminAttempt[action] < CONFIG.adminRetryMs) {
+      return false;
+    }
+    this.lastAdminAttempt[action] = now;
+    return true;
+  }
+
+  private async attemptOpenRound(): Promise<void> {
+    if (!this.admin || !this.shouldAttempt('open')) return;
+    if (this.pendingSettlements.size > 0 || this.settleInFlight.size > 0) {
+      return;
+    }
+    const instruction = encodeGlobalTableOpenRound(GameType.Craps);
+    await this.submitInstruction(this.admin, instruction);
+  }
+
+  private async attemptLockRound(): Promise<void> {
+    if (!this.admin || !this.shouldAttempt('lock')) return;
+    if (this.roundId === 0n) return;
+    const instruction = encodeGlobalTableLock(GameType.Craps, this.roundId);
+    await this.submitInstruction(this.admin, instruction);
+  }
+
+  private async attemptRevealRound(): Promise<void> {
+    if (!this.admin || !this.shouldAttempt('reveal')) return;
+    if (this.roundId === 0n) return;
+    const instruction = encodeGlobalTableReveal(GameType.Craps, this.roundId);
+    await this.submitInstruction(this.admin, instruction);
+  }
+
+  private async attemptFinalizeRound(): Promise<void> {
+    if (!this.admin || !this.shouldAttempt('finalize')) return;
+    if (this.roundId === 0n) return;
+    const instruction = encodeGlobalTableFinalize(GameType.Craps, this.roundId);
+    await this.submitInstruction(this.admin, instruction);
+  }
+
+  private async processSettlements(): Promise<void> {
+    if (this.pendingSettlements.size === 0) return;
+    if (this.roundId === 0n) return;
+
+    const keys = Array.from(this.pendingSettlements).slice(0, CONFIG.settleBatchSize);
+    for (const key of keys) {
+      if (this.settleInFlight.has(key)) continue;
+      const signer = this.findSigner(key);
+      if (!signer) {
+        this.pendingSettlements.delete(key);
+        continue;
+      }
+      const instruction = encodeGlobalTableSettle(GameType.Craps, this.roundId);
+      const accepted = await this.submitInstruction(signer, instruction);
+      if (accepted) {
+        this.pendingSettlements.delete(key);
+        this.settleInFlight.add(key);
+      }
+    }
+  }
+
+  private async processBotBets(): Promise<void> {
+    if (this.phase !== 'betting') return;
+    if (this.botQueue.length === 0) return;
+    if (this.roundId === 0n) return;
+
+    const batch = this.botQueue.splice(0, CONFIG.botBatchSize);
+    for (const key of batch) {
+      const bot = this.botsByKey.get(key);
+      if (!bot) continue;
+
+      if (!bot.registered) {
+        const registered = await this.registerBot(bot);
+        if (!registered) {
+          this.botQueue.push(key);
+          continue;
+        }
+      }
+
+      const bets = this.pickBotBets(bot);
+      if (bets.length === 0) continue;
+      const instruction = encodeGlobalTableSubmitBets(GameType.Craps, this.roundId, bets);
+      const accepted = await this.submitInstruction(bot, instruction);
+      if (accepted) {
+        bot.lastBetRoundId = this.roundId;
+      }
+    }
+  }
+
+  private handleGlobalTableEvent = (event: GlobalTableEvent): void => {
+    switch (event.type) {
+      case 'round_opened': {
+        this.applyRoundUpdate(event.round);
+        this.botQueue = this.bots.map((bot) => bot.publicKeyHex);
+        this.broadcastState();
+        break;
+      }
+      case 'locked': {
+        this.roundId = event.roundId;
+        this.setPhase('locked', CONFIG.lockMs);
+        this.broadcastState();
+        break;
+      }
+      case 'outcome': {
+        this.applyRoundUpdate(event.round);
+        this.pendingSettlements = new Set(this.activePlayers);
+        this.settleInFlight.clear();
+        this.broadcastState();
+        break;
+      }
+      case 'finalized': {
+        this.roundId = event.roundId;
+        this.setPhase('cooldown', CONFIG.cooldownMs);
+        this.broadcastState();
+        break;
+      }
+      case 'bet_accepted': {
+        const playerHex = Buffer.from(event.player).toString('hex');
+        if (this.roundId !== event.roundId) {
+          this.roundId = event.roundId;
+          if (this.phase !== 'betting') {
+            this.setPhase('betting', CONFIG.bettingMs);
+          }
+        }
+        this.activePlayers.add(playerHex);
+        this.addBetsToMap(this.playerBets, playerHex, event.bets);
+        this.addBetsToTotals(event.bets);
+        if (event.balanceSnapshot?.chips !== undefined) {
+          this.updateSessionsBalance(playerHex, event.balanceSnapshot.chips);
+          const bot = this.botsByKey.get(playerHex);
+          if (bot) bot.balance = event.balanceSnapshot.chips;
+        }
+        this.sendConfirmation(
+          playerHex,
+          'confirmed',
+          'On-chain bet accepted',
+          event.balanceSnapshot?.chips,
+          event.roundId,
+        );
+        this.broadcastState();
+        break;
+      }
+      case 'bet_rejected': {
+        const playerHex = Buffer.from(event.player).toString('hex');
+        this.sendConfirmation(
+          playerHex,
+          'failed',
+          event.message || 'Bet rejected',
+        );
+        break;
+      }
+      case 'player_settled': {
+        const playerHex = Buffer.from(event.player).toString('hex');
+        const before = this.playerBets.get(playerHex) ?? new Map<string, StoredBet>();
+        const after = this.buildBetMap(event.myBets);
+        this.playerBets.set(playerHex, after);
+        this.applyTotalsDelta(before, after);
+        this.pendingSettlements.delete(playerHex);
+        this.settleInFlight.delete(playerHex);
+        if (event.balanceSnapshot?.chips !== undefined) {
+          this.updateSessionsBalance(playerHex, event.balanceSnapshot.chips);
+          const bot = this.botsByKey.get(playerHex);
+          if (bot) bot.balance = event.balanceSnapshot.chips;
+        }
+        this.sendLiveResult(playerHex, event.roundId, event.payout, event.myBets);
+        this.broadcastState();
+        break;
+      }
+      default:
+        break;
+    }
+  };
+
+  private applyRoundUpdate(round: {
+    roundId: bigint;
+    phase: number;
+    phaseEndsAtMs: bigint;
+    mainPoint: number;
+    d1: number;
+    d2: number;
+    totals: { betType: number; target: number; amount: bigint }[];
+  }): void {
+    this.roundId = round.roundId;
+    const phase = mapPhase(round.phase);
+    this.setPhase(phase, this.phaseDuration(phase));
+    this.point = round.mainPoint > 0 ? round.mainPoint : null;
+    this.dice = round.d1 > 0 && round.d2 > 0 ? [round.d1, round.d2] : null;
+    this.setTotalsFromRound(round.totals);
+  }
+
+  private setPhase(phase: LiveTablePhase, durationMs: number): void {
+    this.phase = phase;
+    this.phaseEndsAt = Date.now() + durationMs;
+  }
+
+  private phaseDuration(phase: LiveTablePhase): number {
+    switch (phase) {
+      case 'betting':
+        return CONFIG.bettingMs;
+      case 'locked':
+        return CONFIG.lockMs;
+      case 'rolling':
+        return CONFIG.lockMs;
+      case 'payout':
+        return CONFIG.payoutMs;
+      case 'cooldown':
+        return CONFIG.cooldownMs;
+      default:
+        return CONFIG.bettingMs;
+    }
+  }
+
+  private setTotalsFromRound(
+    totals: { betType: number; target: number; amount: bigint }[]
+  ): void {
+    this.totals.clear();
+    for (const total of totals) {
+      this.totals.set(betKey(total.betType, total.target), {
+        betType: total.betType,
+        target: total.target,
+        amount: total.amount,
+      });
+    }
+  }
+
+  private addBetsToTotals(bets: GlobalTableBet[]): void {
+    for (const bet of bets) {
+      this.adjustTotals(bet.betType, bet.target, bet.amount);
+    }
+  }
+
+  private adjustTotals(betType: number, target: number, delta: bigint): void {
+    const key = betKey(betType, target);
+    const existing = this.totals.get(key);
+    const nextAmount = (existing?.amount ?? 0n) + delta;
+    if (nextAmount <= 0n) {
+      this.totals.delete(key);
+      return;
+    }
+    this.totals.set(key, { betType, target, amount: nextAmount });
+  }
+
+  private addBetsToMap(
+    map: Map<string, Map<string, StoredBet>>,
+    playerHex: string,
+    bets: GlobalTableBet[],
+  ): void {
+    const existing = map.get(playerHex) ?? new Map<string, StoredBet>();
+    for (const bet of bets) {
+      const key = betKey(bet.betType, bet.target);
+      const current = existing.get(key);
+      const nextAmount = (current?.amount ?? 0n) + bet.amount;
+      existing.set(key, {
+        betType: bet.betType,
+        target: bet.target,
+        amount: nextAmount,
+      });
+    }
+    map.set(playerHex, existing);
+  }
+
+  private buildBetMap(bets: GlobalTableBet[]): Map<string, StoredBet> {
+    const result = new Map<string, StoredBet>();
+    for (const bet of bets) {
+      result.set(betKey(bet.betType, bet.target), {
+        betType: bet.betType,
+        target: bet.target,
+        amount: bet.amount,
+      });
+    }
+    return result;
+  }
+
+  private applyTotalsDelta(before: Map<string, StoredBet>, after: Map<string, StoredBet>): void {
+    const keys = new Set<string>();
+    for (const key of before.keys()) keys.add(key);
+    for (const key of after.keys()) keys.add(key);
+
+    for (const key of keys) {
+      const beforeBet = before.get(key);
+      const afterBet = after.get(key);
+      const beforeAmount = beforeBet?.amount ?? 0n;
+      const afterAmount = afterBet?.amount ?? 0n;
+      const delta = afterAmount - beforeAmount;
+      if (delta === 0n) continue;
+      const betType = afterBet?.betType ?? beforeBet?.betType ?? 0;
+      const target = afterBet?.target ?? beforeBet?.target ?? 0;
+      this.adjustTotals(betType, target, delta);
+    }
+  }
+
+  private broadcastState(): void {
+    const base = this.buildStatePayload();
+    for (const session of this.sessions.values()) {
+      const myBets = this.serializePlayerBets(session.publicKeyHex);
+      const payload: Record<string, unknown> = {
+        ...base,
+        balance: session.balance.toString(),
+      };
+      if (myBets.length > 0) {
+        payload.myBets = myBets;
+      }
+      this.sendToSession(session, payload);
+    }
+  }
+
+  private sendStateToSession(session: Session): void {
+    const myBets = this.serializePlayerBets(session.publicKeyHex);
+    const payload: Record<string, unknown> = {
+      ...this.buildStatePayload(),
+      balance: session.balance.toString(),
+    };
+    if (myBets.length > 0) {
+      payload.myBets = myBets;
+    }
+    this.sendToSession(session, payload);
+  }
+
+  private buildStatePayload(): Record<string, unknown> {
+    const timeRemainingMs = Math.max(0, this.phaseEndsAt - Date.now());
+    const payload: Record<string, unknown> = {
+      type: 'live_table_state',
+      game: 'craps',
+      roundId: Number(this.roundId),
+      phase: this.phase,
+      timeRemainingMs,
+      tableTotals: this.serializeTotals(),
+      source: 'onchain',
+    };
+    if (this.point !== null) payload.point = this.point;
+    if (this.dice) payload.dice = this.dice;
+    return payload;
+  }
+
+  private serializeTotals(): Array<{ type: string; amount: number; target?: number }> {
+    const output: Array<{ type: string; amount: number; target?: number }> = [];
+    for (const total of this.totals.values()) {
+      const view = betTypeToView(total.betType, total.target);
+      const entry: { type: string; amount: number; target?: number } = {
+        type: view.type,
+        amount: toNumber(total.amount),
+      };
+      if (view.target !== undefined) entry.target = view.target;
+      output.push(entry);
+    }
+    return output;
+  }
+
+  private serializePlayerBets(playerHex: string): Array<{ type: string; amount: number; target?: number }> {
+    const map = this.playerBets.get(playerHex);
+    if (!map) return [];
+    const output: Array<{ type: string; amount: number; target?: number }> = [];
+    for (const bet of map.values()) {
+      if (bet.amount <= 0n) continue;
+      const view = betTypeToView(bet.betType, bet.target);
+      const entry: { type: string; amount: number; target?: number } = {
+        type: view.type,
+        amount: toNumber(bet.amount),
+      };
+      if (view.target !== undefined) entry.target = view.target;
+      output.push(entry);
+    }
+    return output;
+  }
+
+  private sendLiveResult(
+    playerHex: string,
+    roundId: bigint,
+    payout: bigint,
+    myBets: GlobalTableBet[],
+  ): void {
+    const dice = this.dice ?? [0, 0];
+    const total = dice[0] + dice[1];
+    const payload: Record<string, unknown> = {
+      type: 'live_table_result',
+      game: 'craps',
+      roundId: Number(roundId),
+      dice,
+      total,
+      payout: toNumber(payout),
+      netWin: toNumber(payout),
+      myBets: this.serializeBets(myBets),
+      source: 'onchain',
+    };
+    if (this.point !== null) payload.point = this.point;
+    const session = this.findSession(playerHex);
+    if (session) payload.balance = session.balance.toString();
+
+    this.sendToPlayer(playerHex, payload);
+  }
+
+  private serializeBets(bets: GlobalTableBet[]): Array<{ type: string; amount: number; target?: number }> {
+    const output: Array<{ type: string; amount: number; target?: number }> = [];
+    for (const bet of bets) {
+      if (bet.amount <= 0n) continue;
+      const view = betTypeToView(bet.betType, bet.target);
+      const entry: { type: string; amount: number; target?: number } = {
+        type: view.type,
+        amount: toNumber(bet.amount),
+      };
+      if (view.target !== undefined) entry.target = view.target;
+      output.push(entry);
+    }
+    return output;
+  }
+
+  private sendConfirmation(
+    playerHex: string,
+    status: 'pending' | 'confirmed' | 'failed',
+    message?: string,
+    balance?: bigint,
+    roundId?: bigint,
+  ): void {
+    const payload: Record<string, unknown> = {
+      type: 'live_table_confirmation',
+      game: 'craps',
+      status,
+      source: 'onchain',
+      roundId: Number(roundId ?? this.roundId),
+    };
+    if (message) payload.message = message;
+    if (balance !== undefined) payload.balance = balance.toString();
+    this.sendToPlayer(playerHex, payload);
+  }
+
+  private sendToPlayer(playerHex: string, payload: Record<string, unknown>): void {
+    const ids = this.sessionsByKey.get(playerHex);
+    if (!ids) return;
+    for (const id of ids.values()) {
+      const session = this.sessions.get(id);
+      if (session) this.sendToSession(session, payload);
+    }
+  }
+
+  private sendToSession(session: Session, payload: Record<string, unknown>): void {
+    if (session.ws.readyState === session.ws.OPEN) {
+      session.ws.send(JSON.stringify(payload));
+    } else {
+      this.removeSession(session);
+    }
+  }
+
+  private updateSessionsBalance(playerHex: string, balance: bigint): void {
+    const ids = this.sessionsByKey.get(playerHex);
+    if (!ids) return;
+    for (const id of ids.values()) {
+      const session = this.sessions.get(id);
+      if (session) {
+        session.balance = balance;
+      }
+    }
+  }
+
+  private trackSessionKey(session: Session): void {
+    const existing = this.sessionsByKey.get(session.publicKeyHex) ?? new Set<string>();
+    existing.add(session.id);
+    this.sessionsByKey.set(session.publicKeyHex, existing);
+  }
+
+  private untrackSessionKey(session: Session): void {
+    const existing = this.sessionsByKey.get(session.publicKeyHex);
+    if (!existing) return;
+    existing.delete(session.id);
+    if (existing.size === 0) {
+      this.sessionsByKey.delete(session.publicKeyHex);
+    }
+  }
+
+  private normalizeBets(
+    bets: LiveCrapsBetInput[]
+  ): { betType: number; target: number; amount: bigint }[] {
+    const output: { betType: number; target: number; amount: bigint }[] = [];
+    for (const bet of bets) {
+      const amount = BigInt(Math.floor(bet.amount));
+      if (amount <= 0n) continue;
+
+      let betType: number;
+      let target: number;
+
+      if (typeof bet.type === 'string') {
+        const key = bet.type.toUpperCase();
+        if (!(key in CRAPS_BET_TYPES)) {
+          throw new Error(`Unknown bet type: ${bet.type}`);
+        }
+        const encoded = encodeCrapsBet(key as CrapsBetName, bet.target);
+        betType = encoded.betType;
+        target = encoded.target;
+      } else {
+        betType = bet.type;
+        target = bet.target ?? 0;
+      }
+
+      output.push({ betType, target, amount });
+    }
+    return output;
+  }
+
+  private pickBotBets(bot: BotState): { betType: number; target: number; amount: bigint }[] {
+    if (bot.lastBetRoundId === this.roundId) return [];
+    if (Math.random() > CONFIG.botParticipationRate) return [];
+    const betCount = Math.max(
+      CONFIG.botBetsPerRoundMin,
+      Math.min(
+        CONFIG.botBetsPerRoundMax,
+        CONFIG.botBetsPerRoundMin + Math.floor(Math.random() * (CONFIG.botBetsPerRoundMax - CONFIG.botBetsPerRoundMin + 1)),
+      ),
+    );
+    const bets: { betType: number; target: number; amount: bigint }[] = [];
+    for (let i = 0; i < betCount; i += 1) {
+      const betName = BOT_BET_TYPES[Math.floor(Math.random() * BOT_BET_TYPES.length)] ?? 'PASS';
+      let target: number | undefined;
+      if (betName === 'YES' || betName === 'NO') {
+        target = YES_NO_TARGETS[Math.floor(Math.random() * YES_NO_TARGETS.length)];
+      } else if (betName === 'NEXT') {
+        target = NEXT_TARGETS[Math.floor(Math.random() * NEXT_TARGETS.length)];
+      } else if (betName === 'HARDWAY') {
+        target = HARDWAY_TARGETS[Math.floor(Math.random() * HARDWAY_TARGETS.length)];
+      }
+      const amountRaw = CONFIG.botBetMin + Math.floor(Math.random() * (CONFIG.botBetMax - CONFIG.botBetMin + 1));
+      const amount = BigInt(amountRaw);
+      if (bot.balance !== undefined && amount > bot.balance) continue;
+
+      const encoded = encodeCrapsBet(betName, target);
+      bets.push({ betType: encoded.betType, target: encoded.target, amount });
+    }
+    return bets;
+  }
+
+  private findSigner(publicKeyHex: string): SignerState | null {
+    const ids = this.sessionsByKey.get(publicKeyHex);
+    if (ids) {
+      for (const id of ids.values()) {
+        const session = this.sessions.get(id);
+        if (session) return session;
+      }
+    }
+    const bot = this.botsByKey.get(publicKeyHex);
+    if (bot) return bot;
+    return null;
+  }
+
+  private findSession(publicKeyHex: string): Session | null {
+    const ids = this.sessionsByKey.get(publicKeyHex);
+    if (!ids) return null;
+    for (const id of ids.values()) {
+      const session = this.sessions.get(id);
+      if (session) return session;
+    }
+    return null;
+  }
+
+  private async submitInstruction(signer: SignerState, instruction: Uint8Array): Promise<boolean> {
+    if (!this.deps) return false;
+    const { submitClient, nonceManager, backendUrl } = this.deps;
+
+    return nonceManager.withLock(signer.publicKeyHex, async (nonce) => {
+      const tx = buildTransaction(nonce, instruction, signer.privateKey);
+      const submission = wrapSubmission(tx);
+      const result = await submitClient.submit(submission);
+
+      if (result.accepted) {
+        nonceManager.setCurrentNonce(signer.publicKeyHex, nonce + 1n);
+        return true;
+      }
+
+      if (result.error && nonceManager.handleRejection(signer.publicKeyHex, result.error)) {
+        const synced = await nonceManager.syncFromBackend(signer.publicKeyHex, backendUrl);
+        if (synced) {
+          const retryNonce = nonceManager.getCurrentNonce(signer.publicKeyHex);
+          const retryTx = buildTransaction(retryNonce, instruction, signer.privateKey);
+          const retrySubmission = wrapSubmission(retryTx);
+          const retryResult = await submitClient.submit(retrySubmission);
+          if (retryResult.accepted) {
+            nonceManager.setCurrentNonce(signer.publicKeyHex, retryNonce + 1n);
+            return true;
+          }
+        }
+      }
+
+      return false;
+    });
+  }
+}
+
+export const crapsLiveTable = CONFIG.onchain
+  ? new OnchainCrapsTable()
+  : new LiveCrapsTable();

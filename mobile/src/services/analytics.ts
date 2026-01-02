@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
-import { getString, setString, STORAGE_KEYS } from './storage';
+import { getString, setString, STORAGE_KEYS, initializeStorage } from './storage';
+import { stripTrailingSlash } from '../utils/url';
 
 export type AnalyticsEvent = {
   ts: number;
@@ -11,7 +12,7 @@ const opsBase =
   process.env.EXPO_PUBLIC_OPS_URL ??
   process.env.EXPO_PUBLIC_ANALYTICS_URL ??
   '';
-const analyticsUrl = opsBase ? `${opsBase.replace(/\/$/, '')}/analytics/events` : '';
+const analyticsUrl = opsBase ? `${stripTrailingSlash(opsBase)}/analytics/events` : '';
 
 let sessionId = '';
 let publicKey: string | null = null;
@@ -36,13 +37,25 @@ export const setAnalyticsContext = (ctx: { publicKey?: string | null }) => {
   }
 };
 
-export const initAnalytics = () => {
+export const initAnalytics = async () => {
   if (!sessionId) sessionId = generateId(12);
-  void getDeviceId();
+  try {
+    await initializeStorage();
+    void getDeviceId();
+  } catch {
+    // ignore storage init errors
+  }
 };
 
 export const track = async (name: string, props?: Record<string, unknown>) => {
   if (!analyticsUrl) return;
+  let deviceId = '';
+  try {
+    await initializeStorage();
+    deviceId = getDeviceId();
+  } catch {
+    // ignore storage init errors
+  }
   const event: AnalyticsEvent = {
     ts: Date.now(),
     name: String(name || '').trim(),
@@ -54,7 +67,7 @@ export const track = async (name: string, props?: Record<string, unknown>) => {
     events: [event],
     actor: {
       publicKey,
-      deviceId: getDeviceId(),
+      deviceId,
       platform: Platform.OS,
       appVersion: process.env.EXPO_PUBLIC_APP_VERSION,
     },

@@ -4,7 +4,6 @@
  */
 /**
  * Maps GameType enum to GameId string
- * Uses enum members explicitly per Kieran review - DO NOT use numeric keys
  */
 export declare const GAME_TYPE_TO_ID: {
     readonly 0: "baccarat";

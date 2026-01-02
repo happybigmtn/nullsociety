@@ -3,26 +3,37 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "main": "./index.js",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "react-native": "./dist/index.js",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
     },
     "./games": {
       "types": "./dist/games.d.ts",
-      "import": "./dist/games.js"
+      "react-native": "./dist/games.js",
+      "import": "./dist/games.js",
+      "require": "./dist/games.js"
     },
     "./moves": {
       "types": "./dist/moves.d.ts",
-      "import": "./dist/moves.js"
+      "react-native": "./dist/moves.js",
+      "import": "./dist/moves.js",
+      "require": "./dist/moves.js"
     },
     "./chips": {
       "types": "./dist/chips.d.ts",
-      "import": "./dist/chips.js"
+      "react-native": "./dist/chips.js",
+      "import": "./dist/chips.js",
+      "require": "./dist/chips.js"
     },
     "./bet-types": {
       "types": "./dist/bet-types.d.ts",
-      "import": "./dist/bet-types.js"
+      "react-native": "./dist/bet-types.js",
+      "import": "./dist/bet-types.js",
+      "require": "./dist/bet-types.js"
     }
   },
   "scripts": {

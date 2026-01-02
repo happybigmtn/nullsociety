@@ -27,6 +27,10 @@ export const applyBlackjackState = ({
 
   const bjStage = parsed.stage;
   const sideBet21p3 = parsed.sideBet21Plus3;
+  const sideBetLuckyLadies = parsed.sideBetLuckyLadies ?? 0;
+  const sideBetPerfectPairs = parsed.sideBetPerfectPairs ?? 0;
+  const sideBetBustIt = parsed.sideBetBustIt ?? 0;
+  const sideBetRoyalMatch = parsed.sideBetRoyalMatch ?? 0;
   const [initP1, initP2] = parsed.initPlayerCards;
   const activeHandIdx = parsed.activeHandIndex;
   const handCount = parsed.hands.length;
@@ -105,7 +109,8 @@ export const applyBlackjackState = ({
     isHidden: !isComplete && i > 0,
   }));
 
-  const totalWagered = mainWagered + sideBet21p3;
+  const totalWagered =
+    mainWagered + sideBet21p3 + sideBetLuckyLadies + sideBetPerfectPairs + sideBetBustIt + sideBetRoyalMatch;
   const newState: GameState = {
     ...prevState,
     type: gameType,
@@ -117,6 +122,10 @@ export const applyBlackjackState = ({
     blackjackStack: pendingStack,
     completedHands: finishedHands,
     blackjack21Plus3Bet: sideBet21p3,
+    blackjackLuckyLadiesBet: sideBetLuckyLadies,
+    blackjackPerfectPairsBet: sideBetPerfectPairs,
+    blackjackBustItBet: sideBetBustIt,
+    blackjackRoyalMatchBet: sideBetRoyalMatch,
     blackjackPlayerValue,
     blackjackDealerValue,
     blackjackActions,

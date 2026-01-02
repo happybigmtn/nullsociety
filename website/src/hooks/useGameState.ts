@@ -50,6 +50,10 @@ export const INITIAL_GAME_STATE: GameState = {
     blackjackStack: [],
     completedHands: [],
     blackjack21Plus3Bet: 0,
+    blackjackLuckyLadiesBet: 0,
+    blackjackPerfectPairsBet: 0,
+    blackjackBustItBet: 0,
+    blackjackRoyalMatchBet: 0,
     blackjackPlayerValue: null,
     blackjackDealerValue: null,
     blackjackActions: {

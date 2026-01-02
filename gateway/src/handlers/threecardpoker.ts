@@ -11,18 +11,12 @@ import { GameHandler, type HandlerContext, type HandleResult } from './base.js';
 import { GameType } from '../codec/index.js';
 import { generateSessionId } from '../codec/transactions.js';
 import { ErrorCodes, createError } from '../types/errors.js';
-import { ThreeCardMove as SharedThreeCardMove } from '@nullspace/constants';
 import type {
   OutboundMessage,
   ThreeCardPokerDealRequest,
   ThreeCardPokerLegacyDealRequest,
 } from '@nullspace/protocol/mobile';
-
-/**
- * Three Card Poker move codes matching execution/src/casino/three_card.rs
- * Now using shared constants directly from @nullspace/constants
- */
-const ThreeCardMove = SharedThreeCardMove;
+import { encodeGameActionPayload } from '@nullspace/protocol';
 
 export class ThreeCardPokerHandler extends GameHandler {
   constructor() {
@@ -74,15 +68,13 @@ export class ThreeCardPokerHandler extends GameHandler {
     // Step 2: Send Deal move to deal cards (atomic batch when side bets are set)
     const pairPlusValue = typeof pairPlus === 'number' ? pairPlus : 0;
     const hasSideBets = pairPlusValue > 0 || sixCard > 0 || progressive > 0;
-    let dealPayload = new Uint8Array([ThreeCardMove.Deal]);
-    if (hasSideBets) {
-      dealPayload = new Uint8Array(25);
-      dealPayload[0] = ThreeCardMove.AtomicDeal;
-      const view = new DataView(dealPayload.buffer);
-      view.setBigUint64(1, BigInt(pairPlusValue), false);
-      view.setBigUint64(9, BigInt(sixCard), false);
-      view.setBigUint64(17, BigInt(progressive), false);
-    }
+    const dealPayload = encodeGameActionPayload({
+      game: 'threecard',
+      action: 'deal',
+      pairPlus: pairPlusValue,
+      sixCard,
+      progressive,
+    });
     const dealResult = await this.makeMove(ctx, dealPayload);
 
     if (!dealResult.success) {
@@ -104,7 +96,7 @@ export class ThreeCardPokerHandler extends GameHandler {
 
   private async handlePlay(ctx: HandlerContext): Promise<HandleResult> {
     // Play action (0) - continue with hand
-    const payload = new Uint8Array([ThreeCardMove.Play]);
+    const payload = encodeGameActionPayload({ game: 'threecard', action: 'play' });
     const playResult = await this.makeMove(ctx, payload);
 
     if (!playResult.success) {
@@ -113,7 +105,7 @@ export class ThreeCardPokerHandler extends GameHandler {
 
     // If in AwaitingReveal, auto-reveal
     if (playResult.response?.type === 'game_move') {
-      const revealPayload = new Uint8Array([ThreeCardMove.Reveal]);
+      const revealPayload = encodeGameActionPayload({ game: 'threecard', action: 'reveal' });
       return this.makeMove(ctx, revealPayload);
     }
 
@@ -122,7 +114,7 @@ export class ThreeCardPokerHandler extends GameHandler {
 
   private async handleFold(ctx: HandlerContext): Promise<HandleResult> {
     // Fold action (1) - forfeit ante
-    const payload = new Uint8Array([ThreeCardMove.Fold]);
+    const payload = encodeGameActionPayload({ game: 'threecard', action: 'fold' });
     return this.makeMove(ctx, payload);
   }
 }

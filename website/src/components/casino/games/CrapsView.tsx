@@ -3,6 +3,7 @@ import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { GameState } from '../../../types';
 import { DiceThrow2D } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
+import { BetsDrawer } from '../BetsDrawer';
 import { calculateCrapsExposure, canPlaceCrapsBonusBets } from '../../../utils/gameUtils';
 import { CrapsBonusDashboard } from './CrapsBonusDashboard';
 import { CrapsBetMenu } from './CrapsBetMenu';
@@ -643,7 +644,7 @@ export const CrapsView = React.memo<{
 
                     {/* Mobile: Simplified buttons */}
                     <div className="flex md:hidden items-center gap-2 flex-1">
-                        <MobileDrawer label="BETS" title="PLACE BETS">
+                        <BetsDrawer title="PLACE BETS">
                             <div className="space-y-4">
                                 {/* Normal Bets */}
                                 <div className="rounded border border-gray-800 bg-black/40 p-2 space-y-2">
@@ -714,7 +715,7 @@ export const CrapsView = React.memo<{
                                     </div>
                                 </div>
                             </div>
-                        </MobileDrawer>
+                        </BetsDrawer>
                     </div>
 
                     {/* Mobile ROLL Button */}

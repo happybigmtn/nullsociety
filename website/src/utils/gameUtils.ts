@@ -48,7 +48,7 @@ export const HELP_CONTENT: Record<string, HelpContent> = {
     },
     [GameType.BACCARAT]: {
         title: "BACCARAT",
-        win: "Bet on hand closest to 9. Player 1:1, Banker 0.95:1.",
+        win: "Bet on hand closest to 9. Player 1:1, Banker 1:1 (6 pays 1:2).",
         loss: "Selected hand lower than opponent.",
         example: "Player 7, Banker 6. Player wins."
     },
@@ -1022,12 +1022,52 @@ export const parseGameLogs = (
 
         const sideBet = Number(normalizedData.sideBet21Plus3 ?? 0);
         if (sideBet > 0) {
-          const sideReturn = Number(normalizedData.sideBetReturn ?? 0);
+          const sideReturn = Number(normalizedData.sideBet21Plus3Return ?? normalizedData.sideBetReturn ?? 0);
           details.push(formatBetResult('21+3', outcomeFromReturn(sideBet, sideReturn)));
           resolvedBets.push({
             id: `21plus3-${resolvedBets.length}`,
             label: '21+3',
             pnl: normalizePnl(sideReturn - sideBet),
+          });
+        }
+        const luckyBet = Number(normalizedData.sideBetLuckyLadies ?? 0);
+        if (luckyBet > 0) {
+          const luckyReturn = Number(normalizedData.sideBetLuckyLadiesReturn ?? 0);
+          details.push(formatBetResult('LUCKY LADIES', outcomeFromReturn(luckyBet, luckyReturn)));
+          resolvedBets.push({
+            id: `lucky-ladies-${resolvedBets.length}`,
+            label: 'Lucky Ladies',
+            pnl: normalizePnl(luckyReturn - luckyBet),
+          });
+        }
+        const pairsBet = Number(normalizedData.sideBetPerfectPairs ?? 0);
+        if (pairsBet > 0) {
+          const pairsReturn = Number(normalizedData.sideBetPerfectPairsReturn ?? 0);
+          details.push(formatBetResult('PERFECT PAIRS', outcomeFromReturn(pairsBet, pairsReturn)));
+          resolvedBets.push({
+            id: `perfect-pairs-${resolvedBets.length}`,
+            label: 'Perfect Pairs',
+            pnl: normalizePnl(pairsReturn - pairsBet),
+          });
+        }
+        const royalBet = Number(normalizedData.sideBetRoyalMatch ?? 0);
+        if (royalBet > 0) {
+          const royalReturn = Number(normalizedData.sideBetRoyalMatchReturn ?? 0);
+          details.push(formatBetResult('ROYAL MATCH', outcomeFromReturn(royalBet, royalReturn)));
+          resolvedBets.push({
+            id: `royal-match-${resolvedBets.length}`,
+            label: 'Royal Match',
+            pnl: normalizePnl(royalReturn - royalBet),
+          });
+        }
+        const bustBet = Number(normalizedData.sideBetBustIt ?? 0);
+        if (bustBet > 0) {
+          const bustReturn = Number(normalizedData.sideBetBustItReturn ?? 0);
+          details.push(formatBetResult('BUST IT', outcomeFromReturn(bustBet, bustReturn)));
+          resolvedBets.push({
+            id: `bust-it-${resolvedBets.length}`,
+            label: 'Bust It',
+            pnl: normalizePnl(bustReturn - bustBet),
           });
         }
 
@@ -1046,8 +1086,9 @@ export const parseGameLogs = (
           PLAYER_DRAGON: 'P_DRAGON',
           BANKER_DRAGON: 'B_DRAGON',
           PANDA_8: 'PANDA8',
-          PLAYER_PERFECT_PAIR: 'P_PERFECT_PAIR',
-          BANKER_PERFECT_PAIR: 'B_PERFECT_PAIR',
+          PERFECT_PAIR: 'PERFECT_PAIR',
+          PLAYER_PERFECT_PAIR: 'PERFECT_PAIR',
+          BANKER_PERFECT_PAIR: 'PERFECT_PAIR',
         };
         const formatBetType = (raw: string) => betTypeMap[raw] ?? raw;
 

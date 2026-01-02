@@ -289,6 +289,13 @@ fn record_event(
         Event::Unstaked { .. } => "Unstaked",
         Event::EpochProcessed { .. } => "EpochProcessed",
         Event::RewardsClaimed { .. } => "RewardsClaimed",
+        Event::GlobalTableRoundOpened { .. } => "GlobalTableRoundOpened",
+        Event::GlobalTableBetAccepted { .. } => "GlobalTableBetAccepted",
+        Event::GlobalTableBetRejected { .. } => "GlobalTableBetRejected",
+        Event::GlobalTableLocked { .. } => "GlobalTableLocked",
+        Event::GlobalTableOutcome { .. } => "GlobalTableOutcome",
+        Event::GlobalTablePlayerSettled { .. } => "GlobalTablePlayerSettled",
+        Event::GlobalTableFinalized { .. } => "GlobalTableFinalized",
     };
 
     let max_account_entries = explorer.max_account_entries;
@@ -404,6 +411,13 @@ fn record_event(
         Event::Unstaked { player, .. } => touch_account(player),
         Event::EpochProcessed { .. } => {}
         Event::RewardsClaimed { player, .. } => touch_account(player),
+        Event::GlobalTableRoundOpened { .. } => {}
+        Event::GlobalTableLocked { .. } => {}
+        Event::GlobalTableOutcome { .. } => {}
+        Event::GlobalTableFinalized { .. } => {}
+        Event::GlobalTableBetAccepted { player, .. } => touch_account(player),
+        Event::GlobalTableBetRejected { player, .. } => touch_account(player),
+        Event::GlobalTablePlayerSettled { player, .. } => touch_account(player),
     }
 }
 
@@ -466,6 +480,51 @@ fn describe_instruction(instruction: &Instruction) -> String {
             end_time_ms,
         } => format!(
             "Start tournament {tournament_id} (start {start_time_ms}, end {end_time_ms})"
+        ),
+        Instruction::GlobalTableInit { config } => format!(
+            "Init global table ({})",
+            describe_game_type(&config.game_type)
+        ),
+        Instruction::GlobalTableOpenRound { game_type } => format!(
+            "Open global table round ({})",
+            describe_game_type(game_type)
+        ),
+        Instruction::GlobalTableSubmitBets {
+            game_type,
+            round_id,
+            bets,
+        } => format!(
+            "Submit {} global table bets ({}, round {round_id})",
+            bets.len(),
+            describe_game_type(game_type)
+        ),
+        Instruction::GlobalTableLock {
+            game_type,
+            round_id,
+        } => format!(
+            "Lock global table round ({}, round {round_id})",
+            describe_game_type(game_type)
+        ),
+        Instruction::GlobalTableReveal {
+            game_type,
+            round_id,
+        } => format!(
+            "Reveal global table round ({}, round {round_id})",
+            describe_game_type(game_type)
+        ),
+        Instruction::GlobalTableSettle {
+            game_type,
+            round_id,
+        } => format!(
+            "Settle global table round ({}, round {round_id})",
+            describe_game_type(game_type)
+        ),
+        Instruction::GlobalTableFinalize {
+            game_type,
+            round_id,
+        } => format!(
+            "Finalize global table round ({}, round {round_id})",
+            describe_game_type(game_type)
         ),
         Instruction::CasinoEndTournament { tournament_id } => {
             format!("End tournament {tournament_id}")

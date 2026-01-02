@@ -3,34 +3,50 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "main": "./index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "react-native": "./dist/index.js",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
     },
     "./game": {
       "types": "./dist/game.d.ts",
-      "import": "./dist/game.js"
+      "react-native": "./dist/game.js",
+      "import": "./dist/game.js",
+      "require": "./dist/game.js"
     },
     "./cards": {
       "types": "./dist/cards.d.ts",
-      "import": "./dist/cards.js"
+      "react-native": "./dist/cards.js",
+      "import": "./dist/cards.js",
+      "require": "./dist/cards.js"
     },
     "./player": {
       "types": "./dist/player.d.ts",
-      "import": "./dist/player.js"
+      "react-native": "./dist/player.js",
+      "import": "./dist/player.js",
+      "require": "./dist/player.js"
     },
     "./events": {
       "types": "./dist/events.d.ts",
-      "import": "./dist/events.js"
+      "react-native": "./dist/events.js",
+      "import": "./dist/events.js",
+      "require": "./dist/events.js"
     },
     "./casino": {
       "types": "./dist/casino.d.ts",
-      "import": "./dist/casino.js"
+      "react-native": "./dist/casino.js",
+      "import": "./dist/casino.js",
+      "require": "./dist/casino.js"
     },
     "./casino-state": {
       "types": "./dist/casino-state.d.ts",
-      "import": "./dist/casino-state.js"
+      "react-native": "./dist/casino-state.js",
+      "import": "./dist/casino-state.js",
+      "require": "./dist/casino-state.js"
     }
   },
   "scripts": {

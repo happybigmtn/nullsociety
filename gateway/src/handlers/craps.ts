@@ -12,8 +12,16 @@ import { GameHandler, type HandlerContext, type HandleResult } from './base.js';
 import { GameType } from '../codec/index.js';
 import { generateSessionId } from '../codec/transactions.js';
 import { ErrorCodes, createError } from '../types/errors.js';
-import type { CrapsRollRequest, CrapsSingleBetRequest, OutboundMessage } from '@nullspace/protocol/mobile';
+import type {
+  CrapsLiveBetRequest,
+  CrapsLiveJoinRequest,
+  CrapsLiveLeaveRequest,
+  CrapsRollRequest,
+  CrapsSingleBetRequest,
+  OutboundMessage,
+} from '@nullspace/protocol/mobile';
 import { encodeAtomicBatchPayload, type CrapsAtomicBetInput } from '@nullspace/protocol';
+import { crapsLiveTable } from '../live-table/craps.js';
 
 export class CrapsHandler extends GameHandler {
   constructor() {
@@ -25,6 +33,12 @@ export class CrapsHandler extends GameHandler {
     msg: OutboundMessage
   ): Promise<HandleResult> {
     switch (msg.type) {
+      case 'craps_live_join':
+        return this.handleLiveJoin(ctx, msg);
+      case 'craps_live_leave':
+        return this.handleLiveLeave(ctx, msg);
+      case 'craps_live_bet':
+        return this.handleLiveBet(ctx, msg);
       case 'craps_bet':
         return this.handleBet(ctx, msg);
       case 'craps_roll':
@@ -78,5 +92,26 @@ export class CrapsHandler extends GameHandler {
         error: createError(ErrorCodes.INVALID_BET, message),
       };
     }
+  }
+
+  private async handleLiveJoin(
+    ctx: HandlerContext,
+    _msg: CrapsLiveJoinRequest
+  ): Promise<HandleResult> {
+    return crapsLiveTable.join(ctx.session);
+  }
+
+  private async handleLiveLeave(
+    ctx: HandlerContext,
+    _msg: CrapsLiveLeaveRequest
+  ): Promise<HandleResult> {
+    return crapsLiveTable.leave(ctx.session);
+  }
+
+  private async handleLiveBet(
+    ctx: HandlerContext,
+    msg: CrapsLiveBetRequest
+  ): Promise<HandleResult> {
+    return crapsLiveTable.placeBets(ctx.session, msg.bets);
   }
 }

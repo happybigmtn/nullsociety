@@ -514,6 +514,29 @@ pub(crate) async fn index_events(
                                 .push((loc, op.clone()));
                         }
                     }
+                    Event::GlobalTableRoundOpened { .. }
+                    | Event::GlobalTableLocked { .. }
+                    | Event::GlobalTableOutcome { .. }
+                    | Event::GlobalTableFinalized { .. } => {
+                        if needs_public_ops {
+                            public_ops.push((loc, op.clone()));
+                        }
+                    }
+                    Event::GlobalTableBetAccepted { player, .. }
+                    | Event::GlobalTableBetRejected { player, .. }
+                    | Event::GlobalTablePlayerSettled { player, .. } => {
+                        if has_account_subs
+                            && (include_all_accounts
+                                || accounts_filter
+                                    .map(|set| set.contains(player))
+                                    .unwrap_or(true))
+                        {
+                            account_ops
+                                .entry(player.clone())
+                                .or_default()
+                                .push((loc, op.clone()));
+                        }
+                    }
                     Event::TournamentStarted { .. } => {
                         if needs_public_ops {
                             public_ops.push((loc, op.clone()));

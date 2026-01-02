@@ -20,7 +20,7 @@ export function useGatewaySession() {
   const lastSessionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    initAnalytics();
+    void initAnalytics();
   }, []);
 
   useEffect(() => {
@@ -80,6 +80,19 @@ export function useGatewaySession() {
         bet: parseNumeric(lastMessage.bet),
         sessionId: lastMessage.sessionId,
       });
+      const balanceValue = parseNumeric(lastMessage.balance);
+      if (balanceValue !== null) {
+        setBalance(balanceValue);
+        setBalanceReady(true);
+      }
+      return;
+    }
+
+    if (
+      lastMessage.type === 'live_table_state'
+      || lastMessage.type === 'live_table_result'
+      || lastMessage.type === 'live_table_confirmation'
+    ) {
       const balanceValue = parseNumeric(lastMessage.balance);
       if (balanceValue !== null) {
         setBalance(balanceValue);

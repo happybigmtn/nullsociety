@@ -224,10 +224,10 @@ test.describe('Chain Latency Diagnostics', () => {
     // Check simulator health
     console.log('\n--- Simulator Health Check ---');
     try {
-      const response = await page.request.get('http://localhost:8080/health');
-      console.log(`  /health: ${response.status()}`);
+      const response = await page.request.get('http://localhost:8080/healthz');
+      console.log(`  /healthz: ${response.status()}`);
     } catch (e) {
-      console.log(`  /health: FAILED - ${e}`);
+      console.log(`  /healthz: FAILED - ${e}`);
     }
 
     // Check recent blocks

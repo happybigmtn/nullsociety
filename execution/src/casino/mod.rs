@@ -60,6 +60,16 @@ impl GameRng {
         }
     }
 
+    /// Restore an RNG from a previously captured state.
+    pub fn from_state(state: [u8; 32]) -> Self {
+        Self { state, index: 0 }
+    }
+
+    /// Snapshot the current RNG state (before consuming more bytes).
+    pub fn state(&self) -> [u8; 32] {
+        self.state
+    }
+
     /// Get the next random byte.
     fn next_byte(&mut self) -> u8 {
         if self.index >= 32 {

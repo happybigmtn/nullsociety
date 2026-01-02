@@ -2,6 +2,7 @@ import React, { useMemo, useCallback } from 'react';
 import { GameState, RouletteBet } from '../../../types';
 import { getRouletteColor, calculateRouletteExposure, formatRouletteNumber, ROULETTE_DOUBLE_ZERO } from '../../../utils/gameUtils';
 import { MobileDrawer } from '../MobileDrawer';
+import { BetsDrawer } from '../BetsDrawer';
 import { Pseudo3DWheel } from '../pseudo3d/Pseudo3DWheel';
 import { Label } from '../ui/Label';
 
@@ -414,7 +415,7 @@ export const RouletteView = React.memo(({ gameState, numberInput = "", actions, 
                 </div>
 
                 <div className="flex md:hidden items-center gap-2">
-                    <MobileDrawer label="BETS" title="PLACE BETS">
+                    <BetsDrawer title="PLACE BETS">
                         <div className="space-y-4">
                             <div className="rounded-2xl border border-titanium-100 bg-white p-3 space-y-2">
                                 <Label size="micro">Quick Bets</Label>
@@ -569,7 +570,7 @@ export const RouletteView = React.memo(({ gameState, numberInput = "", actions, 
                                 </div>
                             </div>
                         </div>
-                    </MobileDrawer>
+                    </BetsDrawer>
                 </div>
 
                 <button

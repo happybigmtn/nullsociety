@@ -1,4 +1,13 @@
 import { webcrypto } from 'crypto';
+import {
+  createPasswordVault,
+  deleteVault,
+  exportVaultPrivateKey,
+  getVaultStatus,
+  importVaultPrivateKey,
+  lockVault,
+  unlockPasswordVault,
+} from '../vault';
 
 const mockStore = new Map<string, string>();
 
@@ -11,16 +20,6 @@ jest.mock('expo-secure-store', () => ({
     mockStore.delete(key);
   }),
 }));
-
-import {
-  createPasswordVault,
-  deleteVault,
-  exportVaultPrivateKey,
-  getVaultStatus,
-  importVaultPrivateKey,
-  lockVault,
-  unlockPasswordVault,
-} from '../vault';
 
 beforeAll(() => {
   if (!global.crypto) {

@@ -1,0 +1,17 @@
+[Unit]
+Description=Nullspace Live Table Service
+After=network.target
+
+[Service]
+Type=simple
+User=nullspace
+Group=nullspace
+WorkingDirectory=/opt/nullspace
+EnvironmentFile=/etc/nullspace/live-table.env
+ExecStart=/usr/local/bin/nullspace-live-table
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=100000
+
+[Install]
+WantedBy=multi-user.target

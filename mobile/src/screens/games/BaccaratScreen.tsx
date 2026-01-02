@@ -45,8 +45,7 @@ const SIDE_BET_TYPES: BaccaratSideBetType[] = [
   'P_DRAGON',
   'B_DRAGON',
   'PANDA8',
-  'P_PERFECT_PAIR',
-  'B_PERFECT_PAIR',
+  'PERFECT_PAIR',
 ];
 
 const SIDE_BET_LABELS: Record<BaccaratSideBetType, string> = {
@@ -57,8 +56,7 @@ const SIDE_BET_LABELS: Record<BaccaratSideBetType, string> = {
   P_DRAGON: 'Player Dragon',
   B_DRAGON: 'Banker Dragon',
   PANDA8: 'Panda 8',
-  P_PERFECT_PAIR: 'Player Perfect Pair',
-  B_PERFECT_PAIR: 'Banker Perfect Pair',
+  PERFECT_PAIR: 'Perfect Pair',
 };
 
 const TUTORIAL_STEPS: TutorialStep[] = [
@@ -344,7 +342,7 @@ export function BaccaratScreen() {
               >
                 <Text style={styles.betOptionLabel}>{type}</Text>
                 <Text style={styles.betOptionOdds}>
-                  {type === 'PLAYER' ? '1:1' : '0.95:1'}
+                  {type === 'PLAYER' ? '1:1' : '1:1 (6 pays 1:2)'}
                 </Text>
                 {state.selection === type && state.mainBet > 0 && (
                   <Text style={styles.betOptionAmount}>${state.mainBet}</Text>

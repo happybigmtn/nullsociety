@@ -8,6 +8,7 @@ User=nullspace
 Group=nullspace
 WorkingDirectory=/opt/nullspace
 EnvironmentFile=/etc/nullspace/simulator.env
+Environment=NODE_ENV=production
 ExecStart=/usr/local/bin/nullspace-simulator --host ${SIMULATOR_HOST} --port ${SIMULATOR_PORT} --identity ${SIMULATOR_IDENTITY} ${SIMULATOR_ARGS}
 Restart=on-failure
 RestartSec=5

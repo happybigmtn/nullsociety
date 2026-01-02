@@ -84,11 +84,23 @@ export const parseBlackjackState = (stateBlob) => {
     const reader = new SafeReader(stateBlob);
     try {
         const version = reader.readU8('version');
-        if (version !== 2) {
+        if (version !== 2 && version !== 3 && version !== 4) {
             return null;
         }
         const stage = reader.readU8('stage');
         const sideBet21Plus3 = Number(reader.readU64BE('side bet 21+3'));
+        let sideBetLuckyLadies = 0;
+        let sideBetPerfectPairs = 0;
+        let sideBetBustIt = 0;
+        let sideBetRoyalMatch = 0;
+        if (version >= 3) {
+            sideBetLuckyLadies = Number(reader.readU64BE('side bet lucky ladies'));
+            sideBetPerfectPairs = Number(reader.readU64BE('side bet perfect pairs'));
+            sideBetBustIt = Number(reader.readU64BE('side bet bust it'));
+        }
+        if (version >= 4) {
+            sideBetRoyalMatch = Number(reader.readU64BE('side bet royal match'));
+        }
         const initP1 = reader.readU8('init player card 1');
         const initP2 = reader.readU8('init player card 2');
         const activeHandIndex = reader.readU8('active hand index');
@@ -117,6 +129,10 @@ export const parseBlackjackState = (stateBlob) => {
             version,
             stage,
             sideBet21Plus3,
+            sideBetLuckyLadies,
+            sideBetPerfectPairs,
+            sideBetBustIt,
+            sideBetRoyalMatch,
             initPlayerCards: [initP1, initP2],
             activeHandIndex,
             hands,
@@ -194,6 +210,7 @@ export const parseSicBoState = (stateBlob) => {
         return null;
     }
 };
+const CRAPS_MAX_BETS = 20;
 export const parseCrapsState = (stateBlob) => {
     if (stateBlob.length < 5) {
         return null;
@@ -242,6 +259,9 @@ export const parseCrapsState = (stateBlob) => {
             epochPointEstablished = stateBlob[0] === 1 || mainPoint > 0;
             betCount = stateBlob[4];
             betsOffset = 5;
+        }
+        if (betCount > CRAPS_MAX_BETS) {
+            return null;
         }
         const bets = [];
         for (let i = 0; i < betCount; i += 1) {

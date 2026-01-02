@@ -207,7 +207,7 @@ export function ThreeCardPokerScreen() {
       ...prev,
       message: 'Dealing...',
     }));
-  }, [state.anteBet, state.pairPlusBet, send]);
+  }, [state.anteBet, state.pairPlusBet, state.sixCardBet, state.progressiveBet, send]);
 
   const handlePlay = useCallback(async () => {
     await haptics.betConfirm();

@@ -41,41 +41,75 @@ async function run() {
         }
     };
     const openBetsMenu = async () => {
-        const betsBtn = page.getByLabel('Game controls').getByRole('button', { name: /^BETS$/i });
+        const betsBtn = page.getByLabel('Bets').first();
         if (await betsBtn.isVisible()) {
             console.log('Opening Bets Menu...');
             await betsBtn.click();
+            await page.waitForTimeout(500);
+            return;
+        }
+        const desktopBetsBtn = page.getByLabel('Game controls').getByRole('button', { name: /^BETS/i });
+        if (await desktopBetsBtn.isVisible()) {
+            console.log('Opening Bets Menu (desktop control)...');
+            await desktopBetsBtn.click();
             await page.waitForTimeout(500);
         } else {
             console.log('Bets Menu button not visible.');
         }
     };
     const closeBetsMenu = async () => {
-        const closeBtn = page.getByRole('button', { name: /\[CLOSE\]/i });
+        const closeBtn = page.getByLabel('Close Bets');
         if (await closeBtn.isVisible()) {
             console.log('Closing Bets Menu...');
             await closeBtn.click();
             await page.waitForTimeout(500);
+            return;
         }
+        const legacyCloseBtn = page.getByRole('button', { name: /\[CLOSE\]/i });
+        if (await legacyCloseBtn.isVisible()) {
+            console.log('Closing Bets Menu (legacy)...');
+            await legacyCloseBtn.click();
+            await page.waitForTimeout(500);
+        }
+    };
+    const getBetsScope = async () => {
+        const drawer = page.getByTestId('bets-drawer-panel');
+        try {
+            if (await drawer.isVisible()) return drawer;
+        } catch {
+            // ignore
+        }
+        return page;
     };
     const goToGame = async (gameName) => {
         console.log('');
         console.log(`--- Testing ${gameName} ---`);
         await page.getByRole('button', { name: /^games$/i }).click();
-        await page.getByPlaceholder(/type command/i).fill(gameName);
+        await page.getByPlaceholder(/search nullspace/i).fill(gameName);
         await page.keyboard.press('Enter');
         await page.waitForTimeout(1000);
-        const header = await page.locator('h1').first().textContent();
-        console.log(`Loaded game: ${header}`);
+        let header = null;
+        try {
+            header = await page.locator('h1').first().textContent({ timeout: 2000 });
+        } catch {
+            header = null;
+        }
+        console.log(`Loaded game: ${header ?? gameName}`);
     };
     const getLog = async () => {
-        return await page.locator('.animate-pulse').first().textContent();
+        const logLocator = page.locator('.animate-pulse').first();
+        try {
+            return await logLocator.textContent({ timeout: 2000 });
+        } catch {
+            return 'No live log captured';
+        }
     };
 
     // 1. BACCARAT
     await goToGame('baccarat');
     await openBetsMenu();
-    await page.getByRole('button', { name: /player/i }).first().click();
+    const baccaratBets = await getBetsScope();
+    await baccaratBets.getByRole('button', { name: /player/i }).first().click();
     await closeBetsMenu();
     await page.getByRole('button', { name: /deal/i }).click();
     await page.waitForTimeout(2000);
@@ -94,7 +128,8 @@ async function run() {
     // 3. CRAPS
     await goToGame('craps');
     await openBetsMenu();
-    await page.getByRole('button', { name: /^pass$/i }).click();
+    const crapsBets = await getBetsScope();
+    await crapsBets.getByRole('button', { name: /^pass$/i }).first().click();
     await closeBetsMenu();
     await page.getByRole('button', { name: /roll/i }).click();
     await page.waitForTimeout(2000);
@@ -103,7 +138,8 @@ async function run() {
     // 4. ROULETTE
     await goToGame('roulette');
     await openBetsMenu();
-    await page.getByRole('button', { name: /red/i }).click();
+    const rouletteBets = await getBetsScope();
+    await rouletteBets.getByRole('button', { name: /red/i }).first().click();
     await closeBetsMenu();
     await page.getByRole('button', { name: /spin/i }).click();
     await page.waitForTimeout(3000);
@@ -141,7 +177,8 @@ async function run() {
     // 7. SIC BO
     await goToGame('sic_bo');
     await openBetsMenu();
-    await page.getByRole('button', { name: /small/i }).click();
+    const sicBoBets = await getBetsScope();
+    await sicBoBets.getByRole('button', { name: /small/i }).first().click();
     await closeBetsMenu();
     await page.getByRole('button', { name: /roll/i }).click();
     await page.waitForTimeout(2000);

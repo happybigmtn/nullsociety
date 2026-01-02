@@ -1,14 +1,47 @@
+FROM rust:1.83-slim-bookworm AS wasm-builder
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    libssl-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+
+WORKDIR /app
+
+COPY Cargo.toml Cargo.lock ./
+COPY execution/Cargo.toml ./execution/
+COPY types/Cargo.toml ./types/
+COPY website/wasm/Cargo.toml ./website/wasm/
+
+RUN mkdir -p execution/src types/src website/wasm/src && \
+    echo "pub fn placeholder() {}" > execution/src/lib.rs && \
+    echo "pub fn placeholder() {}" > types/src/lib.rs && \
+    echo "pub fn placeholder() {}" > website/wasm/src/lib.rs
+
+RUN wasm-pack build --target web --out-dir pkg website/wasm 2>/dev/null || true
+
+RUN rm -rf execution/src types/src website/wasm/src
+
+COPY execution/ ./execution/
+COPY types/ ./types/
+COPY website/wasm/ ./website/wasm/
+
+RUN wasm-pack build --target web --out-dir pkg website/wasm
+
 FROM node:20-slim AS build
 
 WORKDIR /app
 COPY services/auth/package.json /app/services/auth/
+COPY services/auth/package-lock.json /app/services/auth/
 COPY services/auth/tsconfig.json /app/services/auth/
 COPY services/auth/src /app/services/auth/src
 COPY website/convex/_generated /app/website/convex/_generated
-COPY website/wasm/pkg /app/website/wasm/pkg
+COPY --from=wasm-builder /app/website/wasm/pkg /app/website/wasm/pkg
 
 WORKDIR /app/services/auth
-RUN npm install
+RUN npm ci
 RUN npm run build
 
 FROM node:20-slim
@@ -16,9 +49,16 @@ FROM node:20-slim
 WORKDIR /app/services/auth
 ENV NODE_ENV=production
 COPY services/auth/package.json /app/services/auth/
-RUN npm install --omit=dev
+COPY services/auth/package-lock.json /app/services/auth/
+RUN npm ci --omit=dev
 COPY --from=build /app/services/auth/dist /app/services/auth/dist
 COPY --from=build /app/website/convex/_generated /app/website/convex/_generated
 COPY --from=build /app/website/wasm/pkg /app/website/wasm/pkg
+
+RUN chown -R node:node /app/services/auth /app/website
+USER node
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 4000) + '/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "dist/server.js"]

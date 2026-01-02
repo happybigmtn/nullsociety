@@ -91,6 +91,25 @@ fn metrics_auth_token() -> Option<String> {
     }
 }
 
+fn is_production() -> bool {
+    matches!(
+        std::env::var("NODE_ENV").as_deref(),
+        Ok("production") | Ok("prod")
+    )
+}
+
+fn ensure_metrics_auth_token() -> Result<()> {
+    let require_token = is_production()
+        || matches!(
+            std::env::var("NODE_REQUIRE_METRICS_AUTH").as_deref(),
+            Ok("1") | Ok("true") | Ok("yes")
+        );
+    if require_token && metrics_auth_token().is_none() {
+        anyhow::bail!("METRICS_AUTH_TOKEN must be set when metrics auth is required");
+    }
+    Ok(())
+}
+
 async fn metrics_handler(
     State(state): State<Arc<MetricsState>>,
     headers: HeaderMap,
@@ -334,6 +353,8 @@ fn main_result() -> Result<()> {
         println!("config ok");
         return Ok(());
     }
+
+    ensure_metrics_auth_token()?;
 
     // Initialize runtime
     let cfg = tokio::Config::default()

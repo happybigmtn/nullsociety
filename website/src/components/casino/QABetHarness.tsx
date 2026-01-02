@@ -119,8 +119,7 @@ const BACCARAT_CASES: BaccaratCase[] = [
   { label: 'Side Player Dragon', selection: 'PLAYER', sideBet: 'P_DRAGON' },
   { label: 'Side Banker Dragon', selection: 'PLAYER', sideBet: 'B_DRAGON' },
   { label: 'Side Panda 8', selection: 'PLAYER', sideBet: 'PANDA8' },
-  { label: 'Side Player Perfect Pair', selection: 'PLAYER', sideBet: 'P_PERFECT_PAIR' },
-  { label: 'Side Banker Perfect Pair', selection: 'PLAYER', sideBet: 'B_PERFECT_PAIR' },
+  { label: 'Side Perfect Pair', selection: 'PLAYER', sideBet: 'PERFECT_PAIR' },
 ];
 
 const isFailureMessage = (message: string | null | undefined): boolean => {

@@ -9,6 +9,7 @@ import { ed25519 } from '@noble/curves/ed25519';
 import { NonceManager } from './nonce.js';
 import { SubmitClient } from '../backend/http.js';
 import { UpdatesClient, type CasinoGameEvent } from '../backend/updates.js';
+import { logDebug, logError, logWarn } from '../logger.js';
 import {
   encodeCasinoRegister,
   encodeCasinoDeposit,
@@ -38,12 +39,19 @@ export class SessionManager {
   private nonceManager: NonceManager;
   private submitClient: SubmitClient;
   private backendUrl: string;
+  private origin: string;
   private sessionCreateAttempts: Map<string, { count: number; windowStart: number; blockedUntil: number }> = new Map();
 
-  constructor(submitClient: SubmitClient, backendUrl: string, nonceManager?: NonceManager) {
+  constructor(
+    submitClient: SubmitClient,
+    backendUrl: string,
+    nonceManager?: NonceManager,
+    origin?: string,
+  ) {
     this.submitClient = submitClient;
     this.backendUrl = backendUrl;
     this.nonceManager = nonceManager ?? new NonceManager();
+    this.origin = origin ?? 'http://localhost:9010';
   }
 
   private generatePrivateKey(): Uint8Array {
@@ -132,7 +140,7 @@ export class SessionManager {
     try {
       await this.initializePlayer(session, initialBalance);
     } catch (err) {
-      console.error(`Failed to initialize player ${playerName}:`, err);
+      logError(`Failed to initialize player ${playerName}:`, err);
     }
 
     return session;
@@ -150,12 +158,12 @@ export class SessionManager {
     // Step 1: Connect to updates stream FIRST (before any transactions)
     // This ensures we're subscribed to receive event broadcasts
     try {
-      const updatesClient = new UpdatesClient(this.backendUrl);
+      const updatesClient = new UpdatesClient(this.backendUrl, this.origin);
       await updatesClient.connectForAccount(session.publicKey);
       session.updatesClient = updatesClient;
-      console.log(`Connected to updates stream for ${session.playerName}`);
+      logDebug(`Connected to updates stream for ${session.playerName}`);
     } catch (err) {
-      console.warn(`Failed to connect to updates stream for ${session.playerName}:`, err);
+      logWarn(`Failed to connect to updates stream for ${session.playerName}:`, err);
       // Non-fatal - game can still work, just won't get real-time events
     }
 
@@ -163,7 +171,7 @@ export class SessionManager {
     // Now the WebSocket is ready to receive the registration result
     const registerResult = await this.registerPlayer(session);
     if (!registerResult) {
-      console.warn(`Registration failed for ${session.playerName}`);
+      logWarn(`Registration failed for ${session.playerName}`);
       return;
     }
 
@@ -186,7 +194,7 @@ export class SessionManager {
       if (result.accepted) {
         session.registered = true;
         this.nonceManager.setCurrentNonce(session.publicKeyHex, nonce + 1n);
-        console.log(`Registered player: ${session.playerName}`);
+        logDebug(`Registered player: ${session.playerName}`);
         return true;
       }
 
@@ -203,13 +211,13 @@ export class SessionManager {
           if (retryResult.accepted) {
             session.registered = true;
             this.nonceManager.setCurrentNonce(session.publicKeyHex, retryNonce + 1n);
-            console.log(`Registered player: ${session.playerName}`);
+            logDebug(`Registered player: ${session.playerName}`);
             return true;
           }
         }
       }
 
-      console.error(`Registration rejected for ${session.playerName}: ${result.error}`);
+      logWarn(`Registration rejected for ${session.playerName}: ${result.error}`);
       return false;
     });
   }
@@ -229,7 +237,7 @@ export class SessionManager {
         session.hasBalance = true;
         session.balance = session.balance + amount;
         this.nonceManager.setCurrentNonce(session.publicKeyHex, nonce + 1n);
-        console.log(`Deposited ${amount} chips for ${session.playerName}`);
+        logDebug(`Deposited ${amount} chips for ${session.playerName}`);
         return true;
       }
 
@@ -247,13 +255,13 @@ export class SessionManager {
             session.hasBalance = true;
             session.balance = session.balance + amount;
             this.nonceManager.setCurrentNonce(session.publicKeyHex, retryNonce + 1n);
-            console.log(`Deposited ${amount} chips for ${session.playerName}`);
+            logDebug(`Deposited ${amount} chips for ${session.playerName}`);
             return true;
           }
         }
       }
 
-      console.error(`Deposit rejected for ${session.playerName}: ${result.error}`);
+      logWarn(`Deposit rejected for ${session.playerName}: ${result.error}`);
       return false;
     });
   }
@@ -281,7 +289,7 @@ export class SessionManager {
       try {
         await this.refreshBalance(session);
       } catch (err) {
-        console.warn(`[Gateway] Balance refresh failed for ${session.playerName}:`, err);
+        logWarn(`[Gateway] Balance refresh failed for ${session.playerName}:`, err);
       }
     }, intervalMs);
   }
@@ -346,7 +354,7 @@ export class SessionManager {
       }
       this.byPublicKey.delete(session.publicKeyHex);
       this.sessions.delete(ws);
-      console.log(`Session destroyed: ${session.playerName}`);
+      logDebug(`Session destroyed: ${session.playerName}`);
     }
     return session;
   }

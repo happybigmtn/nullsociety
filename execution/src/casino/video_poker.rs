@@ -16,7 +16,7 @@ use super::super_mode::apply_super_multiplier_cards;
 use super::{cards, CasinoGame, GameError, GameResult, GameRng};
 use nullspace_types::casino::GameSession;
 
-/// Jacks or Better paytable multipliers (expressed as "to 1" winnings).
+/// Jacks or Better paytable multipliers (total return per 1 unit wagered).
 mod payouts {
     pub const HIGH_CARD: u64 = 0;
     pub const JACKS_OR_BETTER: u64 = 1;
@@ -228,7 +228,7 @@ pub fn evaluate_hand(cards: &[u8; 5]) -> Hand {
     }
 }
 
-/// Payout multiplier for each hand (Jacks or Better paytable).
+/// Payout multiplier for each hand (Jacks or Better paytable, total return).
 fn payout_multiplier(hand: Hand, paytable: VideoPokerPaytable) -> u64 {
     match paytable {
         VideoPokerPaytable::NineSix => match hand {
@@ -357,8 +357,8 @@ impl CasinoGame for VideoPoker {
         let hand = evaluate_hand(&state.cards);
         let multiplier = payout_multiplier(hand, state.rules.paytable);
 
-        // Pay tables are expressed "to 1" (winnings). Our executor expects TOTAL RETURN.
-        let base_return = session.bet.saturating_mul(multiplier.saturating_add(1));
+        // Pay tables are expressed as total return per 1 unit wagered.
+        let base_return = session.bet.saturating_mul(multiplier);
         let total_return = if multiplier > 0 {
             if session.super_mode.is_active {
                 apply_super_multiplier_cards(
@@ -608,8 +608,8 @@ mod tests {
         let result = VideoPoker::process_move(&mut session, &[0b11111], &mut rng)
             .expect("Failed to process move");
 
-        // Jacks-or-Better pays 1:1 -> total return 2x bet
-        assert!(matches!(result, GameResult::Win(200, _)));
+        // Jacks-or-Better pays 1-for-1 -> total return 1x bet (push)
+        assert!(matches!(result, GameResult::Win(100, _)));
     }
 
     #[test]

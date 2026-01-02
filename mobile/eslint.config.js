@@ -13,6 +13,7 @@ module.exports = [
       "dist",
       "build",
       "coverage",
+      ".expo",
       "android",
       "ios",
       "eslint.config.js",

@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
 
+const SHOW_DEBUG = Boolean(import.meta.env?.DEV);
+
 type VaultDerived = {
   ltvBps: number;
   availableDebt: bigint;
@@ -221,34 +223,36 @@ export const BorrowPanel: React.FC<BorrowPanelProps> = ({
         </div>
       </div>
 
-      <details className="mt-4 border-t border-gray-800 pt-4">
-        <summary className="text-[10px] text-gray-500 tracking-widest cursor-pointer select-none">
-          HOUSE (DEBUG)
-        </summary>
-        <div className="mt-2 text-[10px] text-gray-600 space-y-1">
-          <div>
-            Burned: <span className="text-white">{house?.totalBurned ?? 0}</span>
+      {SHOW_DEBUG ? (
+        <details className="mt-4 border-t border-gray-800 pt-4">
+          <summary className="text-[10px] text-gray-500 tracking-widest cursor-pointer select-none">
+            HOUSE (DEBUG)
+          </summary>
+          <div className="mt-2 text-[10px] text-gray-600 space-y-1">
+            <div>
+              Burned: <span className="text-white">{house?.totalBurned ?? 0}</span>
+            </div>
+            <div>
+              Issuance: <span className="text-white">{house?.totalIssuance ?? 0}</span>
+            </div>
+            <div>
+              Fees: <span className="text-white">{house?.accumulatedFees ?? 0}</span>
+            </div>
+            <div>
+              vUSDT debt: <span className="text-white">{house?.totalVusdtDebt ?? 0}</span>
+            </div>
+            <div>
+              Stability fees: <span className="text-white">{house?.stabilityFeesAccrued ?? 0}</span>
+            </div>
+            <div>
+              Recovery pool: <span className="text-white">{house?.recoveryPoolVusdt ?? 0}</span>
+            </div>
+            <div>
+              Recovered: <span className="text-white">{house?.recoveryPoolRetired ?? 0}</span>
+            </div>
           </div>
-          <div>
-            Issuance: <span className="text-white">{house?.totalIssuance ?? 0}</span>
-          </div>
-          <div>
-            Fees: <span className="text-white">{house?.accumulatedFees ?? 0}</span>
-          </div>
-          <div>
-            vUSDT debt: <span className="text-white">{house?.totalVusdtDebt ?? 0}</span>
-          </div>
-          <div>
-            Stability fees: <span className="text-white">{house?.stabilityFeesAccrued ?? 0}</span>
-          </div>
-          <div>
-            Recovery pool: <span className="text-white">{house?.recoveryPoolVusdt ?? 0}</span>
-          </div>
-          <div>
-            Recovered: <span className="text-white">{house?.recoveryPoolRetired ?? 0}</span>
-          </div>
-        </div>
-      </details>
+        </details>
+      ) : null}
     </section>
   );
 };

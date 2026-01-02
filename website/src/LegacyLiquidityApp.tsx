@@ -47,6 +47,8 @@ function estimateSwapOut(amm: any, amountIn: bigint, isBuyingRng: boolean): { ou
   return { out, fee, burned };
 }
 
+const SHOW_DEBUG = Boolean(import.meta.env?.DEV);
+
 export default function LegacyLiquidityApp() {
   const [status, setStatus] = useState<string>('Initializing…');
   const [lastTxSig, setLastTxSig] = useState<string | null>(null);
@@ -669,14 +671,16 @@ export default function LegacyLiquidityApp() {
             </div>
           </div>
 
-          <div className="mt-4 border-t border-gray-800 pt-4">
-            <div className="text-[10px] text-gray-500 tracking-widest mb-2">HOUSE (DEBUG)</div>
-            <div className="text-[10px] text-gray-600 space-y-1">
-              <div>Burned: <span className="text-white">{house?.totalBurned ?? 0}</span></div>
-              <div>Issuance: <span className="text-white">{house?.totalIssuance ?? 0}</span></div>
-              <div>Fees: <span className="text-white">{house?.accumulatedFees ?? 0}</span></div>
+          {SHOW_DEBUG ? (
+            <div className="mt-4 border-t border-gray-800 pt-4">
+              <div className="text-[10px] text-gray-500 tracking-widest mb-2">HOUSE (DEBUG)</div>
+              <div className="text-[10px] text-gray-600 space-y-1">
+                <div>Burned: <span className="text-white">{house?.totalBurned ?? 0}</span></div>
+                <div>Issuance: <span className="text-white">{house?.totalIssuance ?? 0}</span></div>
+                <div>Fees: <span className="text-white">{house?.accumulatedFees ?? 0}</span></div>
+              </div>
             </div>
-          </div>
+          ) : null}
         </section>
       </div>
 

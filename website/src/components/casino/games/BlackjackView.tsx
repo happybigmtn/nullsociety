@@ -1,10 +1,12 @@
 
-import React, { useMemo, useState } from 'react';
-import { GameState } from '../../../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Card, GameState } from '../../../types';
 import { Hand } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
+import { BetsDrawer } from '../BetsDrawer';
 import { Label } from '../ui/Label';
 import { cardIdToString } from '../../../services/games';
+import { analyzeBlackjackHand, BlackjackAnalysis } from '../../../utils/blackjackAnalysis';
 
 const CHIP_VALUES = [1, 5, 25, 100, 500, 1000, 5000, 10000];
 
@@ -55,6 +57,8 @@ export const BlackjackView = React.memo<{
     onBetChange?: (bet: number) => void;
 }>(({ gameState, actions, lastWin, playMode, currentBet, onBetChange }) => {
     const [showChipSelector, setShowChipSelector] = useState(false);
+    const [analysis, setAnalysis] = useState<BlackjackAnalysis | null>(null);
+    const [analysisPending, setAnalysisPending] = useState(false);
     const dealerValue = useMemo(
         () => (typeof gameState.blackjackDealerValue === 'number' ? gameState.blackjackDealerValue : '?'),
         [gameState.blackjackDealerValue]
@@ -69,11 +73,31 @@ export const BlackjackView = React.memo<{
         return msg.includes('INSURANCE');
     }, [gameState.message, gameState.stage]);
 
+    const dealerUpcard = useMemo(
+        () => gameState.dealerCards.find((card) => card && !card.isHidden) ?? null,
+        [gameState.dealerCards]
+    );
+    const knownCards = useMemo(() => {
+        const cards: Card[] = [];
+        cards.push(...gameState.playerCards);
+        for (const hand of gameState.completedHands) {
+            if (hand?.cards?.length) cards.push(...hand.cards);
+        }
+        for (const pending of gameState.blackjackStack) {
+            if (pending?.cards?.length) cards.push(...pending.cards);
+        }
+        for (const card of gameState.dealerCards) {
+            if (card && !card.isHidden) cards.push(card);
+        }
+        return cards;
+    }, [gameState.playerCards, gameState.completedHands, gameState.blackjackStack, gameState.dealerCards]);
+
     const canHit = gameState.blackjackActions?.canHit && !showInsurancePrompt;
     const canStand = gameState.blackjackActions?.canStand && !showInsurancePrompt;
     const canDouble = gameState.blackjackActions?.canDouble && !showInsurancePrompt;
     const canSplit = gameState.blackjackActions?.canSplit && !showInsurancePrompt;
     const isBettingStage = gameState.stage === 'BETTING' || gameState.stage === 'RESULT';
+    const canAnalyze = gameState.stage === 'PLAYING' && gameState.playerCards.length > 0 && !!dealerUpcard;
 
     const activeHandNumber = gameState.completedHands.length + 1;
 
@@ -94,6 +118,47 @@ export const BlackjackView = React.memo<{
                                 : 'PUSH';
         return `HAND ${idx + 1} · $${bet} · ${tag}`;
     };
+
+    useEffect(() => {
+        setAnalysis(null);
+        setAnalysisPending(false);
+    }, [gameState.moveNumber, gameState.stage]);
+
+    const runAnalysis = () => {
+        if (!canAnalyze || analysisPending || !dealerUpcard) return;
+        setAnalysisPending(true);
+        requestAnimationFrame(() => {
+            const result = analyzeBlackjackHand({
+                playerCards: gameState.playerCards,
+                dealerCard: dealerUpcard,
+                knownCards,
+                canSplit: !!canSplit,
+                canDouble: !!canDouble,
+                canSurrender: false,
+                canHit: !!canHit,
+                canStand: !!canStand,
+                iterations: 3000,
+            });
+            setAnalysis(result);
+            setAnalysisPending(false);
+        });
+    };
+
+    const formatEv = (value?: number): string => {
+        if (value === undefined || Number.isNaN(value)) return '--';
+        const fixed = value.toFixed(3);
+        return value > 0 ? `+${fixed}` : fixed;
+    };
+    const analysisRows = analysis
+        ? [
+              { key: 'stand', label: 'Stand', code: 'S', value: analysis.values.stand },
+              { key: 'hit', label: 'Hit', code: 'H', value: analysis.values.hit },
+              { key: 'double', label: 'Double', code: 'D', value: analysis.values.double },
+              { key: 'split', label: 'Split', code: 'P', value: analysis.values.split },
+              { key: 'surrender', label: 'Surrender', code: 'R', value: analysis.values.surrender },
+              { key: 'insurance', label: 'Insurance', code: 'I', value: analysis.values.insurance },
+          ].filter((row) => row.value !== undefined)
+        : [];
     return (
         <>
             <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center gap-8 relative pt-12 pb-24 animate-scale-in">
@@ -230,6 +295,60 @@ export const BlackjackView = React.memo<{
                         </div>
                     </div>
                 )}
+
+                {(analysis || analysisPending) && (
+                    <div className="w-full max-w-md mx-auto px-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                        <div className="bg-titanium-900/95 border-2 border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
+                            <div className="flex items-center justify-between px-3 py-2 border-b border-gray-800 bg-titanium-900/90">
+                                <Label size="micro">Hand Analysis</Label>
+                                <button
+                                    type="button"
+                                    onClick={() => setAnalysis(null)}
+                                    className="text-[10px] px-2 py-1 rounded border border-gray-700 bg-black/40 text-gray-400 hover:border-gray-500"
+                                >
+                                    CLEAR
+                                </button>
+                            </div>
+                            <div className="p-3 space-y-3">
+                                {analysisPending && !analysis ? (
+                                    <div className="text-[11px] text-gray-400 font-mono">Analyzing...</div>
+                                ) : null}
+                                {analysis ? (
+                                    <div className="space-y-2">
+                                        {analysisRows.map((row) => {
+                                            const isBest = analysis.bestPlay === row.code;
+                                            return (
+                                                <div
+                                                    key={row.key}
+                                                    className={`flex items-center justify-between px-3 py-2 rounded border text-[11px] font-mono ${
+                                                        isBest
+                                                            ? 'border-action-primary bg-action-primary/15 text-action-primary'
+                                                            : 'border-gray-800 bg-black/40 text-gray-300'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold tracking-widest uppercase">{row.label}</span>
+                                                        {isBest && (
+                                                            <span className="text-[9px] font-bold uppercase tracking-widest text-action-primary">
+                                                                BEST
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <span className="tabular-nums">{formatEv(row.value)}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : null}
+                                {analysis ? (
+                                    <div className="text-[10px] text-gray-500 leading-relaxed">
+                                        EV per 1x bet • {analysis.iterations.toLocaleString()} sims • {analysis.note}
+                                    </div>
+                                ) : null}
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* CONTROLS */}
@@ -239,7 +358,7 @@ export const BlackjackView = React.memo<{
                     {isBettingStage ? (
                         <>
                             <div className="flex md:hidden items-center gap-2">
-                                <MobileDrawer label="BETS" title="BLACKJACK BETS">
+                                <BetsDrawer title="BLACKJACK BETS">
                                     <div className="space-y-4">
                                         {gameState.stage === 'BETTING' && (
                                             <div className="rounded border border-gray-800 bg-black/40 p-2 space-y-2">
@@ -255,6 +374,50 @@ export const BlackjackView = React.memo<{
                                                         }`}
                                                     >
                                                         21+3
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={actions?.bjToggleLuckyLadies}
+                                                        className={`py-3 rounded border text-xs font-bold ${
+                                                            (gameState.blackjackLuckyLadiesBet || 0) > 0
+                                                                ? 'border-amber-400 bg-amber-400/20 text-amber-400'
+                                                                : 'border-gray-700 bg-gray-900 text-gray-400'
+                                                        }`}
+                                                    >
+                                                        LUCKY LADIES
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={actions?.bjTogglePerfectPairs}
+                                                        className={`py-3 rounded border text-xs font-bold ${
+                                                            (gameState.blackjackPerfectPairsBet || 0) > 0
+                                                                ? 'border-amber-400 bg-amber-400/20 text-amber-400'
+                                                                : 'border-gray-700 bg-gray-900 text-gray-400'
+                                                        }`}
+                                                    >
+                                                        PERFECT PAIRS
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={actions?.bjToggleBustIt}
+                                                        className={`py-3 rounded border text-xs font-bold ${
+                                                            (gameState.blackjackBustItBet || 0) > 0
+                                                                ? 'border-amber-400 bg-amber-400/20 text-amber-400'
+                                                                : 'border-gray-700 bg-gray-900 text-gray-400'
+                                                        }`}
+                                                    >
+                                                        BUST IT
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={actions?.bjToggleRoyalMatch}
+                                                        className={`py-3 rounded border text-xs font-bold ${
+                                                            (gameState.blackjackRoyalMatchBet || 0) > 0
+                                                                ? 'border-amber-400 bg-amber-400/20 text-amber-400'
+                                                                : 'border-gray-700 bg-gray-900 text-gray-400'
+                                                        }`}
+                                                    >
+                                                        ROYAL MATCH
                                                     </button>
                                                 </div>
                                             </div>
@@ -302,7 +465,7 @@ export const BlackjackView = React.memo<{
                                             </div>
                                         </div>
                                     </div>
-                                </MobileDrawer>
+                                </BetsDrawer>
                             </div>
 
                             <div className="hidden md:flex items-center gap-2">
@@ -319,6 +482,50 @@ export const BlackjackView = React.memo<{
                                             }`}
                                         >
                                             21+3{(gameState.blackjack21Plus3Bet || 0) > 0 ? ` $${gameState.blackjack21Plus3Bet}` : ''}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={actions?.bjToggleLuckyLadies}
+                                            className={`h-12 px-4 rounded border-2 font-bold text-sm tracking-widest uppercase font-mono transition-all ${
+                                                (gameState.blackjackLuckyLadiesBet || 0) > 0
+                                                    ? 'border-amber-400 bg-amber-400/20 text-amber-400'
+                                                    : 'border-gray-700 bg-black/50 text-gray-300 hover:bg-gray-800'
+                                            }`}
+                                        >
+                                            LUCKY{(gameState.blackjackLuckyLadiesBet || 0) > 0 ? ` $${gameState.blackjackLuckyLadiesBet}` : ''}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={actions?.bjTogglePerfectPairs}
+                                            className={`h-12 px-4 rounded border-2 font-bold text-sm tracking-widest uppercase font-mono transition-all ${
+                                                (gameState.blackjackPerfectPairsBet || 0) > 0
+                                                    ? 'border-amber-400 bg-amber-400/20 text-amber-400'
+                                                    : 'border-gray-700 bg-black/50 text-gray-300 hover:bg-gray-800'
+                                            }`}
+                                        >
+                                            PAIRS{(gameState.blackjackPerfectPairsBet || 0) > 0 ? ` $${gameState.blackjackPerfectPairsBet}` : ''}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={actions?.bjToggleBustIt}
+                                            className={`h-12 px-4 rounded border-2 font-bold text-sm tracking-widest uppercase font-mono transition-all ${
+                                                (gameState.blackjackBustItBet || 0) > 0
+                                                    ? 'border-amber-400 bg-amber-400/20 text-amber-400'
+                                                    : 'border-gray-700 bg-black/50 text-gray-300 hover:bg-gray-800'
+                                            }`}
+                                        >
+                                            BUST{(gameState.blackjackBustItBet || 0) > 0 ? ` $${gameState.blackjackBustItBet}` : ''}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={actions?.bjToggleRoyalMatch}
+                                            className={`h-12 px-4 rounded border-2 font-bold text-sm tracking-widest uppercase font-mono transition-all ${
+                                                (gameState.blackjackRoyalMatchBet || 0) > 0
+                                                    ? 'border-amber-400 bg-amber-400/20 text-amber-400'
+                                                    : 'border-gray-700 bg-black/50 text-gray-300 hover:bg-gray-800'
+                                            }`}
+                                        >
+                                            ROYAL{(gameState.blackjackRoyalMatchBet || 0) > 0 ? ` $${gameState.blackjackRoyalMatchBet}` : ''}
                                         </button>
                                     </div>
                                 )}
@@ -388,6 +595,20 @@ export const BlackjackView = React.memo<{
                                         </div>
                                     </div>
                                 </MobileDrawer>
+                                {canAnalyze && (
+                                    <button
+                                        type="button"
+                                        onClick={runAnalysis}
+                                        disabled={analysisPending}
+                                        className={`text-[11px] font-mono px-3 py-2 rounded-full border ${
+                                            analysisPending
+                                                ? 'opacity-60 cursor-not-allowed border-gray-800 bg-black/30 text-gray-500'
+                                                : 'border-action-primary bg-action-primary/15 text-action-primary hover:bg-action-primary/25'
+                                        }`}
+                                    >
+                                        {analysisPending ? '...' : 'ANALYZE'}
+                                    </button>
+                                )}
                             </div>
                             <div className="hidden md:flex items-center gap-2">
                                 <button
@@ -397,6 +618,20 @@ export const BlackjackView = React.memo<{
                                 >
                                     NO
                                 </button>
+                                {canAnalyze && (
+                                    <button
+                                        type="button"
+                                        onClick={runAnalysis}
+                                        disabled={analysisPending}
+                                        className={`h-12 px-4 rounded border-2 font-bold text-sm tracking-widest uppercase font-mono transition-all ${
+                                            analysisPending
+                                                ? 'opacity-60 cursor-not-allowed border-gray-800 bg-gray-900/50 text-gray-500'
+                                                : 'border-action-primary bg-action-primary/15 text-action-primary hover:bg-action-primary/25'
+                                        }`}
+                                    >
+                                        {analysisPending ? 'ANALYZING' : 'ANALYZE'}
+                                    </button>
+                                )}
                             </div>
                         </>
                     ) : (
@@ -444,6 +679,20 @@ export const BlackjackView = React.memo<{
                                         </div>
                                     </div>
                                 </MobileDrawer>
+                                {canAnalyze && (
+                                    <button
+                                        type="button"
+                                        onClick={runAnalysis}
+                                        disabled={analysisPending}
+                                        className={`text-[11px] font-mono px-3 py-2 rounded-full border ${
+                                            analysisPending
+                                                ? 'opacity-60 cursor-not-allowed border-gray-800 bg-black/30 text-gray-500'
+                                                : 'border-action-primary bg-action-primary/15 text-action-primary hover:bg-action-primary/25'
+                                        }`}
+                                    >
+                                        {analysisPending ? '...' : 'ANALYZE'}
+                                    </button>
+                                )}
                             </div>
                             <div className="hidden md:flex items-center gap-2">
                                 <button
@@ -482,6 +731,20 @@ export const BlackjackView = React.memo<{
                                 >
                                     SPLIT
                                 </button>
+                                {canAnalyze && (
+                                    <button
+                                        type="button"
+                                        onClick={runAnalysis}
+                                        disabled={analysisPending}
+                                        className={`h-12 px-4 rounded border-2 font-bold text-sm tracking-widest uppercase font-mono transition-all ${
+                                            analysisPending
+                                                ? 'opacity-60 cursor-not-allowed border-gray-800 bg-gray-900/50 text-gray-500'
+                                                : 'border-action-primary bg-action-primary/15 text-action-primary hover:bg-action-primary/25'
+                                        }`}
+                                    >
+                                        {analysisPending ? 'ANALYZING' : 'ANALYZE'}
+                                    </button>
+                                )}
                             </div>
                         </>
                     )}

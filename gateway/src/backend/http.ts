@@ -1,6 +1,7 @@
 /**
  * HTTP client for submitting transactions to the backend
  */
+import { logDebug, logWarn } from '../logger.js';
 
 export interface SubmitResult {
   accepted: boolean;
@@ -41,7 +42,7 @@ export class SubmitClient {
       clearTimeout(timeoutId);
 
       if (response.ok) {
-        console.log(`[SubmitClient] Transaction accepted`);
+        logDebug('[SubmitClient] Transaction accepted');
         return { accepted: true };
       }
 
@@ -54,7 +55,7 @@ export class SubmitClient {
         // Ignore parse errors
       }
 
-      console.log(`[SubmitClient] Transaction rejected: ${error}`);
+      logWarn(`[SubmitClient] Transaction rejected: ${error}`);
       return { accepted: false, error };
     } catch (err) {
       clearTimeout(timeoutId);
@@ -75,7 +76,7 @@ export class SubmitClient {
    */
   async healthCheck(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/health`, {
+      const response = await fetch(`${this.baseUrl}/healthz`, {
         method: 'GET',
         headers: {
           'Origin': this.origin,

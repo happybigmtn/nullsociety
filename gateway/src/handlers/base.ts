@@ -15,6 +15,7 @@ import { UpdatesClient } from '../backend/updates.js';
 import type { SubmitClient } from '../backend/http.js';
 import type { NonceManager } from '../session/nonce.js';
 import { ErrorCodes, createError, type ErrorResponse } from '../types/errors.js';
+import { logDebug, logWarn } from '../logger.js';
 
 /** Timeout for waiting for game events (ms) */
 const GAME_EVENT_TIMEOUT = (() => {
@@ -40,6 +41,7 @@ export interface HandlerContext {
   submitClient: SubmitClient;
   nonceManager: NonceManager;
   backendUrl: string;
+  origin?: string;
 }
 
 /**
@@ -108,7 +110,7 @@ export abstract class GameHandler {
             session.activeGameId = null;
             session.gameType = null;
             const errorMsg = gameEvent.errorMessage || `Game rejected (code ${gameEvent.errorCode})`;
-            console.log(`[GameHandler] Backend error: ${errorMsg}`);
+            logWarn(`[GameHandler] Backend error: ${errorMsg}`);
             return {
               success: false,
               error: createError(ErrorCodes.TRANSACTION_REJECTED, errorMsg),
@@ -118,11 +120,11 @@ export abstract class GameHandler {
           // CRITICAL: Update session to use backend's actual on-chain session ID
           // The client generates a session ID but the backend may assign a different one
           if (gameEvent.sessionId && gameEvent.sessionId !== 0n) {
-            console.log(`[GameHandler] Updating activeGameId: ${session.activeGameId} -> ${gameEvent.sessionId}`);
+            logDebug(`[GameHandler] Updating activeGameId: ${session.activeGameId} -> ${gameEvent.sessionId}`);
             session.activeGameId = gameEvent.sessionId;
           }
 
-          await this.ensureSessionUpdatesClient(session, backendUrl, session.activeGameId!);
+          await this.ensureSessionUpdatesClient(session, backendUrl, session.activeGameId!, ctx.origin);
 
           return {
             success: true,
@@ -131,7 +133,7 @@ export abstract class GameHandler {
         }
 
         // Fallback if no event received (backend may be slow)
-        await this.ensureSessionUpdatesClient(session, backendUrl, session.activeGameId!);
+        await this.ensureSessionUpdatesClient(session, backendUrl, session.activeGameId!, ctx.origin);
         session.lastGameBet = bet;
         session.lastGameStartChips = session.balance;
         session.lastGameStartedAt = Date.now();
@@ -165,24 +167,24 @@ export abstract class GameHandler {
                 session.activeGameId = null;
                 session.gameType = null;
                 const errorMsg = gameEvent.errorMessage || `Game rejected (code ${gameEvent.errorCode})`;
-                console.log(`[GameHandler] Backend error: ${errorMsg}`);
+                logWarn(`[GameHandler] Backend error: ${errorMsg}`);
                 return {
                   success: false,
                   error: createError(ErrorCodes.TRANSACTION_REJECTED, errorMsg),
                 };
               }
               if (gameEvent.sessionId && gameEvent.sessionId !== 0n) {
-                console.log(`[GameHandler] Updating activeGameId: ${session.activeGameId} -> ${gameEvent.sessionId}`);
+                logDebug(`[GameHandler] Updating activeGameId: ${session.activeGameId} -> ${gameEvent.sessionId}`);
                 session.activeGameId = gameEvent.sessionId;
               }
-              await this.ensureSessionUpdatesClient(session, backendUrl, session.activeGameId!);
+              await this.ensureSessionUpdatesClient(session, backendUrl, session.activeGameId!, ctx.origin);
               return {
                 success: true,
                 response: this.buildGameStartedResponse(gameEvent, session, session.activeGameId!, bet),
               };
             }
 
-            await this.ensureSessionUpdatesClient(session, backendUrl, session.activeGameId!);
+            await this.ensureSessionUpdatesClient(session, backendUrl, session.activeGameId!, ctx.origin);
             session.lastGameBet = bet;
             session.lastGameStartChips = session.balance;
             session.lastGameStartedAt = Date.now();
@@ -228,7 +230,7 @@ export abstract class GameHandler {
     }
 
     const gameSessionId = session.activeGameId;
-    console.log(`[GameHandler] Making move with sessionId=${gameSessionId} (hex=${gameSessionId.toString(16)})`);
+    logDebug(`[GameHandler] Making move with sessionId=${gameSessionId} (hex=${gameSessionId.toString(16)})`);
 
     return nonceManager.withLock(session.publicKeyHex, async (nonce) => {
       const instruction = encodeCasinoGameMove(gameSessionId, payload);
@@ -247,7 +249,7 @@ export abstract class GameHandler {
           if (gameEvent.type === 'error') {
             // Move was rejected by backend
             const errorMsg = gameEvent.errorMessage || `Move rejected (code ${gameEvent.errorCode})`;
-            console.log(`[GameHandler] Backend error during move: ${errorMsg}`);
+            logWarn(`[GameHandler] Backend error during move: ${errorMsg}`);
             return {
               success: false,
               error: createError(ErrorCodes.TRANSACTION_REJECTED, errorMsg),
@@ -301,7 +303,7 @@ export abstract class GameHandler {
             if (gameEvent) {
               if (gameEvent.type === 'error') {
                 const errorMsg = gameEvent.errorMessage || `Move rejected (code ${gameEvent.errorCode})`;
-                console.log(`[GameHandler] Backend error during move: ${errorMsg}`);
+                logWarn(`[GameHandler] Backend error during move: ${errorMsg}`);
                 return {
                   success: false,
                   error: createError(ErrorCodes.TRANSACTION_REJECTED, errorMsg),
@@ -361,7 +363,7 @@ export abstract class GameHandler {
     eventType: CasinoGameEvent['type']
   ): Promise<CasinoGameEvent | null> {
     if (!session.updatesClient) {
-      console.warn('No updates client connected, skipping event wait');
+      logWarn('No updates client connected, skipping event wait');
       return null;
     }
 
@@ -372,7 +374,7 @@ export abstract class GameHandler {
       }
       return await session.updatesClient.waitForAnyEvent(eventType, GAME_EVENT_TIMEOUT);
     } catch (err) {
-      console.warn(`Timeout waiting for ${eventType} event:`, err);
+      logWarn(`Timeout waiting for ${eventType} event:`, err);
       return null;
     }
   }
@@ -387,7 +389,7 @@ export abstract class GameHandler {
     const sessionClient = session.sessionUpdatesClient ?? accountClient;
 
     if (!accountClient && !sessionClient) {
-      console.warn('No updates client connected, skipping event wait');
+      logWarn('No updates client connected, skipping event wait');
       return null;
     }
 
@@ -405,7 +407,7 @@ export abstract class GameHandler {
       const event = await Promise.race([movePromise, completePromise, errorPromise]);
       return event ?? null;
     } catch (err) {
-      console.warn('Timeout waiting for move/complete event:', err);
+      logWarn('Timeout waiting for move/complete event:', err);
       return null;
     }
   }
@@ -413,7 +415,8 @@ export abstract class GameHandler {
   private async ensureSessionUpdatesClient(
     session: Session,
     backendUrl: string,
-    sessionId: bigint
+    sessionId: bigint,
+    origin?: string,
   ): Promise<void> {
     if (!sessionId) {
       return;
@@ -430,12 +433,12 @@ export abstract class GameHandler {
     }
 
     try {
-      const updatesClient = new UpdatesClient(backendUrl);
+      const updatesClient = new UpdatesClient(backendUrl, origin);
       await updatesClient.connectForSession(sessionId);
       session.sessionUpdatesClient = updatesClient;
       session.sessionUpdatesSessionId = sessionId;
     } catch (err) {
-      console.warn('Failed to connect session updates client:', err);
+      logWarn('Failed to connect session updates client:', err);
     }
   }
 

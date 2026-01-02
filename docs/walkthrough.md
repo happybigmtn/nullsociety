@@ -314,8 +314,6 @@ Study the system edges: APIs, gateways, service orchestration, and external inte
 #### services/
 
 - [ ] services/auth/.env.example
-- [ ] services/auth/.env.production.example
-- [ ] services/auth/.env.staging.example
 - [ ] services/auth/Dockerfile
 - [ ] services/auth/package-lock.json
 - [ ] services/auth/package.json

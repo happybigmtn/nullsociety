@@ -13,8 +13,7 @@ export const BACCARAT_BET_TYPES = {
     P_DRAGON: 6,
     B_DRAGON: 7,
     PANDA8: 8,
-    P_PERFECT_PAIR: 9,
-    B_PERFECT_PAIR: 10,
+    PERFECT_PAIR: 9,
 };
 export function encodeBaccaratBet(type) {
     return BACCARAT_BET_TYPES[type];

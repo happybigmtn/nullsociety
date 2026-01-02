@@ -254,6 +254,48 @@ impl<'a, S: State> Layer<'a, S> {
                 )
                 .await
             }
+            Instruction::GlobalTableInit { config } => {
+                self.handle_global_table_init(public, config).await
+            }
+            Instruction::GlobalTableOpenRound { game_type } => {
+                self.handle_global_table_open_round(public, *game_type).await
+            }
+            Instruction::GlobalTableSubmitBets {
+                game_type,
+                round_id,
+                bets,
+            } => {
+                self.handle_global_table_submit_bets(public, *game_type, *round_id, bets)
+                    .await
+            }
+            Instruction::GlobalTableLock {
+                game_type,
+                round_id,
+            } => {
+                self.handle_global_table_lock(public, *game_type, *round_id)
+                    .await
+            }
+            Instruction::GlobalTableReveal {
+                game_type,
+                round_id,
+            } => {
+                self.handle_global_table_reveal(public, *game_type, *round_id)
+                    .await
+            }
+            Instruction::GlobalTableSettle {
+                game_type,
+                round_id,
+            } => {
+                self.handle_global_table_settle(public, *game_type, *round_id)
+                    .await
+            }
+            Instruction::GlobalTableFinalize {
+                game_type,
+                round_id,
+            } => {
+                self.handle_global_table_finalize(public, *game_type, *round_id)
+                    .await
+            }
             Instruction::CasinoEndTournament { tournament_id } => {
                 self.handle_casino_end_tournament(public, *tournament_id)
                     .await
@@ -428,7 +470,14 @@ impl<'a, S: State> Layer<'a, S> {
             | Instruction::CasinoJoinTournament { .. }
             | Instruction::CasinoSetTournamentLimit { .. }
             | Instruction::CasinoStartTournament { .. }
-            | Instruction::CasinoEndTournament { .. } => {
+            | Instruction::CasinoEndTournament { .. }
+            | Instruction::GlobalTableInit { .. }
+            | Instruction::GlobalTableOpenRound { .. }
+            | Instruction::GlobalTableSubmitBets { .. }
+            | Instruction::GlobalTableLock { .. }
+            | Instruction::GlobalTableReveal { .. }
+            | Instruction::GlobalTableSettle { .. }
+            | Instruction::GlobalTableFinalize { .. } => {
                 self.apply_casino(public, instruction).await
             }
 

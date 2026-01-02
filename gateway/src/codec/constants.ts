@@ -24,6 +24,13 @@ export const InstructionTag = {
   CasinoSetTournamentLimit: 15,
   CasinoJoinTournament: 16,
   CasinoStartTournament: 17,
+  GlobalTableInit: 60,
+  GlobalTableOpenRound: 61,
+  GlobalTableSubmitBets: 62,
+  GlobalTableLock: 63,
+  GlobalTableReveal: 64,
+  GlobalTableSettle: 65,
+  GlobalTableFinalize: 66,
 } as const;
 
 // Submission tags (matching types/src/api.rs)
@@ -66,8 +73,7 @@ export const BaccaratBet = {
   PlayerDragon: BACCARAT_BET_TYPES.P_DRAGON,
   BankerDragon: BACCARAT_BET_TYPES.B_DRAGON,
   Panda8: BACCARAT_BET_TYPES.PANDA8,
-  PlayerPerfectPair: BACCARAT_BET_TYPES.P_PERFECT_PAIR,
-  BankerPerfectPair: BACCARAT_BET_TYPES.B_PERFECT_PAIR,
+  PerfectPair: BACCARAT_BET_TYPES.PERFECT_PAIR,
 } as const;
 
 export type BaccaratBet = typeof BaccaratBet[keyof typeof BaccaratBet];

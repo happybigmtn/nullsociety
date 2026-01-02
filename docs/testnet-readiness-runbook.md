@@ -11,6 +11,10 @@ secrets available.
 - Admin key files (casino admin ed25519).
 - Convex self-hosted backend provisioned (URL + service token).
 - Stripe testnet prices (if membership flows are enabled on testnet).
+- Executor identity hex (`EXECUTOR_IDENTITY`) and indexer URL.
+- Metrics auth token for simulator + validators + auth (`METRICS_AUTH_TOKEN`).
+- Ops admin token if running ops service (`OPS_ADMIN_TOKEN`).
+- Ops origin allowlist if running ops service (`OPS_ALLOWED_ORIGINS`).
 
 ## 1) Config + secrets (staging/testnet)
 - Generate node configs:
@@ -20,6 +24,24 @@ secrets available.
   ```
 - Set gateway data directory for nonce persistence:
   - `GATEWAY_DATA_DIR=/var/lib/nullspace/gateway`
+- Set gateway origin for backend sync:
+  - `GATEWAY_ORIGIN=https://gateway.example.com`
+- Lock down gateway origins:
+  - `GATEWAY_ALLOWED_ORIGINS=https://app.example.com,https://auth.example.com`
+  - `GATEWAY_ALLOW_NO_ORIGIN=1` (for native mobile clients)
+- Require authenticated metrics in production:
+  - `METRICS_AUTH_TOKEN=<secure-token>`
+  - `AUTH_REQUIRE_METRICS_AUTH=1` (auth service)
+- Ensure production checks are enabled:
+  - `NODE_ENV=production` for simulator, validators, gateway, and ops
+- Ops service hardening (if enabled):
+  - `OPS_ALLOWED_ORIGINS=https://staging.example.com`
+  - `OPS_REQUIRE_ALLOWED_ORIGINS=1`
+  - `OPS_REQUIRE_ADMIN_TOKEN=1`
+- Live-table integration (if enabled):
+  - `GATEWAY_LIVE_TABLE_CRAPS_URL=ws://<LIVE_TABLE_HOST>:9123/ws`
+  - `GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE=/etc/nullspace/casino-admin-key.hex`
+  - Set `GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV=1` only if you must use env keys in production.
 - Enforce vault-only browser keys:
   - `VITE_ALLOW_LEGACY_KEYS=0`
   - `VITE_ENABLE_SIMULATOR_PASSKEYS=0`
@@ -51,16 +73,28 @@ Gateway:
 ## 3) Bring-up sequence (staging/testnet)
 1) Start simulator/indexer with rate limits.
 2) Start validators (one per host).
-3) Start gateway pointing at simulator.
-4) Start Auth service with Convex + Stripe configured.
-5) Start website with vault-only defaults and correct Auth URL.
+3) Start executor (dev-executor) on its host.
+4) Start gateway pointing at simulator.
+5) Start Auth service with Convex + Stripe configured.
+6) Start website with vault-only defaults and correct Auth URL.
+7) (Optional) Start live-table service for craps.
+8) (Optional) Start ops service for analytics.
 
 Reference: `docs/testnet-runbook.md`.
 
 ## 4) Smoke checks (must pass)
 - Health endpoints:
   - `GET http://<INDEXER_HOST>:8080/healthz`
-  - `GET http://<NODE_HOST>:9100/metrics`
+  - `GET http://<GATEWAY_HOST>:9010/healthz`
+  - `GET http://<AUTH_HOST>:4000/healthz`
+  - `GET http://<NODE_HOST>:9100/metrics` (send `x-metrics-token: <METRICS_AUTH_TOKEN>`)
+- Metrics sanity:
+  - `GET http://<INDEXER_HOST>:8080/metrics/prometheus` (send `x-metrics-token: <METRICS_AUTH_TOKEN>`)
+  - `GET http://<AUTH_HOST>:4000/metrics/prometheus` (send `x-metrics-token: <METRICS_AUTH_TOKEN>`)
+- Optional:
+  - `GET http://<OPS_HOST>:9020/healthz`
+  - `GET http://<LIVE_TABLE_HOST>:9123/healthz`
+  - Live-table WS connect: `ws://<LIVE_TABLE_HOST>:9123/ws`
 - Metrics scrape sanity: simulator + nodes visible in Prometheus.
 - Faucet flow: register, claim, verify balance changes.
 - One full game flow each for:

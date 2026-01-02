@@ -6,6 +6,7 @@ members = [
     "simulator",
     "types",
     "website/wasm",
+    "services/live-table",
 ]
 resolver = "2"
 

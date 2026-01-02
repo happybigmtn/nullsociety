@@ -10,7 +10,7 @@ import React, {
   useCallback,
   ReactNode,
 } from 'react';
-import { getBoolean, setBoolean, deleteKey, STORAGE_KEYS } from '../services/storage';
+import { getBoolean, setBoolean, deleteKey, STORAGE_KEYS, initializeStorage } from '../services/storage';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -31,28 +31,53 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Check if user was previously authenticated this session
   useEffect(() => {
-    const checkAuth = () => {
+    let mounted = true;
+    const checkAuth = async () => {
       try {
+        await initializeStorage();
         // Check for existing session (could also verify biometrics haven't expired)
         const hasSession = getBoolean(STORAGE_KEYS.SESSION_ACTIVE, false);
-        setIsAuthenticated(hasSession);
+        if (mounted) {
+          setIsAuthenticated(hasSession);
+        }
       } catch {
-        setIsAuthenticated(false);
+        if (mounted) {
+          setIsAuthenticated(false);
+        }
       } finally {
-        setIsLoading(false);
+        if (mounted) {
+          setIsLoading(false);
+        }
       }
     };
-    checkAuth();
+    void checkAuth();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const authenticate = useCallback(() => {
-    setBoolean(STORAGE_KEYS.SESSION_ACTIVE, true);
     setIsAuthenticated(true);
+    void (async () => {
+      try {
+        await initializeStorage();
+        setBoolean(STORAGE_KEYS.SESSION_ACTIVE, true);
+      } catch (error) {
+        console.warn('[auth] Failed to persist session:', error);
+      }
+    })();
   }, []);
 
   const logout = useCallback(() => {
-    deleteKey(STORAGE_KEYS.SESSION_ACTIVE);
     setIsAuthenticated(false);
+    void (async () => {
+      try {
+        await initializeStorage();
+        deleteKey(STORAGE_KEYS.SESSION_ACTIVE);
+      } catch (error) {
+        console.warn('[auth] Failed to clear session:', error);
+      }
+    })();
   }, []);
 
   return (

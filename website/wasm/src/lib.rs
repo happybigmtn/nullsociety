@@ -155,6 +155,15 @@ define_instruction_kinds! {
     BridgeDeposit = 35 => Instruction::BridgeDeposit { .. } => "BridgeDeposit" => Instruction::BridgeDeposit { recipient: ed25519::PrivateKey::from_seed(4).public_key(), amount: 1, source: vec![0; 32] },
     FinalizeBridgeWithdrawal = 36 => Instruction::FinalizeBridgeWithdrawal { .. } => "FinalizeBridgeWithdrawal" => Instruction::FinalizeBridgeWithdrawal { withdrawal_id: 1, source: vec![0; 32] },
     UpdateOracle = 37 => Instruction::UpdateOracle { .. } => "UpdateOracle" => Instruction::UpdateOracle { price_vusdt_numerator: 1, price_rng_denominator: 1, updated_ts: 0, source: vec![0] },
+
+    // Global table instructions
+    GlobalTableInit = 38 => Instruction::GlobalTableInit { .. } => "GlobalTableInit" => Instruction::GlobalTableInit { config: nullspace_types::casino::GlobalTableConfig { game_type: nullspace_types::casino::GameType::Craps, betting_ms: 1000, lock_ms: 2000, payout_ms: 3000, cooldown_ms: 4000, min_bet: 1, max_bet: 1000, max_bets_per_round: 10 } },
+    GlobalTableOpenRound = 39 => Instruction::GlobalTableOpenRound { .. } => "GlobalTableOpenRound" => Instruction::GlobalTableOpenRound { game_type: nullspace_types::casino::GameType::Craps },
+    GlobalTableSubmitBets = 40 => Instruction::GlobalTableSubmitBets { .. } => "GlobalTableSubmitBets" => Instruction::GlobalTableSubmitBets { game_type: nullspace_types::casino::GameType::Craps, round_id: 1, bets: vec![nullspace_types::casino::GlobalTableBet { bet_type: 0, target: 0, amount: 5 }] },
+    GlobalTableLock = 41 => Instruction::GlobalTableLock { .. } => "GlobalTableLock" => Instruction::GlobalTableLock { game_type: nullspace_types::casino::GameType::Craps, round_id: 1 },
+    GlobalTableReveal = 42 => Instruction::GlobalTableReveal { .. } => "GlobalTableReveal" => Instruction::GlobalTableReveal { game_type: nullspace_types::casino::GameType::Craps, round_id: 1 },
+    GlobalTableSettle = 43 => Instruction::GlobalTableSettle { .. } => "GlobalTableSettle" => Instruction::GlobalTableSettle { game_type: nullspace_types::casino::GameType::Craps, round_id: 1 },
+    GlobalTableFinalize = 44 => Instruction::GlobalTableFinalize { .. } => "GlobalTableFinalize" => Instruction::GlobalTableFinalize { game_type: nullspace_types::casino::GameType::Craps, round_id: 1 },
 }
 
 /// Helper to convert serde_json::Value to a plain JavaScript object
@@ -1267,6 +1276,62 @@ fn decode_value(value: Value) -> Result<JsValue, JsValue> {
                 "source": hex(&state.source)
             })
         }
+        Value::GlobalTableConfig(config) => {
+            serde_json::json!({
+                "type": "GlobalTableConfig",
+                "game_type": format!("{:?}", config.game_type),
+                "betting_ms": config.betting_ms,
+                "lock_ms": config.lock_ms,
+                "payout_ms": config.payout_ms,
+                "cooldown_ms": config.cooldown_ms,
+                "min_bet": config.min_bet,
+                "max_bet": config.max_bet,
+                "max_bets_per_round": config.max_bets_per_round
+            })
+        }
+        Value::GlobalTableRound(round) => {
+            serde_json::json!({
+                "type": "GlobalTableRound",
+                "round": serialize_global_table_round(&round)
+            })
+        }
+        Value::GlobalTablePlayerSession(session) => {
+            let multipliers: Vec<_> = session
+                .session
+                .super_mode
+                .multipliers
+                .iter()
+                .map(|m| {
+                    serde_json::json!({
+                        "id": m.id,
+                        "multiplier": m.multiplier,
+                        "super_type": format!("{:?}", m.super_type)
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "type": "GlobalTablePlayerSession",
+                "game_type": format!("{:?}", session.game_type),
+                "last_settled_round": session.last_settled_round,
+                "session": {
+                    "id": session.session.id,
+                    "player": hex(&session.session.player.encode()),
+                    "game_type": session.session.game_type as u8,
+                    "bet": session.session.bet,
+                    "state_blob": hex(&session.session.state_blob),
+                    "move_count": session.session.move_count,
+                    "created_at": session.session.created_at,
+                    "is_complete": session.session.is_complete,
+                    "super_mode": {
+                        "is_active": session.session.super_mode.is_active,
+                        "streak_level": session.session.super_mode.streak_level,
+                        "multipliers": multipliers
+                    },
+                    "is_tournament": session.session.is_tournament,
+                    "tournament_id": session.session.tournament_id
+                }
+            })
+        }
         Value::LpBalance(bal) => {
             serde_json::json!({
                 "type": "LpBalance",
@@ -1340,6 +1405,50 @@ pub fn decode_seed(seed: &[u8], identity: &[u8]) -> Result<JsValue, JsValue> {
     let identity = decode_bls_public(identity)?;
 
     decode_seed_internal(seed, &identity)
+}
+
+fn serialize_global_table_bet(
+    bet: &nullspace_types::casino::GlobalTableBet,
+) -> serde_json::Value {
+    serde_json::json!({
+        "bet_type": bet.bet_type,
+        "target": bet.target,
+        "amount": bet.amount
+    })
+}
+
+fn serialize_global_table_total(
+    total: &nullspace_types::casino::GlobalTableTotal,
+) -> serde_json::Value {
+    serde_json::json!({
+        "bet_type": total.bet_type,
+        "target": total.target,
+        "amount": total.amount
+    })
+}
+
+fn serialize_global_table_round(
+    round: &nullspace_types::casino::GlobalTableRound,
+) -> serde_json::Value {
+    serde_json::json!({
+        "game_type": format!("{:?}", round.game_type),
+        "round_id": round.round_id,
+        "phase": round.phase as u8,
+        "phase_label": format!("{:?}", round.phase),
+        "phase_ends_at_ms": round.phase_ends_at_ms,
+        "main_point": round.main_point,
+        "d1": round.d1,
+        "d2": round.d2,
+        "made_points_mask": round.made_points_mask,
+        "epoch_point_established": round.epoch_point_established,
+        "field_paytable": round.field_paytable,
+        "roll_seed": hex(&round.roll_seed),
+        "totals": round
+            .totals
+            .iter()
+            .map(serialize_global_table_total)
+            .collect::<Vec<_>>()
+    })
 }
 
 /// Helper function to convert an Event to JSON
@@ -1468,6 +1577,99 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                 "session_id": session_id,
                 "error_code": error_code,
                 "message": message
+            })
+        }
+        Event::GlobalTableRoundOpened { round } => {
+            serde_json::json!({
+                "type": "GlobalTableRoundOpened",
+                "round": serialize_global_table_round(round)
+            })
+        }
+        Event::GlobalTableBetAccepted {
+            player,
+            round_id,
+            bets,
+            player_balances,
+        } => {
+            serde_json::json!({
+                "type": "GlobalTableBetAccepted",
+                "player": hex(&player.encode()),
+                "round_id": round_id,
+                "bets": bets.iter().map(serialize_global_table_bet).collect::<Vec<_>>(),
+                "player_balances": {
+                    "chips": player_balances.chips,
+                    "vusdt_balance": player_balances.vusdt_balance,
+                    "shields": player_balances.shields,
+                    "doubles": player_balances.doubles,
+                    "tournament_chips": player_balances.tournament_chips,
+                    "tournament_shields": player_balances.tournament_shields,
+                    "tournament_doubles": player_balances.tournament_doubles,
+                    "active_tournament": player_balances.active_tournament
+                }
+            })
+        }
+        Event::GlobalTableBetRejected {
+            player,
+            round_id,
+            error_code,
+            message,
+        } => {
+            serde_json::json!({
+                "type": "GlobalTableBetRejected",
+                "player": hex(&player.encode()),
+                "round_id": round_id,
+                "error_code": error_code,
+                "message": message
+            })
+        }
+        Event::GlobalTableLocked {
+            game_type,
+            round_id,
+            phase_ends_at_ms,
+        } => {
+            serde_json::json!({
+                "type": "GlobalTableLocked",
+                "game_type": format!("{:?}", game_type),
+                "round_id": round_id,
+                "phase_ends_at_ms": phase_ends_at_ms
+            })
+        }
+        Event::GlobalTableOutcome { round } => {
+            serde_json::json!({
+                "type": "GlobalTableOutcome",
+                "round": serialize_global_table_round(round)
+            })
+        }
+        Event::GlobalTablePlayerSettled {
+            player,
+            round_id,
+            payout,
+            player_balances,
+            my_bets,
+        } => {
+            serde_json::json!({
+                "type": "GlobalTablePlayerSettled",
+                "player": hex(&player.encode()),
+                "round_id": round_id,
+                "payout": payout,
+                "player_balances": {
+                    "chips": player_balances.chips,
+                    "vusdt_balance": player_balances.vusdt_balance,
+                    "shields": player_balances.shields,
+                    "doubles": player_balances.doubles,
+                    "tournament_chips": player_balances.tournament_chips,
+                    "tournament_shields": player_balances.tournament_shields,
+                    "tournament_doubles": player_balances.tournament_doubles,
+                    "active_tournament": player_balances.active_tournament
+                },
+                "my_bets": my_bets.iter().map(serialize_global_table_bet).collect::<Vec<_>>()
+            })
+        }
+        Event::GlobalTableFinalized { game_type, round_id } => {
+            serde_json::json!({
+                "type": "GlobalTableFinalized",
+                "game_type": format!("{:?}", game_type),
+                "round_id": round_id
             })
         }
         Event::PlayerModifierToggled {

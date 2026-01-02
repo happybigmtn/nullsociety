@@ -1,0 +1,98 @@
+name: Build Images
+
+on:
+  push:
+    branches: ["main", "master"]
+    tags: ["v*"]
+  pull_request:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: simulator
+            dockerfile: ./Dockerfile
+            context: .
+            image: nullspace-simulator
+          - id: node
+            dockerfile: ./node/Dockerfile
+            context: .
+            image: nullspace-node
+          - id: executor
+            dockerfile: ./client/Dockerfile
+            context: .
+            image: nullspace-executor
+          - id: gateway
+            dockerfile: ./gateway/Dockerfile
+            context: .
+            image: nullspace-gateway
+          - id: auth
+            dockerfile: ./services/auth/Dockerfile
+            context: .
+            image: nullspace-auth
+          - id: website
+            dockerfile: ./website/Dockerfile
+            context: .
+            image: nullspace-website
+            build_args: |
+              VITE_URL=${{ vars.VITE_URL || secrets.VITE_URL }}
+              VITE_AUTH_URL=${{ vars.VITE_AUTH_URL || secrets.VITE_AUTH_URL }}
+              VITE_AUTH_PROXY_URL=${{ vars.VITE_AUTH_PROXY_URL || secrets.VITE_AUTH_PROXY_URL }}
+              VITE_IDENTITY=${{ vars.VITE_IDENTITY || secrets.VITE_IDENTITY }}
+              VITE_STRIPE_TIERS=${{ vars.VITE_STRIPE_TIERS || secrets.VITE_STRIPE_TIERS }}
+              VITE_STRIPE_PRICE_ID=${{ vars.VITE_STRIPE_PRICE_ID || secrets.VITE_STRIPE_PRICE_ID }}
+              VITE_STRIPE_TIER=${{ vars.VITE_STRIPE_TIER || secrets.VITE_STRIPE_TIER }}
+          - id: ops
+            dockerfile: ./services/ops/Dockerfile
+            context: .
+            image: nullspace-ops
+          - id: live-table
+            dockerfile: ./services/live-table/Dockerfile
+            context: .
+            image: nullspace-live-table
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ matrix.build_args || '' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

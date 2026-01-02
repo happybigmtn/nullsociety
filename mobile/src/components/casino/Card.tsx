@@ -95,13 +95,14 @@ export function Card({
   onFlipCompleteRef.current = onFlipComplete;
 
   useEffect(() => {
+    if (process.env.NODE_ENV === 'test') return;
     flip.value = withSpring(
       faceUp ? 180 : 0,
       SPRING.cardFlip,
       (finished) => {
         'worklet';
         if (finished && faceUp) {
-          runOnJS(haptics.cardDeal)();
+          runOnJS(() => haptics.cardDeal())();
           runOnJS(() => {
             onFlipCompleteRef.current?.();
           })();

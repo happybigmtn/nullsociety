@@ -18,6 +18,7 @@ export const CardSchema = z.object({
 
 // Common game phases
 export const GamePhaseSchema = z.enum(['betting', 'playing', 'waiting', 'result']);
+export const LiveTablePhaseSchema = z.enum(['betting', 'locked', 'rolling', 'payout', 'cooldown']);
 
 // State update message
 export const StateUpdateMessageSchema = BaseMessageSchema.extend({
@@ -85,18 +86,6 @@ export const MoveAcceptedMessageSchema = BaseMessageSchema.extend({
   sessionId: z.string(),
 }).passthrough();
 
-// Generic game message union (base types)
-export const GameMessageSchema = z.discriminatedUnion('type', [
-  SessionReadyMessageSchema,
-  BalanceMessageSchema,
-  GameStartedMessageSchema,
-  GameMoveMessageSchema,
-  MoveAcceptedMessageSchema,
-  StateUpdateMessageSchema,
-  GameResultMessageSchema,
-  ErrorMessageSchema,
-]);
-
 // Blackjack-specific schemas
 export const BlackjackMessageSchema = BaseMessageSchema.extend({
   type: z.enum(['state_update', 'game_result', 'card_dealt']),
@@ -144,8 +133,7 @@ export const BaccaratBetTypeSchema = z.enum([
   'P_DRAGON',
   'B_DRAGON',
   'PANDA8',
-  'P_PERFECT_PAIR',
-  'B_PERFECT_PAIR',
+  'PERFECT_PAIR',
 ]);
 export const BaccaratOutcomeSchema = z.enum(['PLAYER', 'BANKER', 'TIE']);
 export const BaccaratMessageSchema = BaseMessageSchema.extend({
@@ -169,6 +157,56 @@ export const CrapsMessageSchema = BaseMessageSchema.extend({
   winAmount: z.number().optional(),
   message: z.string().optional(),
 });
+
+// Live-table messages (single global table)
+export const LiveTableTotalsSchema = z.object({
+  type: z.string(),
+  amount: z.number(),
+  target: z.number().int().min(0).max(12).optional(),
+});
+
+const LiveTableBetSchema = z.object({
+  type: z.string(),
+  amount: z.number(),
+  target: z.number().int().min(0).max(12).optional(),
+});
+
+export const LiveTableStateMessageSchema = BaseMessageSchema.extend({
+  type: z.literal('live_table_state'),
+  game: z.literal('craps'),
+  roundId: z.number().int(),
+  phase: LiveTablePhaseSchema,
+  timeRemainingMs: z.number().int().nonnegative().optional(),
+  point: z.number().nullable().optional(),
+  dice: z.tuple([z.number(), z.number()]).optional(),
+  tableTotals: z.array(LiveTableTotalsSchema).optional(),
+  myBets: z.array(LiveTableBetSchema).optional(),
+  balance: z.union([z.number(), z.string()]).optional(),
+}).passthrough();
+
+export const LiveTableResultMessageSchema = BaseMessageSchema.extend({
+  type: z.literal('live_table_result'),
+  game: z.literal('craps'),
+  roundId: z.number().int(),
+  dice: z.tuple([z.number(), z.number()]),
+  total: z.number().int(),
+  point: z.number().nullable().optional(),
+  payout: z.number().optional(),
+  netWin: z.number().optional(),
+  balance: z.union([z.number(), z.string()]).optional(),
+  myBets: z.array(LiveTableBetSchema).optional(),
+  message: z.string().optional(),
+}).passthrough();
+
+export const LiveTableConfirmationMessageSchema = BaseMessageSchema.extend({
+  type: z.literal('live_table_confirmation'),
+  game: z.literal('craps'),
+  status: z.enum(['pending', 'confirmed', 'failed']),
+  source: z.enum(['onchain', 'live-table']),
+  roundId: z.number().int().optional(),
+  message: z.string().optional(),
+  balance: z.union([z.number(), z.string()]).optional(),
+}).passthrough();
 
 // Casino War-specific schemas
 export const CasinoWarMessageSchema = BaseMessageSchema.extend({
@@ -251,6 +289,21 @@ export const UltimateTXMessageSchema = BaseMessageSchema.extend({
   message: z.string().optional(),
 });
 
+// Generic game message union (base types)
+export const GameMessageSchema = z.discriminatedUnion('type', [
+  SessionReadyMessageSchema,
+  BalanceMessageSchema,
+  GameStartedMessageSchema,
+  GameMoveMessageSchema,
+  MoveAcceptedMessageSchema,
+  StateUpdateMessageSchema,
+  GameResultMessageSchema,
+  LiveTableStateMessageSchema,
+  LiveTableResultMessageSchema,
+  LiveTableConfirmationMessageSchema,
+  ErrorMessageSchema,
+]);
+
 export type GameMessage = z.infer<typeof GameMessageSchema>;
 export type SessionReadyMessage = z.infer<typeof SessionReadyMessageSchema>;
 export type BalanceMessage = z.infer<typeof BalanceMessageSchema>;
@@ -262,6 +315,9 @@ export type RouletteMessage = z.infer<typeof RouletteMessageSchema>;
 export type HiLoMessage = z.infer<typeof HiLoMessageSchema>;
 export type BaccaratMessage = z.infer<typeof BaccaratMessageSchema>;
 export type CrapsMessage = z.infer<typeof CrapsMessageSchema>;
+export type LiveTableStateMessage = z.infer<typeof LiveTableStateMessageSchema>;
+export type LiveTableResultMessage = z.infer<typeof LiveTableResultMessageSchema>;
+export type LiveTableConfirmationMessage = z.infer<typeof LiveTableConfirmationMessageSchema>;
 export type CasinoWarMessage = z.infer<typeof CasinoWarMessageSchema>;
 export type VideoPokerMessage = z.infer<typeof VideoPokerMessageSchema>;
 export type SicBoMessage = z.infer<typeof SicBoMessageSchema>;
@@ -279,6 +335,10 @@ export const BlackjackDealRequestSchema = z.object({
   amount: z.number().positive(),
   sideBet21Plus3: z.number().nonnegative().optional(),
   sideBet21p3: z.number().nonnegative().optional(),
+  sideBetLuckyLadies: z.number().nonnegative().optional(),
+  sideBetPerfectPairs: z.number().nonnegative().optional(),
+  sideBetBustIt: z.number().nonnegative().optional(),
+  sideBetRoyalMatch: z.number().nonnegative().optional(),
 });
 
 export const BlackjackHitRequestSchema = z.object({
@@ -328,6 +388,19 @@ export const CrapsSingleBetRequestSchema = z.object({
   betType: z.union([z.string(), z.number().int().min(0)]),
   amount: z.number().positive(),
   target: z.number().int().min(0).max(12).optional(),
+});
+
+export const CrapsLiveJoinRequestSchema = z.object({
+  type: z.literal('craps_live_join'),
+});
+
+export const CrapsLiveLeaveRequestSchema = z.object({
+  type: z.literal('craps_live_leave'),
+});
+
+export const CrapsLiveBetRequestSchema = z.object({
+  type: z.literal('craps_live_bet'),
+  bets: z.array(CrapsBetSchema).min(1),
 });
 
 // --- Hi-Lo Outbound ---
@@ -523,6 +596,9 @@ export const OutboundMessageSchema = z.discriminatedUnion('type', [
   // Craps
   CrapsRollRequestSchema,
   CrapsSingleBetRequestSchema,
+  CrapsLiveJoinRequestSchema,
+  CrapsLiveLeaveRequestSchema,
+  CrapsLiveBetRequestSchema,
   // Hi-Lo
   HiLoBetRequestSchema,
   HiLoDealRequestSchema,
@@ -577,6 +653,9 @@ export type RouletteSpinRequest = z.infer<typeof RouletteSpinRequestSchema>;
 export type CrapsBet = z.infer<typeof CrapsBetSchema>;
 export type CrapsRollRequest = z.infer<typeof CrapsRollRequestSchema>;
 export type CrapsSingleBetRequest = z.infer<typeof CrapsSingleBetRequestSchema>;
+export type CrapsLiveJoinRequest = z.infer<typeof CrapsLiveJoinRequestSchema>;
+export type CrapsLiveLeaveRequest = z.infer<typeof CrapsLiveLeaveRequestSchema>;
+export type CrapsLiveBetRequest = z.infer<typeof CrapsLiveBetRequestSchema>;
 export type HiLoBetRequest = z.infer<typeof HiLoBetRequestSchema>;
 export type HiLoDealRequest = z.infer<typeof HiLoDealRequestSchema>;
 export type HiLoHigherRequest = z.infer<typeof HiLoHigherRequestSchema>;
@@ -624,6 +703,9 @@ export const OUTBOUND_MESSAGE_GAME_TYPES = {
   roulette_spin: GameType.Roulette,
   craps_roll: GameType.Craps,
   craps_bet: GameType.Craps,
+  craps_live_join: GameType.Craps,
+  craps_live_leave: GameType.Craps,
+  craps_live_bet: GameType.Craps,
   hilo_bet: GameType.HiLo,
   hilo_deal: GameType.HiLo,
   hilo_higher: GameType.HiLo,

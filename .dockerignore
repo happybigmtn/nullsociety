@@ -1,6 +1,8 @@
 # Build artifacts
 target/
 **/*.rs.bk
+.turbo/
+logs/
 
 # Git
 .git/
@@ -20,6 +22,10 @@ docs/
 website/node_modules/
 website/dist/
 website/.next/
+
+# Node dependencies
+node_modules/
+**/node_modules/
 
 # Test data
 *.test

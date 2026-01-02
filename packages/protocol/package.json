@@ -3,30 +3,43 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "main": "./index.js",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "react-native": "./dist/index.js",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
     },
     "./encode": {
       "types": "./dist/encode.d.ts",
-      "import": "./dist/encode.js"
+      "react-native": "./dist/encode.js",
+      "import": "./dist/encode.js",
+      "require": "./dist/encode.js"
     },
     "./decode": {
       "types": "./dist/decode.d.ts",
-      "import": "./dist/decode.js"
+      "react-native": "./dist/decode.js",
+      "import": "./dist/decode.js",
+      "require": "./dist/decode.js"
     },
     "./websocket": {
       "types": "./dist/websocket.d.ts",
-      "import": "./dist/websocket.js"
+      "react-native": "./dist/websocket.js",
+      "import": "./dist/websocket.js",
+      "require": "./dist/websocket.js"
     },
     "./validation": {
       "types": "./dist/validation.d.ts",
-      "import": "./dist/validation.js"
+      "react-native": "./dist/validation.js",
+      "import": "./dist/validation.js",
+      "require": "./dist/validation.js"
     },
     "./mobile": {
       "types": "./dist/mobile.d.ts",
-      "import": "./dist/mobile.js"
+      "react-native": "./dist/mobile.js",
+      "import": "./dist/mobile.js",
+      "require": "./dist/mobile.js"
     }
   },
   "scripts": {

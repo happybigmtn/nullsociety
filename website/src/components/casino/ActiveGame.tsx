@@ -54,7 +54,7 @@ const ODDS_SUMMARY: Record<GameType, string> = {
   [GameType.CRAPS]: '1:1–175:1',
   [GameType.ROULETTE]: '1:1–35:1',
   [GameType.SIC_BO]: '1:1–180:1',
-  [GameType.BACCARAT]: '0.95:1–25:1',
+  [GameType.BACCARAT]: '0.5:1–250:1',
   [GameType.HILO]: '1:1+',
   [GameType.VIDEO_POKER]: '1:1–800:1',
   [GameType.THREE_CARD]: '1:1–40:1+',
@@ -255,7 +255,15 @@ export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, numberInput, 
       case GameType.BACCARAT:
         return (gameState.bet || 0) + sumBetAmounts(gameState.baccaratBets);
       case GameType.BLACKJACK:
-        return (gameState.bet || 0) + (gameState.blackjack21Plus3Bet || 0) + (gameState.insuranceBet || 0);
+        return (
+          (gameState.bet || 0)
+          + (gameState.blackjack21Plus3Bet || 0)
+          + (gameState.blackjackLuckyLadiesBet || 0)
+          + (gameState.blackjackPerfectPairsBet || 0)
+          + (gameState.blackjackBustItBet || 0)
+          + (gameState.blackjackRoyalMatchBet || 0)
+          + (gameState.insuranceBet || 0)
+        );
       case GameType.THREE_CARD:
         return (gameState.bet || 0)
           + (gameState.threeCardPairPlusBet || 0)
@@ -282,6 +290,10 @@ export const ActiveGame: React.FC<ActiveGameProps> = ({ gameState, numberInput, 
     gameState.crapsBets,
     gameState.baccaratBets,
     gameState.blackjack21Plus3Bet,
+    gameState.blackjackLuckyLadiesBet,
+    gameState.blackjackPerfectPairsBet,
+    gameState.blackjackBustItBet,
+    gameState.blackjackRoyalMatchBet,
     gameState.insuranceBet,
     gameState.threeCardPairPlusBet,
     gameState.threeCardSixCardBonusBet,

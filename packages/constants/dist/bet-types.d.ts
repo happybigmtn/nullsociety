@@ -12,8 +12,7 @@ export declare const BACCARAT_BET_TYPES: {
     readonly P_DRAGON: 6;
     readonly B_DRAGON: 7;
     readonly PANDA8: 8;
-    readonly P_PERFECT_PAIR: 9;
-    readonly B_PERFECT_PAIR: 10;
+    readonly PERFECT_PAIR: 9;
 };
 export type BaccaratBetName = keyof typeof BACCARAT_BET_TYPES;
 export declare function encodeBaccaratBet(type: BaccaratBetName): number;

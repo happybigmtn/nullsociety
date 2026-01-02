@@ -21,10 +21,10 @@ const GAMES = [
   // Hi-Lo: Use cashout (always valid) since higher/lower can be invalid depending on dealt card
   { name: 'Hi-Lo', start: { type: 'hilo_deal', amount: 100 }, move: { type: 'hilo_cashout' } },
   { name: 'Video Poker', start: { type: 'videopoker_deal', amount: 100 }, move: { type: 'videopoker_hold', holds: [true, true, false, false, true] } },
-  { name: 'Casino War', start: { type: 'casinowar_deal', amount: 100 }, move: { type: 'casinowar_surrender' } },
+  { name: 'Casino War', start: { type: 'casinowar_deal', amount: 100 }, move: null },
 
   // Games with special parameters
-  { name: 'Baccarat', start: { type: 'baccarat_deal', bets: [{ type: 'PLAYER', amount: 100 }] }, move: null }, // Auto-resolves
+  { name: 'Baccarat', start: { type: 'baccarat_deal', bets: [{ type: 'PLAYER', amount: 100 }] }, move: null, instant: true }, // Auto-resolves (atomic batch)
   { name: 'Three Card Poker', start: { type: 'threecardpoker_deal', ante: 100 }, move: { type: 'threecardpoker_play' } },
   { name: 'Ultimate Holdem', start: { type: 'ultimateholdem_deal', ante: 100, blind: 100 }, move: { type: 'ultimateholdem_check' } },
 

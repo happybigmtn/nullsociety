@@ -24,6 +24,7 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({
     publicKeyHex
 }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const hasOps = !!(import.meta as any)?.env?.VITE_OPS_URL || !!(import.meta as any)?.env?.VITE_ANALYTICS_URL;
 
     const toggle = () => setIsOpen(!isOpen);
     const close = () => setIsOpen(false);
@@ -68,6 +69,7 @@ export const HamburgerMenu: React.FC<HamburgerMenuProps> = ({
                                 <NavItem to="/stake" label="Stake" onClick={close} />
                                 <NavItem to="/bridge" label="Bridge" onClick={close} />
                                 <NavItem to="/security" label="Vault" onClick={close} />
+                                {hasOps ? <NavItem to="/analytics" label="Analytics" onClick={close} /> : null}
                             </div>
                         </div>
 

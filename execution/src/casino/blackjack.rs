@@ -10,10 +10,14 @@
 //! - No surrender, no on-chain insurance
 //! - No dealer peek (dealer hole card is drawn at `Reveal` for hidden-info safety)
 //!
-//! State blob format (v2):
-//! [version:u8=2]
+//! State blob format (v4; v2/v3 still accepted):
+//! [version:u8=4]
 //! [stage:u8]
 //! [sideBet21Plus3Amount:u64 BE]
+//! [sideBetLuckyLadiesAmount:u64 BE]
+//! [sideBetPerfectPairsAmount:u64 BE]
+//! [sideBetBustItAmount:u64 BE]
+//! [sideBetRoyalMatchAmount:u64 BE]
 //! [initialPlayerCard1:u8] [initialPlayerCard2:u8]   (0xFF if not dealt yet)
 //! [active_hand_idx:u8]
 //! [hand_count:u8]
@@ -27,7 +31,7 @@
 //! [rules_flags:u8] [rules_decks:u8] (optional)
 //!
 //! Stages:
-//! 0 = Betting (optional 21+3, then Deal)
+//! 0 = Betting (optional side bets, then Deal)
 //! 1 = PlayerTurn
 //! 2 = AwaitingReveal (player done; Reveal resolves)
 //! 3 = Complete
@@ -55,11 +59,14 @@ use std::fmt::Write;
 const MAX_HAND_SIZE: usize = 11;
 /// Maximum number of hands allowed (splits).
 const MAX_HANDS: usize = 4;
-const STATE_VERSION: u8 = 2;
+const STATE_VERSION: u8 = 4;
 const CARD_UNKNOWN: u8 = 0xFF;
-const STATE_HEADER_LEN: usize = 14;
+const STATE_HEADER_V2_LEN: usize = 14;
+const STATE_HEADER_V3_LEN: usize = 38;
+const STATE_HEADER_V4_LEN: usize = 46;
 const RULES_LEN: usize = 2;
 const UI_EXTRA_LEN: usize = 3;
+const ROYAL_MATCH_KQ_MULTIPLIER: u64 = 25;
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BlackjackDecks {
@@ -258,6 +265,10 @@ pub struct HandState {
 pub struct BlackjackState {
     pub stage: Stage,
     pub side_bet_21plus3: u64,
+    pub side_bet_lucky_ladies: u64,
+    pub side_bet_perfect_pairs: u64,
+    pub side_bet_bust_it: u64,
+    pub side_bet_royal_match: u64,
     pub initial_player_cards: [u8; 2],
     pub active_hand_idx: usize,
     pub hands: Vec<HandState>,
@@ -308,7 +319,7 @@ fn is_21plus3_straight(ranks: &mut [u8; 3]) -> bool {
 }
 
 fn eval_21plus3_multiplier(cards: [u8; 3]) -> u64 {
-    // WoO 21+3 "Version 4" / "Xtreme" pay table: 30-20-10-5 (to-1).
+    // WoO 21+3 "Version 7" pay table (8 decks): 100-40-30-10-5 (to-1).
     // https://wizardofodds.com/games/blackjack/side-bets/21plus3/
     let suits = [
         cards::card_suit(cards[0]),
@@ -329,13 +340,22 @@ fn eval_21plus3_multiplier(cards: [u8; 3]) -> u64 {
     ];
     let is_straight = is_21plus3_straight(&mut ranks);
 
-    match (is_straight, is_flush, is_trips) {
-        (_, _, true) => 20,
-        (true, true, false) => 30,
-        (true, false, false) => 10,
-        (false, true, false) => 5,
-        _ => 0,
+    if is_trips && is_flush {
+        return 100;
     }
+    if is_straight && is_flush {
+        return 40;
+    }
+    if is_trips {
+        return 30;
+    }
+    if is_straight {
+        return 10;
+    }
+    if is_flush {
+        return 5;
+    }
+    0
 }
 
 fn resolve_21plus3_return(state: &BlackjackState) -> u64 {
@@ -363,14 +383,160 @@ fn resolve_21plus3_return(state: &BlackjackState) -> u64 {
     }
 }
 
-fn apply_21plus3_update(state: &mut BlackjackState, new_bet: u64) -> Result<i64, GameError> {
-    let old = state.side_bet_21plus3 as i128;
+fn is_red_suit(suit: u8) -> bool {
+    suit == 1 || suit == 2
+}
+
+fn eval_lucky_ladies_multiplier(cards: [u8; 2], dealer_blackjack: bool) -> u64 {
+    let (total, _) = hand_value(&cards);
+    if total != 20 {
+        return 0;
+    }
+
+    let rank_one = cards::card_rank_one_based(cards[0]);
+    let rank_two = cards::card_rank_one_based(cards[1]);
+    let is_queens = rank_one == 12 && rank_two == 12;
+    if !is_queens {
+        return 4;
+    }
+
+    let suits = [cards::card_suit(cards[0]), cards::card_suit(cards[1])];
+    let both_hearts = suits[0] == 1 && suits[1] == 1;
+    if both_hearts && dealer_blackjack {
+        // Casino-dependent (100-200:1). Default to the top-end.
+        return 200;
+    }
+    if both_hearts {
+        return 25;
+    }
+    10
+}
+
+fn eval_perfect_pairs_multiplier(cards: [u8; 2]) -> u64 {
+    let rank_one = cards::card_rank(cards[0]);
+    let rank_two = cards::card_rank(cards[1]);
+    if rank_one != rank_two {
+        return 0;
+    }
+
+    let suit_one = cards::card_suit(cards[0]);
+    let suit_two = cards::card_suit(cards[1]);
+    if suit_one == suit_two {
+        return 25;
+    }
+    let same_color = is_red_suit(suit_one) == is_red_suit(suit_two);
+    if same_color {
+        return 10;
+    }
+    5
+}
+
+fn eval_royal_match_multiplier(cards: [u8; 2]) -> u64 {
+    let suit_one = cards::card_suit(cards[0]);
+    let suit_two = cards::card_suit(cards[1]);
+    if suit_one != suit_two {
+        return 0;
+    }
+
+    let rank_one = cards::card_rank_one_based(cards[0]);
+    let rank_two = cards::card_rank_one_based(cards[1]);
+    let is_king_queen = (rank_one == 13 && rank_two == 12) || (rank_one == 12 && rank_two == 13);
+    if is_king_queen {
+        return ROYAL_MATCH_KQ_MULTIPLIER;
+    }
+    5
+}
+
+fn resolve_lucky_ladies_return(state: &BlackjackState, dealer_blackjack: bool) -> u64 {
+    let bet = state.side_bet_lucky_ladies;
+    if bet == 0 {
+        return 0;
+    }
+    if !state.initial_player_cards.iter().all(|&c| c < 52) {
+        return 0;
+    }
+    let cards = [state.initial_player_cards[0], state.initial_player_cards[1]];
+    let mult = eval_lucky_ladies_multiplier(cards, dealer_blackjack);
+    if mult == 0 {
+        0
+    } else {
+        bet.saturating_mul(mult.saturating_add(1))
+    }
+}
+
+fn resolve_perfect_pairs_return(state: &BlackjackState) -> u64 {
+    let bet = state.side_bet_perfect_pairs;
+    if bet == 0 {
+        return 0;
+    }
+    if !state.initial_player_cards.iter().all(|&c| c < 52) {
+        return 0;
+    }
+    let cards = [state.initial_player_cards[0], state.initial_player_cards[1]];
+    let mult = eval_perfect_pairs_multiplier(cards);
+    if mult == 0 {
+        0
+    } else {
+        bet.saturating_mul(mult.saturating_add(1))
+    }
+}
+
+fn resolve_royal_match_return(state: &BlackjackState) -> u64 {
+    let bet = state.side_bet_royal_match;
+    if bet == 0 {
+        return 0;
+    }
+    if !state.initial_player_cards.iter().all(|&c| c < 52) {
+        return 0;
+    }
+    let cards = [state.initial_player_cards[0], state.initial_player_cards[1]];
+    let mult = eval_royal_match_multiplier(cards);
+    if mult == 0 {
+        0
+    } else {
+        bet.saturating_mul(mult.saturating_add(1))
+    }
+}
+
+fn resolve_bust_it_return(state: &BlackjackState) -> u64 {
+    let bet = state.side_bet_bust_it;
+    if bet == 0 {
+        return 0;
+    }
+    let (dealer_value, _) = hand_value(&state.dealer_cards);
+    if dealer_value <= 21 {
+        return 0;
+    }
+    let multiplier: u64 = match state.dealer_cards.len() {
+        3 => 1,
+        4 => 2,
+        5 => 9,
+        6.. => 50,
+        _ => 0,
+    };
+    if multiplier == 0 {
+        return 0;
+    }
+    bet.saturating_mul(multiplier.saturating_add(1))
+}
+
+fn resolve_side_bets_return(state: &BlackjackState) -> u64 {
+    let dealer_blackjack = is_blackjack(&state.dealer_cards);
+    resolve_21plus3_return(state)
+        .saturating_add(resolve_lucky_ladies_return(state, dealer_blackjack))
+        .saturating_add(resolve_perfect_pairs_return(state))
+        .saturating_add(resolve_royal_match_return(state))
+        .saturating_add(resolve_bust_it_return(state))
+}
+
+fn apply_side_bet_update(current: &mut u64, new_bet: u64) -> Result<i64, GameError> {
+    let old = *current as i128;
     let new = new_bet as i128;
     let delta = new.saturating_sub(old);
     if delta > i64::MAX as i128 || delta < i64::MIN as i128 {
         return Err(GameError::InvalidMove);
     }
-    state.side_bet_21plus3 = new_bet;
+    *current = new_bet;
     Ok(-(delta as i64))
 }
 
@@ -431,9 +597,35 @@ fn action_mask(state: &BlackjackState) -> u8 {
     mask
 }
 
+fn reveal_dealer_hand(
+    state: &mut BlackjackState,
+    rng: &mut GameRng,
+    deck: &mut Vec<u8>,
+    play_out: bool,
+) -> Result<(), GameError> {
+    if state.dealer_cards.len() < 2 {
+        let hole = rng.draw_card(deck).ok_or(GameError::DeckExhausted)?;
+        state.dealer_cards.push(hole);
+    }
+    if !play_out {
+        return Ok(());
+    }
+
+    let hits_soft_17 = state.rules.dealer_hits_soft_17;
+    loop {
+        let (val, is_soft) = hand_value(&state.dealer_cards);
+        if val > 17 || (val == 17 && (!is_soft || !hits_soft_17)) {
+            break;
+        }
+        let c = rng.draw_card(deck).ok_or(GameError::DeckExhausted)?;
+        state.dealer_cards.push(c);
+    }
+    Ok(())
+}
+
 /// Serialize state to blob.
 fn serialize_state(state: &BlackjackState) -> Vec<u8> {
-    let mut capacity = STATE_HEADER_LEN + RULES_LEN + UI_EXTRA_LEN;
+    let mut capacity = STATE_HEADER_V4_LEN + RULES_LEN + UI_EXTRA_LEN;
     for hand in &state.hands {
         capacity = capacity.saturating_add(4 + hand.cards.len());
     }
@@ -442,6 +634,10 @@ fn serialize_state(state: &BlackjackState) -> Vec<u8> {
     blob.push_u8(STATE_VERSION);
     blob.push_u8(state.stage as u8);
     blob.push_u64_be(state.side_bet_21plus3);
+    blob.push_u64_be(state.side_bet_lucky_ladies);
+    blob.push_u64_be(state.side_bet_perfect_pairs);
+    blob.push_u64_be(state.side_bet_bust_it);
+    blob.push_u64_be(state.side_bet_royal_match);
     blob.push_bytes(&state.initial_player_cards);
     blob.push_u8(state.active_hand_idx as u8);
     blob.push_u8(state.hands.len() as u8);
@@ -466,18 +662,46 @@ fn serialize_state(state: &BlackjackState) -> Vec<u8> {
 
 /// Parse state from blob.
 fn parse_state(blob: &[u8]) -> Option<BlackjackState> {
-    if blob.len() < STATE_HEADER_LEN {
+    if blob.len() < 2 {
         return None;
     }
 
     let mut reader = StateReader::new(blob);
     let version = reader.read_u8()?;
-    if version != STATE_VERSION {
+    if (version == 2 && blob.len() < STATE_HEADER_V2_LEN)
+        || (version == 3 && blob.len() < STATE_HEADER_V3_LEN)
+        || (version == STATE_VERSION && blob.len() < STATE_HEADER_V4_LEN)
+    {
         return None;
     }
-
     let stage = Stage::try_from(reader.read_u8()?).ok()?;
-    let side_bet_21plus3 = reader.read_u64_be()?;
+    let (
+        side_bet_21plus3,
+        side_bet_lucky_ladies,
+        side_bet_perfect_pairs,
+        side_bet_bust_it,
+        side_bet_royal_match,
+    ) = if version == 2 {
+        (reader.read_u64_be()?, 0, 0, 0, 0)
+    } else if version == 3 {
+        (
+            reader.read_u64_be()?,
+            reader.read_u64_be()?,
+            reader.read_u64_be()?,
+            reader.read_u64_be()?,
+            0,
+        )
+    } else if version == STATE_VERSION {
+        (
+            reader.read_u64_be()?,
+            reader.read_u64_be()?,
+            reader.read_u64_be()?,
+            reader.read_u64_be()?,
+            reader.read_u64_be()?,
+        )
+    } else {
+        return None;
+    };
     let initial_player_cards: [u8; 2] = reader.read_bytes(2)?.try_into().ok()?;
     if !initial_player_cards
         .iter()
@@ -558,6 +782,10 @@ fn parse_state(blob: &[u8]) -> Option<BlackjackState> {
     Some(BlackjackState {
         stage,
         side_bet_21plus3,
+        side_bet_lucky_ladies,
+        side_bet_perfect_pairs,
+        side_bet_bust_it,
+        side_bet_royal_match,
         initial_player_cards,
         active_hand_idx,
         hands,
@@ -574,6 +802,10 @@ impl CasinoGame for Blackjack {
         let state = BlackjackState {
             stage: Stage::Betting,
             side_bet_21plus3: 0,
+            side_bet_lucky_ladies: 0,
+            side_bet_perfect_pairs: 0,
+            side_bet_bust_it: 0,
+            side_bet_royal_match: 0,
             initial_player_cards: [CARD_UNKNOWN; 2],
             active_hand_idx: 0,
             hands: Vec::new(),
@@ -607,7 +839,7 @@ impl CasinoGame for Blackjack {
             Stage::Betting => match mv {
                 Move::Set21Plus3 => {
                     let new_bet = super::payload::parse_u64_be(payload, 1)?;
-                    let payout = apply_21plus3_update(&mut state, new_bet)?;
+                    let payout = apply_side_bet_update(&mut state.side_bet_21plus3, new_bet)?;
                     session.state_blob = serialize_state(&state);
                     Ok(if payout == 0 {
                         GameResult::Continue(vec![])
@@ -674,9 +906,9 @@ impl CasinoGame for Blackjack {
                 }
                 _ => {
                     // Check for atomic batch action (payload[0] == 7)
-                    // [7, sidebet_21plus3: u64 BE]
+                    // [7, sidebet_21plus3: u64 BE, lucky_ladies: u64 BE, perfect_pairs: u64 BE, bust_it: u64 BE, royal_match: u64 BE]
                     if payload[0] == 7 {
-                        if payload.len() != 9 {
+                        if payload.len() != 9 && payload.len() != 33 && payload.len() != 41 {
                             return Err(GameError::InvalidPayload);
                         }
                         if !state.hands.is_empty() || !state.dealer_cards.is_empty() {
@@ -684,8 +916,36 @@ impl CasinoGame for Blackjack {
                         }
 
                         // Parse and apply 21+3 side bet
-                        let side_bet = super::payload::parse_u64_be(payload, 1)?;
-                        let payout_update = apply_21plus3_update(&mut state, side_bet)?;
+                        let side_bet_21plus3 = super::payload::parse_u64_be(payload, 1)?;
+                        let mut payout_update =
+                            apply_side_bet_update(&mut state.side_bet_21plus3, side_bet_21plus3)?;
+
+                        if payload.len() >= 33 {
+                            let side_bet_lucky_ladies = super::payload::parse_u64_be(payload, 9)?;
+                            let side_bet_perfect_pairs = super::payload::parse_u64_be(payload, 17)?;
+                            let side_bet_bust_it = super::payload::parse_u64_be(payload, 25)?;
+
+                            payout_update = payout_update
+                                .saturating_add(apply_side_bet_update(
+                                    &mut state.side_bet_lucky_ladies,
+                                    side_bet_lucky_ladies,
+                                )?)
+                                .saturating_add(apply_side_bet_update(
+                                    &mut state.side_bet_perfect_pairs,
+                                    side_bet_perfect_pairs,
+                                )?)
+                                .saturating_add(apply_side_bet_update(
+                                    &mut state.side_bet_bust_it,
+                                    side_bet_bust_it,
+                                )?);
+                        }
+                        if payload.len() == 41 {
+                            let side_bet_royal_match = super::payload::parse_u64_be(payload, 33)?;
+                            payout_update = payout_update.saturating_add(apply_side_bet_update(
+                                &mut state.side_bet_royal_match,
+                                side_bet_royal_match,
+                            )?);
+                        }
 
                         // Deal cards
                         let mut deck = rng.create_shoe(state.rules.decks.count());
@@ -774,7 +1034,12 @@ impl CasinoGame for Blackjack {
                                 let all_busted =
                                     state.hands.iter().all(|h| h.status == HandStatus::Busted);
                                 if all_busted {
-                                    let total_return = resolve_21plus3_return(&state);
+                                    if state.side_bet_lucky_ladies > 0 || state.side_bet_bust_it > 0
+                                    {
+                                        let play_out = state.side_bet_bust_it > 0;
+                                        reveal_dealer_hand(&mut state, rng, &mut deck, play_out)?;
+                                    }
+                                    let total_return = resolve_side_bets_return(&state);
 
                                     state.stage = Stage::Complete;
                                     session.is_complete = true;
@@ -847,7 +1112,11 @@ impl CasinoGame for Blackjack {
                             let all_busted =
                                 state.hands.iter().all(|h| h.status == HandStatus::Busted);
                             if all_busted {
-                                let total_return = resolve_21plus3_return(&state);
+                                if state.side_bet_lucky_ladies > 0 || state.side_bet_bust_it > 0 {
+                                    let play_out = state.side_bet_bust_it > 0;
+                                    reveal_dealer_hand(&mut state, rng, &mut deck, play_out)?;
+                                }
+                                let total_return = resolve_side_bets_return(&state);
 
                                 state.stage = Stage::Complete;
                                 session.is_complete = true;
@@ -987,25 +1256,11 @@ impl CasinoGame for Blackjack {
                     let mut deck =
                         rng.create_shoe_excluding_counts(&used_counts, state.rules.decks.count());
 
-                    // Reveal dealer hole card.
-                    let hole = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
-                    state.dealer_cards.push(hole);
-
                     let any_live = state.hands.iter().any(|h| h.status != HandStatus::Busted);
-                    if any_live {
-                        let hits_soft_17 = state.rules.dealer_hits_soft_17;
-                        loop {
-                            let (val, is_soft) = hand_value(&state.dealer_cards);
-                            if val > 17 || (val == 17 && (!is_soft || !hits_soft_17)) {
-                                break;
-                            }
-                            let c = rng.draw_card(&mut deck).ok_or(GameError::DeckExhausted)?;
-                            state.dealer_cards.push(c);
-                        }
-                    }
+                    reveal_dealer_hand(&mut state, rng, &mut deck, any_live)?;
 
                     let mut total_return = resolve_main_return(session, &state);
-                    total_return = total_return.saturating_add(resolve_21plus3_return(&state));
+                    total_return = total_return.saturating_add(resolve_side_bets_return(&state));
 
                     state.stage = Stage::Complete;
                     session.is_complete = true;
@@ -1092,7 +1347,12 @@ fn total_wagered(session: &GameSession, state: &BlackjackState) -> u64 {
         .iter()
         .map(|h| session.bet.saturating_mul(h.bet_mult as u64))
         .sum();
-    main_wagered.saturating_add(state.side_bet_21plus3)
+    main_wagered
+        .saturating_add(state.side_bet_21plus3)
+        .saturating_add(state.side_bet_lucky_ladies)
+        .saturating_add(state.side_bet_perfect_pairs)
+        .saturating_add(state.side_bet_bust_it)
+        .saturating_add(state.side_bet_royal_match)
 }
 
 fn apply_super_multiplier(session: &GameSession, state: &BlackjackState, total_return: u64) -> u64 {
@@ -1175,12 +1435,42 @@ fn generate_blackjack_logs(session: &GameSession, state: &BlackjackState, total_
     let mut dealer_cards_str = String::with_capacity(state.dealer_cards.len().saturating_mul(4));
     append_card_list(&mut dealer_cards_str, &state.dealer_cards);
 
-    let side_bet_return = resolve_21plus3_return(state);
+    let side_bet_21p3_return = resolve_21plus3_return(state);
     if state.side_bet_21plus3 > 0 {
-        let side_pnl = clamp_i64(
-            i128::from(side_bet_return) - i128::from(state.side_bet_21plus3),
-        );
+        let side_pnl =
+            clamp_i64(i128::from(side_bet_21p3_return) - i128::from(state.side_bet_21plus3));
         push_resolved_entry(&mut resolved_entries, "21+3", side_pnl);
+        resolved_sum = resolved_sum.saturating_add(i128::from(side_pnl));
+    }
+    let lucky_ladies_return = resolve_lucky_ladies_return(state, dealer_blackjack);
+    if state.side_bet_lucky_ladies > 0 {
+        let side_pnl = clamp_i64(
+            i128::from(lucky_ladies_return) - i128::from(state.side_bet_lucky_ladies),
+        );
+        push_resolved_entry(&mut resolved_entries, "LUCKY LADIES", side_pnl);
+        resolved_sum = resolved_sum.saturating_add(i128::from(side_pnl));
+    }
+    let perfect_pairs_return = resolve_perfect_pairs_return(state);
+    if state.side_bet_perfect_pairs > 0 {
+        let side_pnl = clamp_i64(
+            i128::from(perfect_pairs_return) - i128::from(state.side_bet_perfect_pairs),
+        );
+        push_resolved_entry(&mut resolved_entries, "PERFECT PAIRS", side_pnl);
+        resolved_sum = resolved_sum.saturating_add(i128::from(side_pnl));
+    }
+    let royal_match_return = resolve_royal_match_return(state);
+    if state.side_bet_royal_match > 0 {
+        let side_pnl = clamp_i64(
+            i128::from(royal_match_return) - i128::from(state.side_bet_royal_match),
+        );
+        push_resolved_entry(&mut resolved_entries, "ROYAL MATCH", side_pnl);
+        resolved_sum = resolved_sum.saturating_add(i128::from(side_pnl));
+    }
+    let bust_it_return = resolve_bust_it_return(state);
+    if state.side_bet_bust_it > 0 {
+        let side_pnl =
+            clamp_i64(i128::from(bust_it_return) - i128::from(state.side_bet_bust_it));
+        push_resolved_entry(&mut resolved_entries, "BUST IT", side_pnl);
         resolved_sum = resolved_sum.saturating_add(i128::from(side_pnl));
     }
     let total_wagered = total_wagered(session, state);
@@ -1197,7 +1487,7 @@ fn generate_blackjack_logs(session: &GameSession, state: &BlackjackState, total_
     let summary = format!("P: {}, D: {}", player_label, dealer_value);
 
     vec![format!(
-        r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"hands":[{}],"dealer":{{"cards":[{}],"value":{},"blackjack":{}}},"sideBet21Plus3":{},"sideBetReturn":{},"totalReturn":{}}}"#,
+        r#"{{"summary":"{}","netPnl":{},"resolvedBets":[{}],"hands":[{}],"dealer":{{"cards":[{}],"value":{},"blackjack":{}}},"sideBet21Plus3":{},"sideBet21Plus3Return":{},"sideBetReturn":{},"sideBetLuckyLadies":{},"sideBetLuckyLadiesReturn":{},"sideBetPerfectPairs":{},"sideBetPerfectPairsReturn":{},"sideBetRoyalMatch":{},"sideBetRoyalMatchReturn":{},"sideBetBustIt":{},"sideBetBustItReturn":{},"totalReturn":{}}}"#,
         summary,
         net_pnl,
         resolved_entries,
@@ -1206,7 +1496,16 @@ fn generate_blackjack_logs(session: &GameSession, state: &BlackjackState, total_
         dealer_value,
         dealer_blackjack,
         state.side_bet_21plus3,
-        side_bet_return,
+        side_bet_21p3_return,
+        side_bet_21p3_return,
+        state.side_bet_lucky_ladies,
+        lucky_ladies_return,
+        state.side_bet_perfect_pairs,
+        perfect_pairs_return,
+        state.side_bet_royal_match,
+        royal_match_return,
+        state.side_bet_bust_it,
+        bust_it_return,
         total_return
     )]
 }
@@ -1236,11 +1535,14 @@ mod tests {
 
     #[test]
     fn test_21plus3_multiplier_table() {
+        // Suited trips (three identical cards)
+        assert_eq!(eval_21plus3_multiplier([0, 0, 0]), 100);
+
         // Straight flush (2-3-4 suited)
-        assert_eq!(eval_21plus3_multiplier([1, 2, 3]), 30);
+        assert_eq!(eval_21plus3_multiplier([1, 2, 3]), 40);
 
         // Trips (three 7s)
-        assert_eq!(eval_21plus3_multiplier([6, 19, 32]), 20);
+        assert_eq!(eval_21plus3_multiplier([6, 19, 32]), 30);
 
         // Straight (10-J-Q unsuited)
         assert_eq!(eval_21plus3_multiplier([9, 23, 37]), 10);
@@ -1250,6 +1552,18 @@ mod tests {
 
         // Nothing
         assert_eq!(eval_21plus3_multiplier([0, 10, 25]), 0);
+    }
+
+    #[test]
+    fn test_royal_match_multiplier() {
+        // Any suited cards
+        assert_eq!(eval_royal_match_multiplier([0, 1]), 5);
+
+        // King-Queen suited (spades)
+        assert_eq!(eval_royal_match_multiplier([11, 12]), ROYAL_MATCH_KQ_MULTIPLIER);
+
+        // Off-suit should not pay
+        assert_eq!(eval_royal_match_multiplier([11, 25]), 0);
     }
 
     #[test]
@@ -1290,6 +1604,10 @@ mod tests {
         let mut state = BlackjackState {
             stage: Stage::PlayerTurn,
             side_bet_21plus3: 0,
+            side_bet_lucky_ladies: 0,
+            side_bet_perfect_pairs: 0,
+            side_bet_bust_it: 0,
+            side_bet_royal_match: 0,
             initial_player_cards: [0, 9],
             active_hand_idx: 0,
             hands: vec![HandState {
@@ -1354,6 +1672,10 @@ mod tests {
         let state = BlackjackState {
             stage: Stage::PlayerTurn,
             side_bet_21plus3: 0,
+            side_bet_lucky_ladies: 0,
+            side_bet_perfect_pairs: 0,
+            side_bet_bust_it: 0,
+            side_bet_royal_match: 0,
             initial_player_cards: [0, 13],
             active_hand_idx: 0,
             hands: vec![HandState {
@@ -1397,6 +1719,10 @@ mod tests {
         let state = BlackjackState {
             stage: Stage::PlayerTurn,
             side_bet_21plus3: 0,
+            side_bet_lucky_ladies: 0,
+            side_bet_perfect_pairs: 0,
+            side_bet_bust_it: 0,
+            side_bet_royal_match: 0,
             initial_player_cards: [0, 13],
             active_hand_idx: 0,
             hands: vec![HandState {
@@ -1444,6 +1770,10 @@ mod tests {
         let state = BlackjackState {
             stage: Stage::PlayerTurn,
             side_bet_21plus3: 0,
+            side_bet_lucky_ladies: 0,
+            side_bet_perfect_pairs: 0,
+            side_bet_bust_it: 0,
+            side_bet_royal_match: 0,
             initial_player_cards: [9, 12],
             active_hand_idx: 0,
             hands: vec![HandState {
@@ -1497,6 +1827,10 @@ mod tests {
         let state = BlackjackState {
             stage: Stage::PlayerTurn,
             side_bet_21plus3: 10,
+            side_bet_lucky_ladies: 0,
+            side_bet_perfect_pairs: 0,
+            side_bet_bust_it: 0,
+            side_bet_royal_match: 0,
             initial_player_cards: [1, 2],
             active_hand_idx: 0,
             hands: vec![HandState {

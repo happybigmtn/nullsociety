@@ -42,7 +42,8 @@ use super::super_mode::apply_super_multiplier_cards;
 use super::{cards, CasinoGame, GameError, GameResult, GameRng};
 use nullspace_types::casino::{GameSession, THREE_CARD_PROGRESSIVE_BASE_JACKPOT};
 
-/// Payout multipliers for Three Card Poker (expressed as "to 1" winnings).
+/// Payout multipliers for Three Card Poker.
+/// Most values are expressed as "to 1" winnings; Progressive is "for-one" (total return).
 mod payouts {
     // Ante Bonus (pay table #1)
     pub const ANTE_STRAIGHT_FLUSH: u64 = 5;

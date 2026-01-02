@@ -11,6 +11,10 @@
 - Node (metrics port, default 9100 in local configs):
   - Prometheus: `/metrics`
 
+Note: production deployments require `METRICS_AUTH_TOKEN` for simulator + node
+metrics (and auth metrics if enabled). Configure Prometheus with an auth header
+(e.g. `authorization: Bearer <token>` or `x-metrics-token: <token>`).
+
 ## Prometheus + Grafana Quickstart (Local)
 Files live in `docker/observability/`.
 
@@ -19,6 +23,7 @@ Files live in `docker/observability/`.
 cd docker/observability
 docker compose up -d
 ```
+If metrics auth is enabled, export `METRICS_AUTH_TOKEN` before starting the stack.
 2) Open Grafana: `http://localhost:3001` (admin/admin).
 3) Use the preloaded dashboard: "Nullspace / Nullspace SLO Overview" (includes casino activity, node memory/CPU, and limit reject panels).
 4) Optional: Alertmanager UI is available at `http://localhost:9093` (no-op receiver by default).

@@ -4,11 +4,13 @@ module.exports = {
   ...expoPreset,
   testPathIgnorePatterns: ["/node_modules/", "/dist/", "/build/"],
   transformIgnorePatterns: [
-    "node_modules/(?!.*(react-native|@react-native|@react-navigation|@react-native-async-storage|expo(nent)?|@expo|expo-.*|react-native-gesture-handler|react-native-reanimated|react-native-safe-area-context|react-native-screens|react-native-mmkv|@shopify)/)",
+    "node_modules/(?!.*(react-native|@react-native|@react-navigation|@react-native-async-storage|expo(nent)?|@expo|expo-.*|react-native-gesture-handler|react-native-reanimated|react-native-worklets|react-native-safe-area-context|react-native-screens|react-native-mmkv|@shopify)/)",
   ],
   setupFilesAfterEnv: ["<rootDir>/jest/setup.js"],
   moduleNameMapper: {
     ...(expoPreset.moduleNameMapper || {}),
+    "^@nullspace/([^/]+)$": "<rootDir>/../packages/$1/dist/index.js",
+    "^@nullspace/([^/]+)/(.+)$": "<rootDir>/../packages/$1/dist/$2.js",
     "^react-native/Libraries/BatchedBridge/NativeModules$":
       "<rootDir>/jest/nativeModulesMock.js",
     "^react-native/Libraries/Animated/NativeAnimatedHelper$":

@@ -21,7 +21,9 @@ pnpm -C services/ops start
 - `OPS_DATA_DIR`: data directory (default `data/ops`).
 - `OPS_ALLOWED_ORIGINS`: comma-separated CORS allowlist. Empty = allow all.
 - `OPS_ALLOW_NO_ORIGIN`: allow requests without Origin header (`true/false`).
-- `OPS_ADMIN_TOKEN`: if set, required for admin endpoints (`/push/send`, `/crm/*`).
+- `OPS_REQUIRE_ALLOWED_ORIGINS`: require a non-empty CORS allowlist (`true/false`).
+- `OPS_ADMIN_TOKEN`: required for admin endpoints (`/push/send`, `/crm/*`) when auth is enabled.
+- `OPS_REQUIRE_ADMIN_TOKEN`: force admin auth (`true/false`, default false; implied when `NODE_ENV=production`).
 
 Analytics + league:
 - `OPS_LEAGUE_POINTS_MODE`: `wager` (default) | `net` | `net-abs`.

@@ -1,6 +1,7 @@
 /**
  * Authentication service with biometric support
  */
+import { Platform } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import { getPublicKey, bytesToHex } from './crypto';
@@ -17,12 +18,29 @@ export interface AuthState {
 }
 
 const USER_INITIALIZED_KEY = 'user_initialized';
+const isWeb = Platform.OS === 'web';
+
+const WebSecureStore = {
+  getItemAsync: async (key: string) => {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage.getItem(key);
+  },
+  setItemAsync: async (key: string, value: string) => {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(key, value);
+  },
+};
+
+const Store = isWeb ? WebSecureStore : SecureStore;
 
 /**
  * Authenticate using device biometrics or PIN
  * Returns true if authentication succeeded
  */
 export async function authenticateWithBiometrics(): Promise<boolean> {
+  if (isWeb) {
+    return true;
+  }
   const hasHardware = await LocalAuthentication.hasHardwareAsync();
   const isEnrolled = await LocalAuthentication.isEnrolledAsync();
 
@@ -60,6 +78,7 @@ export async function authenticateWithBiometrics(): Promise<boolean> {
  * Get supported authentication types
  */
 export async function getSupportedAuthTypes(): Promise<LocalAuthentication.AuthenticationType[]> {
+  if (isWeb) return [];
   return await LocalAuthentication.supportedAuthenticationTypesAsync();
 }
 
@@ -67,6 +86,7 @@ export async function getSupportedAuthTypes(): Promise<LocalAuthentication.Authe
  * Check if device has biometric hardware
  */
 export async function hasBiometricHardware(): Promise<boolean> {
+  if (isWeb) return false;
   return await LocalAuthentication.hasHardwareAsync();
 }
 
@@ -74,6 +94,7 @@ export async function hasBiometricHardware(): Promise<boolean> {
  * Check if biometrics are enrolled
  */
 export async function isBiometricEnrolled(): Promise<boolean> {
+  if (isWeb) return false;
   return await LocalAuthentication.isEnrolledAsync();
 }
 
@@ -111,6 +132,10 @@ export function getBiometricType(): BiometricType {
  * Initialize and cache biometric type
  */
 export async function initializeBiometricType(): Promise<BiometricType> {
+  if (isWeb) {
+    cachedBiometricType = 'NONE';
+    return cachedBiometricType;
+  }
   const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
 
   if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
@@ -138,15 +163,23 @@ export async function initializeAuth(): Promise<{
   const publicKeyHex = bytesToHex(publicKey);
 
   // Check if this is a returning user
-  const existingKey = await SecureStore.getItemAsync(USER_INITIALIZED_KEY);
+  const existingKey = await Store.getItemAsync(USER_INITIALIZED_KEY);
   const isNewUser = !existingKey;
 
   if (isNewUser) {
-    await SecureStore.setItemAsync(USER_INITIALIZED_KEY, 'true');
+    await Store.setItemAsync(USER_INITIALIZED_KEY, 'true');
   }
 
   // Initialize biometric type
   await initializeBiometricType();
+
+  if (isWeb) {
+    return {
+      publicKey: publicKeyHex,
+      isNewUser,
+      available: false,
+    };
+  }
 
   const hasHardware = await LocalAuthentication.hasHardwareAsync();
   const isEnrolled = await LocalAuthentication.isEnrolledAsync();

@@ -30,5 +30,6 @@ export * from './blackjack.js';
 export * from './roulette.js';
 export * from './craps.js';
 export * from './atomic.js';
+export * from './actions.js';
 export * from './types.js';
 //# sourceMappingURL=index.js.map

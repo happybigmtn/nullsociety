@@ -29,20 +29,24 @@ const writeU32BE = (buf: Uint8Array, offset: number, value: number): void => {
 
 describe('game-state parsers', () => {
   it('parses blackjack state', () => {
-    const blob = new Uint8Array(20);
-    blob[0] = 2; // version
+    const blob = new Uint8Array(52);
+    blob[0] = 4; // version
     blob[1] = 0; // betting stage
-    writeU64BE(blob, 2, 0n); // side bet
-    blob[10] = 0xff; // init cards (unknown)
-    blob[11] = 0xff;
-    blob[12] = 0; // active hand
-    blob[13] = 0; // hand count
-    blob[14] = 0; // dealer count
-    blob[15] = 0; // rules flags
-    blob[16] = 4; // rules decks
-    blob[17] = 0; // player value
-    blob[18] = 0; // dealer value
-    blob[19] = 0; // action mask
+    writeU64BE(blob, 2, 0n); // side bet 21+3
+    writeU64BE(blob, 10, 0n); // lucky ladies
+    writeU64BE(blob, 18, 0n); // perfect pairs
+    writeU64BE(blob, 26, 0n); // bust it
+    writeU64BE(blob, 34, 0n); // royal match
+    blob[42] = 0xff; // init cards (unknown)
+    blob[43] = 0xff;
+    blob[44] = 0; // active hand
+    blob[45] = 0; // hand count
+    blob[46] = 0; // dealer count
+    blob[47] = 0; // rules flags
+    blob[48] = 4; // rules decks
+    blob[49] = 0; // player value
+    blob[50] = 0; // dealer value
+    blob[51] = 0; // action mask
 
     const parsed = parseBlackjackState(blob);
     expect(parsed).not.toBeNull();

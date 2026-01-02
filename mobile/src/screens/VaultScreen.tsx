@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: COLORS.textPrimary,
-    ...TYPOGRAPHY.displaySmall,
+    ...TYPOGRAPHY.h1,
   },
   subtitle: {
     color: COLORS.textSecondary,
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     color: COLORS.textPrimary,
-    ...TYPOGRAPHY.bodyMedium,
+    ...TYPOGRAPHY.bodyLarge,
     marginBottom: SPACING.sm,
   },
   cardBody: {

@@ -14,6 +14,9 @@ const ITEMS: BottomNavItem[] = [
 
 export const BottomNav: React.FC = () => {
   const pathname = useLocation().pathname;
+  const hasOps =
+    !!(import.meta as any)?.env?.VITE_OPS_URL || !!(import.meta as any)?.env?.VITE_ANALYTICS_URL;
+  const items = hasOps ? [...ITEMS, { to: '/analytics', label: 'Analytics' }] : ITEMS;
   const economyActive = pathname.startsWith('/swap') || pathname.startsWith('/borrow') || pathname.startsWith('/liquidity');
 
   const isItemActive = (to: string) => {
@@ -23,6 +26,7 @@ export const BottomNav: React.FC = () => {
     if (to === '/bridge') return pathname.startsWith('/bridge');
     if (to === '/security') return pathname.startsWith('/security');
     if (to === '/explorer') return pathname.startsWith('/explorer');
+    if (to === '/analytics') return pathname.startsWith('/analytics');
     return pathname === to;
   };
 
@@ -42,7 +46,7 @@ export const BottomNav: React.FC = () => {
       }}
     >
       <div className="h-full flex items-stretch">
-        {ITEMS.map((item) => (
+        {items.map((item) => (
           <Link key={item.to} to={item.to} className={itemClass(isItemActive(item.to))}>
             {item.label}
           </Link>

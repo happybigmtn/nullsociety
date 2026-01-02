@@ -124,12 +124,12 @@ pub fn card_rank(card: u8) -> u8 {
 /// Returns multiplier in basis points.
 ///
 /// With 52 cards (draw with replacement):
-/// - Same (at Ace/King only): 1 rank wins → 13x multiplier
+/// - Same (at Ace/King only): 1 rank wins → 12x multiplier
 /// - Higher/Lower: strictly higher/lower wins, same = push (no multiplier change)
 fn calculate_multiplier(current_rank: u8, mv: Move) -> i64 {
     let winning_ranks = match mv {
         Move::Same => {
-            // Same: only 1 rank wins (4 cards out of 52) = 13x
+            // Same: only 1 rank wins (4 cards out of 52) = 12x
             1
         }
         Move::Higher => {
@@ -156,7 +156,7 @@ fn calculate_multiplier(current_rank: u8, mv: Move) -> i64 {
     }
 
     // Multiplier = 13 / winning_ranks (fair odds based on rank distribution)
-    (13 * BASE_MULTIPLIER) / winning_ranks
+    (12 * BASE_MULTIPLIER) / winning_ranks
 }
 
 fn next_guess_multipliers(current_card: u8, rules: HiLoRules) -> (u32, u32, u32) {
@@ -507,33 +507,33 @@ mod tests {
     fn test_calculate_multiplier() {
         // From Ace (rank 1), guessing Higher (strictly): 12 ranks win (2-K)
         let mult = calculate_multiplier(1, Move::Higher);
-        assert_eq!(mult, 13 * BASE_MULTIPLIER / 12); // ~1.08x
+        assert_eq!(mult, 12 * BASE_MULTIPLIER / 12); // 1.0x
 
         // From King (rank 13), guessing Lower (strictly): 12 ranks win (A-Q)
         let mult = calculate_multiplier(13, Move::Lower);
-        assert_eq!(mult, 13 * BASE_MULTIPLIER / 12); // ~1.08x
+        assert_eq!(mult, 12 * BASE_MULTIPLIER / 12); // 1.0x
 
         // From 7 (middle), guessing Higher (strictly): 6 ranks win (8-K)
         let mult = calculate_multiplier(7, Move::Higher);
-        assert_eq!(mult, 13 * BASE_MULTIPLIER / 6); // ~2.17x
+        assert_eq!(mult, 12 * BASE_MULTIPLIER / 6); // 2.0x
 
         // From 7 (middle), guessing Lower (strictly): 6 ranks win (A-6)
         let mult = calculate_multiplier(7, Move::Lower);
-        assert_eq!(mult, 13 * BASE_MULTIPLIER / 6); // ~2.17x
+        assert_eq!(mult, 12 * BASE_MULTIPLIER / 6); // 2.0x
 
         // From 2, guessing Lower (strictly): 1 rank wins (A)
         let mult = calculate_multiplier(2, Move::Lower);
-        assert_eq!(mult, 13 * BASE_MULTIPLIER); // 13x
+        assert_eq!(mult, 12 * BASE_MULTIPLIER); // 12x
 
-        // Same: always 1 rank wins (4 cards out of 52) = 13x
+        // Same: always 1 rank wins (4 cards out of 52) = 12x
         let mult = calculate_multiplier(7, Move::Same);
-        assert_eq!(mult, 13 * BASE_MULTIPLIER); // 13x
+        assert_eq!(mult, 12 * BASE_MULTIPLIER); // 12x
 
         let mult = calculate_multiplier(1, Move::Same);
-        assert_eq!(mult, 13 * BASE_MULTIPLIER); // 13x at Ace
+        assert_eq!(mult, 12 * BASE_MULTIPLIER); // 12x at Ace
 
         let mult = calculate_multiplier(13, Move::Same);
-        assert_eq!(mult, 13 * BASE_MULTIPLIER); // 13x at King
+        assert_eq!(mult, 12 * BASE_MULTIPLIER); // 12x at King
     }
 
     #[test]
@@ -746,11 +746,11 @@ mod tests {
         // At rank 7, if same rank is drawn, it should be a push (continue with no multiplier change)
         // Higher wins strictly on 8-K (6 ranks), pushes on 7, loses on A-6
         let mult = calculate_multiplier(7, Move::Higher);
-        assert_eq!(mult, 13 * BASE_MULTIPLIER / 6); // ~2.17x for strictly higher
+        assert_eq!(mult, 12 * BASE_MULTIPLIER / 6); // 2.0x for strictly higher
 
         // Lower wins strictly on A-6 (6 ranks), pushes on 7, loses on 8-K
         let mult = calculate_multiplier(7, Move::Lower);
-        assert_eq!(mult, 13 * BASE_MULTIPLIER / 6); // ~2.17x for strictly lower
+        assert_eq!(mult, 12 * BASE_MULTIPLIER / 6); // 2.0x for strictly lower
     }
 
     #[test]

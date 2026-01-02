@@ -3,6 +3,9 @@
 This runbook documents the repeatable flow for standing up a multi-node testnet.
 Use `docs/testnet-readiness-runbook.md` for the full go/no-go checklist.
 
+If you deploy with GHCR images instead of local builds, use the systemd
+templates in `ops/systemd/docker/` and supply the same env files.
+
 ## Local Smoke Run (preflight)
 For a local end-to-end smoke test (health + metrics + restart + bots + scheduler):
 
@@ -41,6 +44,7 @@ Run the simulator on your chosen indexer host:
 RATE_LIMIT_HTTP_PER_SEC=5000 RATE_LIMIT_HTTP_BURST=10000 \
 RATE_LIMIT_SUBMIT_PER_MIN=120000 RATE_LIMIT_SUBMIT_BURST=20000 \
 RATE_LIMIT_WS_CONNECTIONS=30000 RATE_LIMIT_WS_CONNECTIONS_PER_IP=500 \
+NODE_ENV=production METRICS_AUTH_TOKEN=replace-me \
 ./target/release/nullspace-simulator --host 0.0.0.0 --port 8080 --identity <IDENTITY_HEX>
 ```
 
@@ -53,16 +57,27 @@ GATEWAY_SESSION_RATE_LIMIT_POINTS=1000 \
 GATEWAY_SESSION_RATE_LIMIT_WINDOW_MS=3600000 \
 GATEWAY_SESSION_RATE_LIMIT_BLOCK_MS=600000 \
 GATEWAY_EVENT_TIMEOUT_MS=30000 \
+GATEWAY_ALLOWED_ORIGINS=https://staging.example.com,https://auth-staging.example.com \
+GATEWAY_ALLOW_NO_ORIGIN=1 \
+NODE_ENV=production \
 BACKEND_URL=http://<INDEXER_HOST>:8080 GATEWAY_PORT=9010 \
-pnpm -C gateway start
+GATEWAY_ORIGIN=https://gateway-staging.example.com \
+GATEWAY_DATA_DIR=/var/lib/nullspace/gateway \
+pnpm -C gateway build
+node gateway/dist/index.js
 ```
+
+Ensure gateway dependencies are installed first (`pnpm -C gateway install`).
 
 ## 4c) Start Auth + Convex (membership + AI proxy)
 Stand up the self-hosted Convex backend first (see `docs/golive.md`), then start Auth:
 
 ```bash
-# Use services/auth/.env.staging.example as a template.
+# Use services/auth/.env.example as a template.
+NODE_ENV=production \
 AI_STRATEGY_DISABLED=1 \
+AUTH_REQUIRE_METRICS_AUTH=1 \
+METRICS_AUTH_TOKEN=replace-me \
 pnpm -C services/auth build
 pnpm -C services/auth start
 ```
@@ -76,10 +91,56 @@ VITE_ENABLE_SIMULATOR_PASSKEYS=0
 VITE_AUTH_URL=https://auth-staging.example.com
 ```
 
+If deploying the website via GHCR images, set the `VITE_*` values as GitHub
+Actions `vars`/`secrets` before building the image.
+
+## 4e) Start live table (optional)
+Run the live-table service if you want live craps:
+
+```bash
+LIVE_TABLE_HOST=0.0.0.0 LIVE_TABLE_PORT=9123 \
+RUST_LOG=info \
+./target/release/nullspace-live-table
+```
+
+Then point the gateway at it:
+`GATEWAY_LIVE_TABLE_CRAPS_URL=ws://<LIVE_TABLE_HOST>:9123/ws`.
+For production gateways, provide the admin key via file:
+`GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE=/etc/nullspace/casino-admin-key.hex`
+(env keys are blocked unless `GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV=1`).
+Bot traffic defaults to disabled in production; set `GATEWAY_LIVE_TABLE_BOT_COUNT`
+explicitly if you want bots.
+
+## 4f) Start ops service (optional)
+Run the ops/analytics service:
+
+```bash
+OPS_ALLOWED_ORIGINS=https://staging.example.com \
+OPS_REQUIRE_ALLOWED_ORIGINS=1 \
+OPS_ADMIN_TOKEN=replace-me \
+NODE_ENV=production \
+pnpm -C services/ops build
+pnpm -C services/ops start
+```
+
+## 4g) Start executor
+Run the executor on its own host:
+
+```bash
+EXECUTOR_URL=http://<INDEXER_HOST>:8080 \
+EXECUTOR_IDENTITY=<IDENTITY_HEX> \
+EXECUTOR_BLOCK_INTERVAL_MS=50 \
+./target/release/dev-executor \
+  --url ${EXECUTOR_URL} --identity ${EXECUTOR_IDENTITY} --block-interval-ms ${EXECUTOR_BLOCK_INTERVAL_MS}
+```
+
+You can use the chain identity from `configs/testnet/.env.local` (`VITE_IDENTITY`).
+
 ## 5) Start validators
 On each validator host:
 
 ```bash
+NODE_ENV=production METRICS_AUTH_TOKEN=replace-me \
 ./target/release/nullspace-node --config configs/testnet/nodeN.yaml --peers configs/testnet/peers.yaml
 ```
 
@@ -91,8 +152,14 @@ Or with hosts:
 
 ## 6) Health + metrics checks
 Verify metrics endpoints per node (default 9100+):
-- `http://<NODE_IP>:9100/metrics`
-- `http://<INDEXER_IP>:8080/metrics/prometheus`
+- `http://<NODE_IP>:9100/metrics` (send `x-metrics-token: <METRICS_AUTH_TOKEN>`)
+- `http://<INDEXER_IP>:8080/metrics/prometheus` (send `x-metrics-token: <METRICS_AUTH_TOKEN>`)
+- `http://<AUTH_IP>:4000/metrics/prometheus` (send `x-metrics-token: <METRICS_AUTH_TOKEN>`)
+Health endpoints:
+- `http://<INDEXER_IP>:8080/healthz`
+- `http://<GATEWAY_IP>:9010/healthz`
+- `http://<AUTH_IP>:4000/healthz`
+- `http://<OPS_IP>:9020/healthz` (if running ops)
 
 If using curl/CLI without browser origins, set:
 `ALLOW_HTTP_NO_ORIGIN=1 ALLOW_WS_NO_ORIGIN=1` when running the simulator.

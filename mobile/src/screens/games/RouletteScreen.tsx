@@ -64,8 +64,8 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     description: 'Tap the quick bets below - Red/Black, Odd/Even, or High/Low. Each pays 1:1.',
   },
   {
-    title: 'Advanced Bets',
-    description: 'Tap "More Bets" for dozens, columns, and straight-up numbers. Straight numbers pay 35:1!',
+    title: 'Bets',
+    description: 'Tap "Bets" for dozens, columns, and straight-up numbers. Straight numbers pay 35:1!',
   },
   {
     title: 'Spin to Win',
@@ -284,7 +284,7 @@ export function RouletteScreen() {
             onPress={() => setShowAdvanced(true)}
             style={styles.moreBetsButton}
           >
-            <Text style={styles.moreBetsText}>More Bets</Text>
+            <Text style={styles.moreBetsText}>Bets ▾</Text>
           </Pressable>
         }
       >
@@ -380,9 +380,8 @@ export function RouletteScreen() {
             style={styles.drawer}
           >
             <View style={styles.drawerHeader}>
-              <Text style={styles.drawerTitle}>Advanced Bets</Text>
-              <Pressable onPress={() => setShowAdvanced(false)}>
-                <Text style={styles.drawerClose}>✕</Text>
+              <Pressable onPress={() => setShowAdvanced(false)} style={styles.drawerHandle}>
+                <Text style={styles.drawerHandleText}>Bets ▾</Text>
               </Pressable>
             </View>
 
@@ -604,19 +603,23 @@ const styles = StyleSheet.create({
     maxHeight: '80%',
   },
   drawerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: SPACING.md,
   },
-  drawerTitle: {
-    color: COLORS.textPrimary,
-    ...TYPOGRAPHY.h2,
+  drawerHandle: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surfaceElevated,
   },
-  drawerClose: {
+  drawerHandleText: {
     color: COLORS.textSecondary,
-    fontSize: 24,
-    padding: SPACING.xs,
+    ...TYPOGRAPHY.bodySmall,
   },
   sectionTitle: {
     color: COLORS.textSecondary,

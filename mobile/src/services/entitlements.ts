@@ -1,5 +1,6 @@
 import { signMessage } from './crypto';
 import { bytesToHex, hexToBytes } from '../utils/hex';
+import { stripTrailingSlash } from '../utils/url';
 
 export type Entitlement = {
   tier: string;
@@ -15,7 +16,7 @@ const authBase =
 
 const authPath = (path: string) => {
   if (!authBase) return path;
-  return `${authBase.replace(/\/$/, '')}${path}`;
+  return `${stripTrailingSlash(authBase)}${path}`;
 };
 
 const encodeAscii = (value: string): Uint8Array => {

@@ -25,6 +25,7 @@ configs/local/node*.yaml
 !configs/local/node.yaml.example
 configs/local/peers.yaml
 !configs/local/peers.yaml.example
+configs/local/*.hex
 
 # Logs
 npm-debug.log*
@@ -41,10 +42,18 @@ nohup.out
 # Runtime artifacts
 *.pid
 data/
+.turbo/
+logs/
 website/dist/
 website/qa-artifacts/
+qa-artifacts/
 load-test-*/
 services/auth/dist/
+services/ops/dist/
+gateway/dist/
+gateway/.gateway-data/
+packages/*/dist/
+website/wasm/pkg/
 
 # Editor directories and files
 .vscode/*

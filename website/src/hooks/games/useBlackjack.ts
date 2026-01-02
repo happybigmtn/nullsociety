@@ -152,24 +152,38 @@ export const useBlackjack = ({
     setGameState(prev => ({ ...prev, message: take ? "INSURANCE TAKEN" : "INSURANCE DECLINED" }));
   }, [isOnChain, setGameState]);
 
-  const bjToggle21Plus3 = useCallback(async () => {
-    if (gameState.type !== GameType.BLACKJACK) return;
+  type BlackjackSideBetKey =
+    | 'blackjack21Plus3Bet'
+    | 'blackjackLuckyLadiesBet'
+    | 'blackjackPerfectPairsBet'
+    | 'blackjackBustItBet'
+    | 'blackjackRoyalMatchBet';
 
-    const prevAmount = gameState.blackjack21Plus3Bet || 0;
-    const nextAmount = prevAmount > 0 ? 0 : gameState.bet;
+  const toggleSideBet = useCallback(
+    (key: BlackjackSideBetKey, label: string) => {
+      if (gameState.type !== GameType.BLACKJACK) return;
+      const prevAmount = Number(gameState[key] ?? 0);
+      const nextAmount = prevAmount > 0 ? 0 : gameState.bet;
 
-    // Side bet toggle - only UI state update, sent atomically with Deal
-    if (gameState.stage !== 'BETTING') {
-      setGameState(prev => ({ ...prev, message: '21+3 CLOSED' }));
-      return;
-    }
+      if (gameState.stage !== 'BETTING') {
+        setGameState(prev => ({ ...prev, message: `${label} CLOSED` }));
+        return;
+      }
 
-    setGameState(prev => ({
-        ...prev,
-        blackjack21Plus3Bet: nextAmount,
-        message: nextAmount > 0 ? `21+3 +$${nextAmount}` : '21+3 OFF',
+      setGameState(prev => ({
+        ...(prev as GameState),
+        [key]: nextAmount,
+        message: nextAmount > 0 ? `${label} +$${nextAmount}` : `${label} OFF`,
       }));
-  }, [gameState.type, gameState.blackjack21Plus3Bet, gameState.bet, gameState.stage, setGameState]);
+    },
+    [gameState.type, gameState.stage, gameState.bet, gameState, setGameState]
+  );
+
+  const bjToggle21Plus3 = useCallback(() => toggleSideBet('blackjack21Plus3Bet', '21+3'), [toggleSideBet]);
+  const bjToggleLuckyLadies = useCallback(() => toggleSideBet('blackjackLuckyLadiesBet', 'LUCKY LADIES'), [toggleSideBet]);
+  const bjTogglePerfectPairs = useCallback(() => toggleSideBet('blackjackPerfectPairsBet', 'PERFECT PAIRS'), [toggleSideBet]);
+  const bjToggleBustIt = useCallback(() => toggleSideBet('blackjackBustItBet', 'BUST IT'), [toggleSideBet]);
+  const bjToggleRoyalMatch = useCallback(() => toggleSideBet('blackjackRoyalMatchBet', 'ROYAL MATCH'), [toggleSideBet]);
 
   return {
     bjHit,
@@ -177,6 +191,10 @@ export const useBlackjack = ({
     bjDouble,
     bjSplit,
     bjInsurance,
-    bjToggle21Plus3
+    bjToggle21Plus3,
+    bjToggleLuckyLadies,
+    bjTogglePerfectPairs,
+    bjToggleBustIt,
+    bjToggleRoyalMatch,
   };
 };

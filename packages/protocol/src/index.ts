@@ -11,6 +11,7 @@ export {
   encodeGameMove,
   encodeGameMovePayload,
   encodeAtomicBatchPayload,
+  encodeGameActionPayload,
 } from './games/index.js';
 export type {
   GameCodec,
@@ -21,4 +22,12 @@ export type {
   RouletteAtomicBetInput,
   CrapsAtomicBetInput,
   SicBoAtomicBetInput,
+  HiLoAction,
+  CasinoWarAction,
+  ThreeCardAction,
+  ThreeCardDealOptions,
+  UltimateHoldemAction,
+  UltimateHoldemBetMultiplier,
+  UltimateHoldemDealOptions,
+  GameActionPayload,
 } from './games/index.js';

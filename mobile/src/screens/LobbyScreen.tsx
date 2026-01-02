@@ -10,6 +10,7 @@ import { haptics } from '../services/haptics';
 import { initializeNotifications } from '../services';
 import { useGameStore } from '../stores/gameStore';
 import { useEntitlements, useGatewaySession } from '../hooks';
+import { stripTrailingSlash } from '../utils/url';
 import type { LobbyScreenProps } from '../navigation/types';
 import type { GameId } from '../types';
 
@@ -149,20 +150,25 @@ export function LobbyScreen({ navigation }: LobbyScreenProps) {
       return `${thursday.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
     };
 
+    const opsRoot = stripTrailingSlash(opsBase);
     const fetchLeaderboard = async () => {
       try {
         const weekKey = getWeekKey(new Date());
-        const response = await fetch(`${opsBase.replace(/\\/$/, '')}/league/leaderboard?week=${encodeURIComponent(weekKey)}`, {
+        const response = await fetch(
+          opsRoot + '/league/leaderboard?week=' + encodeURIComponent(weekKey),
+          {
           signal: controller.signal,
-        });
+          }
+        );
         if (!response.ok) throw new Error(`Leaderboard failed (${response.status})`);
         const data = await response.json();
         const entries = Array.isArray(data?.entries) ? data.entries : [];
         setLeagueEntries(entries.slice(0, 3));
       } catch (err) {
-        if (err?.name === 'AbortError') return;
+        const error = err instanceof Error ? err : null;
+        if (error?.name === 'AbortError') return;
         setLeagueEntries([]);
-        setLeagueError(err instanceof Error ? err.message : 'League unavailable');
+        setLeagueError(error ? error.message : 'League unavailable');
       }
     };
 
@@ -177,9 +183,10 @@ export function LobbyScreen({ navigation }: LobbyScreenProps) {
     setReferralLoading(true);
     setReferralError(null);
 
+    const opsRoot = stripTrailingSlash(opsBase);
     const fetchReferral = async () => {
       try {
-        const codeRes = await fetch(`${opsBase.replace(/\\/$/, '')}/referrals/code`, {
+        const codeRes = await fetch(opsRoot + '/referrals/code', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ publicKey }),
@@ -188,7 +195,7 @@ export function LobbyScreen({ navigation }: LobbyScreenProps) {
         if (!codeRes.ok) throw new Error(`Referral code failed (${codeRes.status})`);
         const codeData = await codeRes.json();
         const summaryRes = await fetch(
-          `${opsBase.replace(/\\/$/, '')}/referrals/summary?publicKey=${encodeURIComponent(publicKey)}`,
+          opsRoot + '/referrals/summary?publicKey=' + encodeURIComponent(publicKey),
           { signal: controller.signal }
         );
         if (!summaryRes.ok) throw new Error(`Referral summary failed (${summaryRes.status})`);
@@ -199,9 +206,10 @@ export function LobbyScreen({ navigation }: LobbyScreenProps) {
           qualified: Number(summaryData?.qualified ?? 0),
         });
       } catch (err) {
-        if (err?.name === 'AbortError') return;
+        const error = err instanceof Error ? err : null;
+        if (error?.name === 'AbortError') return;
         setReferralSummary(null);
-        setReferralError(err instanceof Error ? err.message : 'Referral unavailable');
+        setReferralError(error ? error.message : 'Referral unavailable');
       } finally {
         setReferralLoading(false);
       }
@@ -226,13 +234,19 @@ export function LobbyScreen({ navigation }: LobbyScreenProps) {
     void Linking.openURL(billingUrl);
   }, [billingUrl]);
 
-  const handleShareInvite = useCallback(() => {
+  const handleShareInvite = useCallback(async () => {
     if (!referralSummary?.code) return;
-    const base = inviteBase ? inviteBase.replace(/\\/$/, '') : '';
+    const base = inviteBase ? stripTrailingSlash(inviteBase) : '';
     const url = base ? `${base}/?ref=${referralSummary.code}` : referralSummary.code;
-    void Share.share({
-      message: base ? `Join me on Nullspace: ${url}` : `My referral code: ${url}`,
-    });
+    try {
+      await Share.share({
+        message: base ? `Join me on Nullspace: ${url}` : `My referral code: ${url}`,
+      });
+    } catch {
+      if (base) {
+        void Linking.openURL(url);
+      }
+    }
   }, [inviteBase, referralSummary]);
 
   const numColumns = width >= 900 ? 4 : width >= 700 ? 3 : 2;

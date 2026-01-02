@@ -2,7 +2,7 @@
  * Blackjack Game Screen - Jony Ive Redesigned
  * Hit/Stand always visible, Split/Double contextual
  */
-import { View, Text, StyleSheet, InteractionManager } from 'react-native';
+import { View, Text, StyleSheet, InteractionManager, Pressable } from 'react-native';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import Animated, { SlideInRight } from 'react-native-reanimated';
 import { Card } from '../../components/casino';
@@ -475,13 +475,13 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs,
     borderRadius: RADIUS.sm,
     borderWidth: 1,
-    borderColor: COLORS.surfaceBorder,
+    borderColor: COLORS.border,
     backgroundColor: COLORS.surface,
     alignItems: 'center',
   },
   sideBetToggleActive: {
-    borderColor: COLORS.accent,
-    backgroundColor: COLORS.accentMuted,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary + '20',
   },
   sideBetLabel: {
     color: COLORS.textSecondary,

@@ -3300,18 +3300,18 @@ The following findings were determined to be **NOT actual issues**:
 ### V-5: No Dockerfile
 **Severity**: Low
 **Location**: Project root
-**Status**: ✅ VALID
-**Description**: No containerization for deployment. Only test tooling has Dockerfiles.
-**Action**: Add Dockerfile for production deployments.
+**Status**: ✅ RESOLVED
+**Description**: Containerization added for simulator, node, executor, gateway, auth, ops, live-table, and website.
+**Action**: Implemented Dockerfiles + GHCR build workflow; see `.github/workflows/build-images.yml`.
 
 ---
 
 ### V-6: No Dependency Vulnerability Scanning
 **Severity**: Medium
 **Location**: `.github/workflows/tests.yml`
-**Status**: ⚠️ PARTIAL
-**Description**: CI checks unused dependencies but not CVEs. No `cargo audit` or Dependabot.
-**Action**: Add `cargo audit` to CI pipeline.
+**Status**: ✅ RESOLVED
+**Description**: CI includes `cargo audit` and npm audits for auth/website in `.github/workflows/tests.yml`.
+**Action**: Monitor and tune allowlists as needed.
 
 ---
 
@@ -3375,9 +3375,9 @@ These are improvement opportunities, not issues requiring immediate action:
 3. **V-3**: Continue reducing useTerminalGame.ts size
    - ✅ Roulette and SicBo hooks extracted, following Baccarat/Craps pattern
 4. **V-5**: Add Dockerfile for production
-   - ✅ Created `Dockerfile` with multi-stage build
-   - ✅ Created `.dockerignore` for efficient builds
-   - Includes health check and non-root user
+   - ✅ Added Dockerfiles for simulator, node, executor, gateway, auth, ops, live-table, website
+   - ✅ CI builds GHCR images via `.github/workflows/build-images.yml`
+   - ✅ `.dockerignore` tuned for efficient builds
 5. **V-7**: Generate shared game state TS bindings (ts-rs)
    - ✅ Added `types/src/casino_state.rs` with ts-rs exports
    - ✅ Exported bindings via `cargo run -p nullspace-types --features ts --bin export_ts`

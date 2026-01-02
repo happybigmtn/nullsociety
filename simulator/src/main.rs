@@ -205,6 +205,50 @@ struct Args {
     cache_redis_ttl_seconds: Option<u64>,
 }
 
+fn is_production() -> bool {
+    matches!(
+        std::env::var("NODE_ENV").as_deref(),
+        Ok("production") | Ok("prod")
+    )
+}
+
+fn require_env(var: &str) -> Result<String> {
+    let value = std::env::var(var).unwrap_or_default();
+    if value.trim().is_empty() {
+        anyhow::bail!("Missing required env: {var}");
+    }
+    Ok(value)
+}
+
+fn require_positive_u64(var: &str) -> Result<()> {
+    let value = require_env(var)?;
+    let parsed: u64 = value
+        .parse()
+        .with_context(|| format!("Invalid {var}: {value}"))?;
+    if parsed == 0 {
+        anyhow::bail!("Invalid {var}: {value}");
+    }
+    Ok(())
+}
+
+fn ensure_production_env() -> Result<()> {
+    if !is_production() {
+        return Ok(());
+    }
+
+    require_env("ALLOWED_HTTP_ORIGINS")?;
+    require_env("ALLOWED_WS_ORIGINS")?;
+    require_env("METRICS_AUTH_TOKEN")?;
+    require_positive_u64("RATE_LIMIT_HTTP_PER_SEC")?;
+    require_positive_u64("RATE_LIMIT_HTTP_BURST")?;
+    require_positive_u64("RATE_LIMIT_SUBMIT_PER_MIN")?;
+    require_positive_u64("RATE_LIMIT_SUBMIT_BURST")?;
+    require_positive_u64("RATE_LIMIT_WS_CONNECTIONS")?;
+    require_positive_u64("RATE_LIMIT_WS_CONNECTIONS_PER_IP")?;
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Parse args
@@ -213,11 +257,11 @@ async fn main() -> anyhow::Result<()> {
     // Create logger
     init_tracing()?;
 
+    ensure_production_env()?;
+
     // Parse identity
-    eprintln!("DEBUG: Identity string len: {}", args.identity.len());
     let bytes =
         commonware_utils::from_hex(&args.identity).context("invalid identity hex format")?;
-    eprintln!("DEBUG: Parsed {} bytes from hex identity", bytes.len());
     let identity: Identity =
         Identity::decode(&mut bytes.as_slice()).context("failed to decode identity")?;
 

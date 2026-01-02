@@ -5,8 +5,13 @@ Use isolated keys and endpoints for staging.
 - `simulator.env.example`: systemd env file for the simulator.
 - `node.env.example`: systemd env file pointing at your node YAML.
 - `gateway.env.example`: systemd env file for the gateway (mobile/web).
-- Auth service env: `services/auth/.env.staging.example`.
+- Auth service env: `services/auth/.env.example`.
 - Website build env: `website/.env.staging.example`.
+
+Notes:
+- `node.env` should include `NODE_CONFIG` and either `NODE_PEERS` or `NODE_HOSTS`.
+- Gateway should set `GATEWAY_ALLOWED_ORIGINS` and `GATEWAY_ORIGIN` in staging.
+- If enabling live-table, set `GATEWAY_LIVE_TABLE_CRAPS_URL` and `GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE`.
 
 Generate local configs with:
 `cargo run --bin generate-keys -- --nodes 4 --output configs/local`

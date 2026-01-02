@@ -7,7 +7,7 @@
 import { useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { useGameStore } from '../stores/gameStore';
-import { getStorage, STORAGE_KEYS } from '../services/storage';
+import { getStorage, initializeStorage, STORAGE_KEYS } from '../services/storage';
 import type { ChipValue } from '../types';
 
 const VALID_CHIP_VALUES: ChipValue[] = [1, 5, 25, 100, 500, 1000];
@@ -73,33 +73,48 @@ export function useAppState(): void {
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   useEffect(() => {
-    // Restore state on initial mount
-    restoreGameState();
+    let subscription: { remove: () => void } | null = null;
+    let mounted = true;
 
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      const previousState = appStateRef.current;
+    const setup = async () => {
+      try {
+        await initializeStorage();
+        if (!mounted) return;
 
-      // App going to background - persist state
-      if (
-        previousState === 'active' &&
-        (nextAppState === 'background' || nextAppState === 'inactive')
-      ) {
-        persistGameState();
-      }
-
-      // App returning to foreground - restore state
-      if (
-        (previousState === 'background' || previousState === 'inactive') &&
-        nextAppState === 'active'
-      ) {
+        // Restore state on initial mount
         restoreGameState();
-      }
 
-      appStateRef.current = nextAppState;
-    });
+        subscription = AppState.addEventListener('change', (nextAppState) => {
+          const previousState = appStateRef.current;
+
+          // App going to background - persist state
+          if (
+            previousState === 'active' &&
+            (nextAppState === 'background' || nextAppState === 'inactive')
+          ) {
+            persistGameState();
+          }
+
+          // App returning to foreground - restore state
+          if (
+            (previousState === 'background' || previousState === 'inactive') &&
+            nextAppState === 'active'
+          ) {
+            restoreGameState();
+          }
+
+          appStateRef.current = nextAppState;
+        });
+      } catch (error) {
+        console.warn('[useAppState] Failed to initialize storage:', error);
+      }
+    };
+
+    void setup();
 
     return () => {
-      subscription.remove();
+      mounted = false;
+      subscription?.remove();
     };
   }, []);
 }

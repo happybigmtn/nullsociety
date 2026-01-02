@@ -1,7 +1,7 @@
 # Hetzner Deployment Runbook (Staging/Testnet)
 
 This runbook covers provisioning staging/testnet infrastructure on Hetzner for
-~20k concurrent players. Hetzner does not offer a NYC region; Ashburn (us-east)
+~5k concurrent players. Hetzner does not offer a NYC region; Ashburn (us-east)
 is the closest available location. If NYC residency is mandatory, use a
 provider with NYC availability.
 
@@ -22,27 +22,32 @@ Private network ingress (service-to-service):
 - 8080/tcp: simulator/indexer HTTP + WS.
 - 9010/tcp: gateway WS (behind LB).
 - 4000/tcp: auth service.
+- 9020/tcp: ops service (optional).
+- 9123/tcp: live-table WS (optional; private network only).
 - 9001-9004/tcp: validator P2P (between validators only).
 - 9100-9104/tcp: metrics (Prometheus only).
 - 5432/tcp: Postgres (simulator/indexer only).
 
-## 3) Host layout (20k target)
+## 3) Host layout (5k target)
 Use the resource sizing in `docs/resource_sizing.md` as a baseline.
 
 Suggested layout (Ashburn):
-- `ns-gw-1..4` (Gateway): CPX31/CPX41 (4-8 vCPU, 8-16 GB).
-- `ns-sim-1..4` (Simulator/Indexer): CPX51 (16 vCPU, 32 GB).
+- `ns-gw-1..2` (Gateway): CPX31 (4 vCPU, 8 GB).
+- `ns-sim-1` (Simulator/Indexer): CPX41/CPX51 (8-16 vCPU, 16-32 GB).
 - `ns-node-1..3` (Validators): CPX31 (4 vCPU, 8 GB).
-- `ns-exec-1` (Executor): CPX31 (active) + `ns-exec-2` (standby).
-- `ns-auth-1..2` (Auth): CPX21 (2 vCPU, 4 GB).
+- `ns-exec-1` (Executor): CPX31 (active; standby optional).
+- `ns-auth-1` (Auth): CPX21 (2 vCPU, 4 GB).
 - `ns-convex-1` (Convex): CPX41 (8 vCPU, 16 GB) + persistent volume.
-- `ns-db-1` (Postgres): CPX51 (16 vCPU, 32 GB) + dedicated volume.
+- `ns-db-1` (Postgres): CPX41 (8 vCPU, 16 GB) + dedicated volume.
 - `ns-obs-1` (Prometheus/Grafana/Loki): CPX31 (optional, recommended).
+- `ns-ops-1` (Ops/analytics): CPX21 (optional).
+- `ns-live-1` (Live Table): CPX21 (optional; required for live craps).
 
 Notes:
 - Scale gateways horizontally; each node has its own `MAX_TOTAL_SESSIONS`.
-- Keep simulator/indexer nodes behind an LB for read/submit traffic.
+- Use a single simulator/indexer host at 5k; add an LB + replicas for >5k.
 - Validators should be on separate hosts to maintain quorum.
+For 20k+ guidance, see `docs/resource_sizing.md`.
 
 ## 4) Base server setup
 On each host:
@@ -50,15 +55,32 @@ On each host:
    - `/opt/nullspace` (repo checkout)
    - `/etc/nullspace` (env files)
    - `/var/lib/nullspace` (gateway nonces, logs)
-2) Install dependencies: Node 20+, pnpm, Rust toolchain, and system tools.
-3) Clone repo to `/opt/nullspace` and build binaries (`cargo build --release`).
+2) Install dependencies: Node 20+, pnpm, Rust toolchain, and system tools (source builds only).
+   If using containers, install Docker + Compose instead of Rust/Node toolchains.
+3) Clone repo to `/opt/nullspace` and build binaries (`cargo build --release`) **or** run
+   GHCR images via systemd units in `ops/systemd/docker/`.
 
 ## 5) Env files + config distribution
 Use env templates from `configs/staging/` or `configs/production/`:
 - `configs/staging/simulator.env.example`
 - `configs/staging/gateway.env.example`
-- `services/auth/.env.staging.example`
+- `services/auth/.env.example`
 - `website/.env.staging.example`
+Optional:
+- `/etc/nullspace/live-table.env` with `LIVE_TABLE_HOST`/`LIVE_TABLE_PORT`
+- `/etc/nullspace/ops.env` with `OPS_*` settings
+- `/etc/nullspace/executor.env` with `EXECUTOR_URL`/`EXECUTOR_IDENTITY`
+- Gateway live-table integration: set `GATEWAY_LIVE_TABLE_CRAPS_URL` and `GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE`
+  (env keys are blocked in production unless `GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV=1`)
+
+Production-required envs (set in your env files):
+- `GATEWAY_ORIGIN` (public gateway origin, e.g. `https://gateway.example.com`)
+- `GATEWAY_DATA_DIR` (persistent gateway nonce directory)
+- `GATEWAY_ALLOWED_ORIGINS` (origin allowlist for gateway WebSocket)
+- `GATEWAY_ALLOW_NO_ORIGIN=1` (if supporting native mobile clients)
+- `METRICS_AUTH_TOKEN` (simulator + validators + auth metrics auth)
+- `OPS_ADMIN_TOKEN` (ops admin endpoints) and `OPS_REQUIRE_ADMIN_TOKEN=1`
+- `OPS_ALLOWED_ORIGINS` and `OPS_REQUIRE_ALLOWED_ORIGINS=1` (ops CORS allowlist)
 
 Generate validator configs:
 ```bash
@@ -67,10 +89,11 @@ NODES=4 OUTPUT=configs/testnet INDEXER=http://<INDEXER_HOST>:8080 \
 ```
 
 Distribute `nodeN.yaml` + `peers.yaml` to each validator host.
+Set `NODE_CONFIG` and `NODE_PEERS` (or `NODE_HOSTS`) in `/etc/nullspace/node.env`.
 
 ## 6) Load balancers
-Create separate LBs for:
-- Gateway WS (TCP 9010): L4 LB with TCP health checks.
+Create separate LBs for (optional at 5k if you run single instances):
+- Gateway WS (TCP 9010): L4 LB with TCP health checks (or L7 `/healthz` if using HTTP health checks).
 - Simulator/indexer (HTTP 8080): L7 LB with `/healthz` checks.
 - Auth (HTTP 4000) + Website (HTTP/HTTPS 80/443): L7 LB or Nginx.
 
@@ -85,14 +108,22 @@ Copy unit files from `ops/systemd/` to `/etc/systemd/system/` and set
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable nullspace-simulator nullspace-node nullspace-auth \
-  nullspace-gateway nullspace-website nullspace-ops
+  nullspace-gateway nullspace-website nullspace-ops nullspace-executor
 sudo systemctl start nullspace-simulator nullspace-node nullspace-auth \
-  nullspace-gateway nullspace-website nullspace-ops
+  nullspace-gateway nullspace-website nullspace-ops nullspace-executor
+
+# Optional: live-table service (craps)
+sudo systemctl enable nullspace-live-table
+sudo systemctl start nullspace-live-table
 
 # Optional: public economy snapshot generator
 sudo systemctl enable nullspace-economy-snapshot.timer
 sudo systemctl start nullspace-economy-snapshot.timer
 ```
+
+Docker-based alternative: copy units from `ops/systemd/docker/` and enable the
+`*-docker` services instead.
+Create `/etc/nullspace/docker.env` with `IMAGE_REGISTRY` + `IMAGE_TAG`.
 
 ## 8) Postgres + backups
 Follow `docs/postgres-ops-runbook.md` to configure explorer persistence,

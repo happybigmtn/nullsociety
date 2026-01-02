@@ -239,9 +239,8 @@ export const useKeyboardControls = ({
                 if (k === 'r') gameActions.baccaratActions.placeBet('B_DRAGON');
                 // Panda 8 side bet
                 if (e.key === '8') { gameActions.baccaratActions.placeBet('PANDA8'); return; }
-                // Perfect Pair side bets
-                if (e.key === '9') { gameActions.baccaratActions.placeBet('P_PERFECT_PAIR'); return; }
-                if (e.key === '0' && !e.ctrlKey) { gameActions.baccaratActions.placeBet('B_PERFECT_PAIR'); return; }
+                // Perfect Pair side bet
+                if (e.key === '9') { gameActions.baccaratActions.placeBet('PERFECT_PAIR'); return; }
                 if (k === 't') gameActions.baccaratActions.rebet();
                 if (k === 'u') gameActions.baccaratActions.undo();
             } else if (gameState.type === GameType.ROULETTE) {

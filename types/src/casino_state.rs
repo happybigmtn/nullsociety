@@ -113,10 +113,8 @@ pub enum BaccaratBetType {
     BDragon,
     #[ts(rename = "PANDA8")]
     Panda8,
-    #[ts(rename = "P_PERFECT_PAIR")]
-    PPerfectPair,
-    #[ts(rename = "B_PERFECT_PAIR")]
-    BPerfectPair,
+    #[ts(rename = "PERFECT_PAIR")]
+    PerfectPair,
 }
 
 #[derive(TS, Debug, Clone, PartialEq)]
@@ -398,6 +396,10 @@ pub struct GameState {
     pub blackjack_stack: Vec<BlackjackSplitHand>,
     pub completed_hands: Vec<CompletedHand>,
     pub blackjack21_plus3_bet: i32,
+    pub blackjack_lucky_ladies_bet: i32,
+    pub blackjack_perfect_pairs_bet: i32,
+    pub blackjack_bust_it_bet: i32,
+    pub blackjack_royal_match_bet: i32,
     pub blackjack_player_value: Option<i32>,
     pub blackjack_dealer_value: Option<i32>,
     pub blackjack_actions: BlackjackActionState,

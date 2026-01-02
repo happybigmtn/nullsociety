@@ -43,6 +43,15 @@ mod tags {
         pub const CASINO_JOIN_TOURNAMENT: u8 = 16;
         pub const CASINO_START_TOURNAMENT: u8 = 17;
 
+        // Global table (60-66)
+        pub const CASINO_GLOBAL_TABLE_INIT: u8 = 60;
+        pub const CASINO_GLOBAL_TABLE_OPEN_ROUND: u8 = 61;
+        pub const CASINO_GLOBAL_TABLE_SUBMIT_BETS: u8 = 62;
+        pub const CASINO_GLOBAL_TABLE_LOCK: u8 = 63;
+        pub const CASINO_GLOBAL_TABLE_REVEAL: u8 = 64;
+        pub const CASINO_GLOBAL_TABLE_SETTLE: u8 = 65;
+        pub const CASINO_GLOBAL_TABLE_FINALIZE: u8 = 66;
+
         // Staking (18-21)
         pub const STAKE: u8 = 18;
         pub const UNSTAKE: u8 = 19;
@@ -119,6 +128,11 @@ mod tags {
         pub const BRIDGE_WITHDRAWAL: u8 = 27;
         // Oracle (28)
         pub const ORACLE_STATE: u8 = 28;
+
+        // Global table (29-31)
+        pub const GLOBAL_TABLE_CONFIG: u8 = 29;
+        pub const GLOBAL_TABLE_ROUND: u8 = 30;
+        pub const GLOBAL_TABLE_PLAYER_SESSION: u8 = 31;
     }
 
     pub mod value {
@@ -158,6 +172,11 @@ mod tags {
         pub const BRIDGE_WITHDRAWAL: u8 = 27;
         // Oracle (28)
         pub const ORACLE_STATE: u8 = 28;
+
+        // Global table (29-31)
+        pub const GLOBAL_TABLE_CONFIG: u8 = 29;
+        pub const GLOBAL_TABLE_ROUND: u8 = 30;
+        pub const GLOBAL_TABLE_PLAYER_SESSION: u8 = 31;
     }
 
     pub mod event {
@@ -214,6 +233,15 @@ mod tags {
         pub const BRIDGE_DEPOSIT_CREDITED: u8 = 57;
         // Oracle events (58)
         pub const ORACLE_UPDATED: u8 = 58;
+
+        // Global table events (60-66)
+        pub const GLOBAL_TABLE_ROUND_OPENED: u8 = 60;
+        pub const GLOBAL_TABLE_BET_ACCEPTED: u8 = 61;
+        pub const GLOBAL_TABLE_BET_REJECTED: u8 = 62;
+        pub const GLOBAL_TABLE_LOCKED: u8 = 63;
+        pub const GLOBAL_TABLE_OUTCOME: u8 = 64;
+        pub const GLOBAL_TABLE_PLAYER_SETTLED: u8 = 65;
+        pub const GLOBAL_TABLE_FINALIZED: u8 = 66;
     }
 }
 
@@ -398,6 +426,55 @@ pub enum Instruction {
         tournament_id: u64,
         start_time_ms: u64,
         end_time_ms: u64,
+    },
+
+    // Global table instructions (tags 60-66)
+    /// Initialize or update global table config.
+    /// Binary: [60] [config:GlobalTableConfig]
+    GlobalTableInit {
+        config: crate::casino::GlobalTableConfig,
+    },
+
+    /// Open a new global table round.
+    /// Binary: [61] [gameType:u8]
+    GlobalTableOpenRound {
+        game_type: crate::casino::GameType,
+    },
+
+    /// Submit bets for the current round.
+    /// Binary: [62] [gameType:u8] [roundId:u64 BE] [bets:Vec<GlobalTableBet>]
+    GlobalTableSubmitBets {
+        game_type: crate::casino::GameType,
+        round_id: u64,
+        bets: Vec<crate::casino::GlobalTableBet>,
+    },
+
+    /// Lock the current round (bets closed).
+    /// Binary: [63] [gameType:u8] [roundId:u64 BE]
+    GlobalTableLock {
+        game_type: crate::casino::GameType,
+        round_id: u64,
+    },
+
+    /// Reveal the round outcome (roll/spin).
+    /// Binary: [64] [gameType:u8] [roundId:u64 BE]
+    GlobalTableReveal {
+        game_type: crate::casino::GameType,
+        round_id: u64,
+    },
+
+    /// Settle a player's outcome for a round.
+    /// Binary: [65] [gameType:u8] [roundId:u64 BE]
+    GlobalTableSettle {
+        game_type: crate::casino::GameType,
+        round_id: u64,
+    },
+
+    /// Finalize a round and enter cooldown.
+    /// Binary: [66] [gameType:u8] [roundId:u64 BE]
+    GlobalTableFinalize {
+        game_type: crate::casino::GameType,
+        round_id: u64,
     },
 
     // Staking & House Instructions (tags 18-21)
@@ -606,6 +683,58 @@ impl Write for Instruction {
                 tournament_id.write(writer);
                 start_time_ms.write(writer);
                 end_time_ms.write(writer);
+            }
+
+            // Global table (60-66)
+            Self::GlobalTableInit { config } => {
+                tags::instruction::CASINO_GLOBAL_TABLE_INIT.write(writer);
+                config.write(writer);
+            }
+            Self::GlobalTableOpenRound { game_type } => {
+                tags::instruction::CASINO_GLOBAL_TABLE_OPEN_ROUND.write(writer);
+                game_type.write(writer);
+            }
+            Self::GlobalTableSubmitBets {
+                game_type,
+                round_id,
+                bets,
+            } => {
+                tags::instruction::CASINO_GLOBAL_TABLE_SUBMIT_BETS.write(writer);
+                game_type.write(writer);
+                round_id.write(writer);
+                bets.write(writer);
+            }
+            Self::GlobalTableLock {
+                game_type,
+                round_id,
+            } => {
+                tags::instruction::CASINO_GLOBAL_TABLE_LOCK.write(writer);
+                game_type.write(writer);
+                round_id.write(writer);
+            }
+            Self::GlobalTableReveal {
+                game_type,
+                round_id,
+            } => {
+                tags::instruction::CASINO_GLOBAL_TABLE_REVEAL.write(writer);
+                game_type.write(writer);
+                round_id.write(writer);
+            }
+            Self::GlobalTableSettle {
+                game_type,
+                round_id,
+            } => {
+                tags::instruction::CASINO_GLOBAL_TABLE_SETTLE.write(writer);
+                game_type.write(writer);
+                round_id.write(writer);
+            }
+            Self::GlobalTableFinalize {
+                game_type,
+                round_id,
+            } => {
+                tags::instruction::CASINO_GLOBAL_TABLE_FINALIZE.write(writer);
+                game_type.write(writer);
+                round_id.write(writer);
             }
 
             // Staking (18-21)
@@ -829,6 +958,42 @@ impl Read for Instruction {
                 end_time_ms: u64::read(reader)?,
             },
 
+            tags::instruction::CASINO_GLOBAL_TABLE_INIT => Self::GlobalTableInit {
+                config: crate::casino::GlobalTableConfig::read(reader)?,
+            },
+            tags::instruction::CASINO_GLOBAL_TABLE_OPEN_ROUND => Self::GlobalTableOpenRound {
+                game_type: crate::casino::GameType::read(reader)?,
+            },
+            tags::instruction::CASINO_GLOBAL_TABLE_SUBMIT_BETS => {
+                let game_type = crate::casino::GameType::read(reader)?;
+                let round_id = u64::read(reader)?;
+                let bets = Vec::<crate::casino::GlobalTableBet>::read_range(
+                    reader,
+                    crate::casino::global_table_bets_cfg(),
+                )?;
+                Self::GlobalTableSubmitBets {
+                    game_type,
+                    round_id,
+                    bets,
+                }
+            }
+            tags::instruction::CASINO_GLOBAL_TABLE_LOCK => Self::GlobalTableLock {
+                game_type: crate::casino::GameType::read(reader)?,
+                round_id: u64::read(reader)?,
+            },
+            tags::instruction::CASINO_GLOBAL_TABLE_REVEAL => Self::GlobalTableReveal {
+                game_type: crate::casino::GameType::read(reader)?,
+                round_id: u64::read(reader)?,
+            },
+            tags::instruction::CASINO_GLOBAL_TABLE_SETTLE => Self::GlobalTableSettle {
+                game_type: crate::casino::GameType::read(reader)?,
+                round_id: u64::read(reader)?,
+            },
+            tags::instruction::CASINO_GLOBAL_TABLE_FINALIZE => Self::GlobalTableFinalize {
+                game_type: crate::casino::GameType::read(reader)?,
+                round_id: u64::read(reader)?,
+            },
+
             // Staking (18-21)
             tags::instruction::STAKE => Self::Stake {
                 amount: u64::read(reader)?,
@@ -948,6 +1113,33 @@ impl EncodeSize for Instruction {
                 }
                 Self::CasinoJoinTournament { .. } => 8,
                 Self::CasinoStartTournament { .. } => 8 + 8 + 8,
+                Self::GlobalTableInit { config } => config.encode_size(),
+                Self::GlobalTableOpenRound { game_type } => game_type.encode_size(),
+                Self::GlobalTableSubmitBets {
+                    game_type,
+                    round_id,
+                    bets,
+                } => {
+                    game_type.encode_size()
+                        + round_id.encode_size()
+                        + bets.encode_size()
+                }
+                Self::GlobalTableLock {
+                    game_type,
+                    round_id,
+                }
+                | Self::GlobalTableReveal {
+                    game_type,
+                    round_id,
+                }
+                | Self::GlobalTableSettle {
+                    game_type,
+                    round_id,
+                }
+                | Self::GlobalTableFinalize {
+                    game_type,
+                    round_id,
+                } => game_type.encode_size() + round_id.encode_size(),
 
                 // Staking
                 Self::Stake { amount, duration } => amount.encode_size() + duration.encode_size(),
@@ -1353,6 +1545,11 @@ pub enum Key {
     BridgeWithdrawal(u64),
     // Oracle (Tag 28)
     OracleState,
+
+    // Global table (Tags 29-31)
+    GlobalTableConfig(crate::casino::GameType),
+    GlobalTableRound(crate::casino::GameType),
+    GlobalTablePlayerSession(crate::casino::GameType, PublicKey),
 }
 
 impl Write for Key {
@@ -1412,6 +1609,19 @@ impl Write for Key {
                 id.write(writer);
             }
             Self::OracleState => tags::key::ORACLE_STATE.write(writer),
+            Self::GlobalTableConfig(game_type) => {
+                tags::key::GLOBAL_TABLE_CONFIG.write(writer);
+                game_type.write(writer);
+            }
+            Self::GlobalTableRound(game_type) => {
+                tags::key::GLOBAL_TABLE_ROUND.write(writer);
+                game_type.write(writer);
+            }
+            Self::GlobalTablePlayerSession(game_type, pk) => {
+                tags::key::GLOBAL_TABLE_PLAYER_SESSION.write(writer);
+                game_type.write(writer);
+                pk.write(writer);
+            }
         }
     }
 }
@@ -1449,6 +1659,17 @@ impl Read for Key {
             tags::key::BRIDGE_STATE => Self::BridgeState,
             tags::key::BRIDGE_WITHDRAWAL => Self::BridgeWithdrawal(u64::read(reader)?),
             tags::key::ORACLE_STATE => Self::OracleState,
+            tags::key::GLOBAL_TABLE_CONFIG => {
+                Self::GlobalTableConfig(crate::casino::GameType::read(reader)?)
+            }
+            tags::key::GLOBAL_TABLE_ROUND => {
+                Self::GlobalTableRound(crate::casino::GameType::read(reader)?)
+            }
+            tags::key::GLOBAL_TABLE_PLAYER_SESSION => {
+                let game_type = crate::casino::GameType::read(reader)?;
+                let player = PublicKey::read(reader)?;
+                Self::GlobalTablePlayerSession(game_type, player)
+            }
 
             i => return Err(Error::InvalidEnum(i)),
         };
@@ -1488,6 +1709,9 @@ impl EncodeSize for Key {
                 Self::BridgeState => 0,
                 Self::BridgeWithdrawal(_) => u64::SIZE,
                 Self::OracleState => 0,
+                Self::GlobalTableConfig(_) => u8::SIZE,
+                Self::GlobalTableRound(_) => u8::SIZE,
+                Self::GlobalTablePlayerSession(_, _) => u8::SIZE + PublicKey::SIZE,
         }
     }
 }
@@ -1539,6 +1763,11 @@ pub enum Value {
     BridgeWithdrawal(crate::casino::BridgeWithdrawal),
     // Oracle (Tag 28)
     OracleState(crate::casino::OracleState),
+
+    // Global table (Tags 29-31)
+    GlobalTableConfig(crate::casino::GlobalTableConfig),
+    GlobalTableRound(crate::casino::GlobalTableRound),
+    GlobalTablePlayerSession(crate::casino::GlobalTablePlayerSession),
 }
 
 impl Write for Value {
@@ -1638,6 +1867,18 @@ impl Write for Value {
                 tags::value::ORACLE_STATE.write(writer);
                 state.write(writer);
             }
+            Self::GlobalTableConfig(config) => {
+                tags::value::GLOBAL_TABLE_CONFIG.write(writer);
+                config.write(writer);
+            }
+            Self::GlobalTableRound(round) => {
+                tags::value::GLOBAL_TABLE_ROUND.write(writer);
+                round.write(writer);
+            }
+            Self::GlobalTablePlayerSession(session) => {
+                tags::value::GLOBAL_TABLE_PLAYER_SESSION.write(writer);
+                session.write(writer);
+            }
         }
     }
 }
@@ -1701,6 +1942,15 @@ impl Read for Value {
             tags::value::ORACLE_STATE => {
                 Self::OracleState(crate::casino::OracleState::read(reader)?)
             }
+            tags::value::GLOBAL_TABLE_CONFIG => {
+                Self::GlobalTableConfig(crate::casino::GlobalTableConfig::read(reader)?)
+            }
+            tags::value::GLOBAL_TABLE_ROUND => {
+                Self::GlobalTableRound(crate::casino::GlobalTableRound::read(reader)?)
+            }
+            tags::value::GLOBAL_TABLE_PLAYER_SESSION => Self::GlobalTablePlayerSession(
+                crate::casino::GlobalTablePlayerSession::read(reader)?,
+            ),
 
             i => return Err(Error::InvalidEnum(i)),
         };
@@ -1743,6 +1993,9 @@ impl EncodeSize for Value {
                 Self::BridgeState(state) => state.encode_size(),
                 Self::BridgeWithdrawal(withdrawal) => withdrawal.encode_size(),
                 Self::OracleState(state) => state.encode_size(),
+                Self::GlobalTableConfig(config) => config.encode_size(),
+                Self::GlobalTableRound(round) => round.encode_size(),
+                Self::GlobalTablePlayerSession(session) => session.encode_size(),
             }
     }
 }
@@ -1973,6 +2226,42 @@ pub enum Event {
         amount: u64,
         new_debt: u64,
         pool_balance: u64,
+    },
+
+    // Global table events (tags 60-66)
+    GlobalTableRoundOpened {
+        round: crate::casino::GlobalTableRound,
+    },
+    GlobalTableBetAccepted {
+        player: PublicKey,
+        round_id: u64,
+        bets: Vec<crate::casino::GlobalTableBet>,
+        player_balances: crate::casino::PlayerBalanceSnapshot,
+    },
+    GlobalTableBetRejected {
+        player: PublicKey,
+        round_id: u64,
+        error_code: u8,
+        message: String,
+    },
+    GlobalTableLocked {
+        game_type: crate::casino::GameType,
+        round_id: u64,
+        phase_ends_at_ms: u64,
+    },
+    GlobalTableOutcome {
+        round: crate::casino::GlobalTableRound,
+    },
+    GlobalTablePlayerSettled {
+        player: PublicKey,
+        round_id: u64,
+        payout: i64,
+        player_balances: crate::casino::PlayerBalanceSnapshot,
+        my_bets: Vec<crate::casino::GlobalTableBet>,
+    },
+    GlobalTableFinalized {
+        game_type: crate::casino::GameType,
+        round_id: u64,
     },
 
     // Savings events (tags 48-50)
@@ -2449,6 +2738,68 @@ impl Write for Event {
                 new_debt.write(writer);
                 pool_balance.write(writer);
             }
+            Self::GlobalTableRoundOpened { round } => {
+                tags::event::GLOBAL_TABLE_ROUND_OPENED.write(writer);
+                round.write(writer);
+            }
+            Self::GlobalTableBetAccepted {
+                player,
+                round_id,
+                bets,
+                player_balances,
+            } => {
+                tags::event::GLOBAL_TABLE_BET_ACCEPTED.write(writer);
+                player.write(writer);
+                round_id.write(writer);
+                bets.write(writer);
+                player_balances.write(writer);
+            }
+            Self::GlobalTableBetRejected {
+                player,
+                round_id,
+                error_code,
+                message,
+            } => {
+                tags::event::GLOBAL_TABLE_BET_REJECTED.write(writer);
+                player.write(writer);
+                round_id.write(writer);
+                error_code.write(writer);
+                (message.len() as u32).write(writer);
+                writer.put_slice(message.as_bytes());
+            }
+            Self::GlobalTableLocked {
+                game_type,
+                round_id,
+                phase_ends_at_ms,
+            } => {
+                tags::event::GLOBAL_TABLE_LOCKED.write(writer);
+                game_type.write(writer);
+                round_id.write(writer);
+                phase_ends_at_ms.write(writer);
+            }
+            Self::GlobalTableOutcome { round } => {
+                tags::event::GLOBAL_TABLE_OUTCOME.write(writer);
+                round.write(writer);
+            }
+            Self::GlobalTablePlayerSettled {
+                player,
+                round_id,
+                payout,
+                player_balances,
+                my_bets,
+            } => {
+                tags::event::GLOBAL_TABLE_PLAYER_SETTLED.write(writer);
+                player.write(writer);
+                round_id.write(writer);
+                payout.write(writer);
+                player_balances.write(writer);
+                my_bets.write(writer);
+            }
+            Self::GlobalTableFinalized { game_type, round_id } => {
+                tags::event::GLOBAL_TABLE_FINALIZED.write(writer);
+                game_type.write(writer);
+                round_id.write(writer);
+            }
             Self::SavingsDeposited {
                 player,
                 amount,
@@ -2839,6 +3190,59 @@ impl Read for Event {
                 amount: u64::read(reader)?,
                 new_debt: u64::read(reader)?,
                 pool_balance: u64::read(reader)?,
+            },
+            tags::event::GLOBAL_TABLE_ROUND_OPENED => Self::GlobalTableRoundOpened {
+                round: crate::casino::GlobalTableRound::read(reader)?,
+            },
+            tags::event::GLOBAL_TABLE_BET_ACCEPTED => Self::GlobalTableBetAccepted {
+                player: PublicKey::read(reader)?,
+                round_id: u64::read(reader)?,
+                bets: Vec::<crate::casino::GlobalTableBet>::read_range(
+                    reader,
+                    crate::casino::global_table_bets_cfg(),
+                )?,
+                player_balances: crate::casino::PlayerBalanceSnapshot::read(reader)?,
+            },
+            tags::event::GLOBAL_TABLE_BET_REJECTED => {
+                let player = PublicKey::read(reader)?;
+                let round_id = u64::read(reader)?;
+                let error_code = u8::read(reader)?;
+                let message_len = u32::read(reader)? as usize;
+                if reader.remaining() < message_len {
+                    return Err(Error::EndOfBuffer);
+                }
+                let mut msg_bytes = vec![0u8; message_len];
+                reader.copy_to_slice(&mut msg_bytes);
+                let message = String::from_utf8(msg_bytes)
+                    .map_err(|_| Error::Invalid("Event", "invalid UTF-8 in global table error"))?;
+                Self::GlobalTableBetRejected {
+                    player,
+                    round_id,
+                    error_code,
+                    message,
+                }
+            }
+            tags::event::GLOBAL_TABLE_LOCKED => Self::GlobalTableLocked {
+                game_type: crate::casino::GameType::read(reader)?,
+                round_id: u64::read(reader)?,
+                phase_ends_at_ms: u64::read(reader)?,
+            },
+            tags::event::GLOBAL_TABLE_OUTCOME => Self::GlobalTableOutcome {
+                round: crate::casino::GlobalTableRound::read(reader)?,
+            },
+            tags::event::GLOBAL_TABLE_PLAYER_SETTLED => Self::GlobalTablePlayerSettled {
+                player: PublicKey::read(reader)?,
+                round_id: u64::read(reader)?,
+                payout: i64::read(reader)?,
+                player_balances: crate::casino::PlayerBalanceSnapshot::read(reader)?,
+                my_bets: Vec::<crate::casino::GlobalTableBet>::read_range(
+                    reader,
+                    crate::casino::global_table_bets_cfg(),
+                )?,
+            },
+            tags::event::GLOBAL_TABLE_FINALIZED => Self::GlobalTableFinalized {
+                game_type: crate::casino::GameType::read(reader)?,
+                round_id: u64::read(reader)?,
             },
             tags::event::SAVINGS_DEPOSITED => Self::SavingsDeposited {
                 player: PublicKey::read(reader)?,
@@ -3250,6 +3654,56 @@ impl EncodeSize for Event {
                         + amount.encode_size()
                         + new_debt.encode_size()
                         + pool_balance.encode_size()
+                }
+                Self::GlobalTableRoundOpened { round } => round.encode_size(),
+                Self::GlobalTableBetAccepted {
+                    player,
+                    round_id,
+                    bets,
+                    player_balances,
+                } => {
+                    player.encode_size()
+                        + round_id.encode_size()
+                        + bets.encode_size()
+                        + player_balances.encode_size()
+                }
+                Self::GlobalTableBetRejected {
+                    player,
+                    round_id,
+                    error_code,
+                    message,
+                } => {
+                    player.encode_size()
+                        + round_id.encode_size()
+                        + error_code.encode_size()
+                        + 4
+                        + message.len()
+                }
+                Self::GlobalTableLocked {
+                    game_type,
+                    round_id,
+                    phase_ends_at_ms,
+                } => {
+                    game_type.encode_size()
+                        + round_id.encode_size()
+                        + phase_ends_at_ms.encode_size()
+                }
+                Self::GlobalTableOutcome { round } => round.encode_size(),
+                Self::GlobalTablePlayerSettled {
+                    player,
+                    round_id,
+                    payout,
+                    player_balances,
+                    my_bets,
+                } => {
+                    player.encode_size()
+                        + round_id.encode_size()
+                        + payout.encode_size()
+                        + player_balances.encode_size()
+                        + my_bets.encode_size()
+                }
+                Self::GlobalTableFinalized { game_type, round_id } => {
+                    game_type.encode_size() + round_id.encode_size()
                 }
                 Self::SavingsDeposited {
                     player,

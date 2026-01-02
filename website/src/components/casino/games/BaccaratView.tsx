@@ -4,6 +4,7 @@ import { GameState } from '../../../types';
 import { Hand } from '../GameComponents';
 import { cardIdToString } from '../../../services/games';
 import { MobileDrawer } from '../MobileDrawer';
+import { BetsDrawer } from '../BetsDrawer';
 import { SideBetMenu } from './SideBetMenu';
 import { Label } from '../ui/Label';
 
@@ -17,9 +18,8 @@ const BONUS_BETS = [
     { key: '4', action: 'LUCKY6', label: 'LUCKY6' },
     { key: '5', action: 'P_DRAGON', label: 'P.DRAG' },
     { key: '6', action: 'B_DRAGON', label: 'B.DRAG' },
-    { key: '7', action: 'PANDA8', label: 'PANDA8' },
-    { key: '8', action: 'P_PERFECT_PAIR', label: 'P.PP' },
-    { key: '9', action: 'B_PERFECT_PAIR', label: 'B.PP' },
+    { key: '8', action: 'PANDA8', label: 'PANDA8' },
+    { key: '9', action: 'PERFECT_PAIR', label: 'PERF.PAIR' },
     { key: '0', action: 'ALL_BONUS', label: '$$$$$' },
 ];
 
@@ -66,8 +66,7 @@ export const BaccaratView = React.memo<{
             P_DRAGON: amt('P_DRAGON'),
             B_DRAGON: amt('B_DRAGON'),
             PANDA8: amt('PANDA8'),
-            P_PERFECT_PAIR: amt('P_PERFECT_PAIR'),
-            B_PERFECT_PAIR: amt('B_PERFECT_PAIR'),
+            PERFECT_PAIR: amt('PERFECT_PAIR'),
         };
     }, [gameState.baccaratBets]);
 
@@ -88,7 +87,7 @@ export const BaccaratView = React.memo<{
     const executeBetAction = useCallback((action: string) => {
         if (action === 'ALL_BONUS') {
             // Place all bonus bets at once
-            const bonusTypes = ['TIE', 'P_PAIR', 'B_PAIR', 'LUCKY6', 'P_DRAGON', 'B_DRAGON', 'PANDA8', 'P_PERFECT_PAIR', 'B_PERFECT_PAIR'];
+            const bonusTypes = ['TIE', 'P_PAIR', 'B_PAIR', 'LUCKY6', 'P_DRAGON', 'B_DRAGON', 'PANDA8', 'PERFECT_PAIR'];
             bonusTypes.forEach(type => {
                 const alreadyPlaced = gameState.baccaratBets.some(b => b.type === type);
                 if (!alreadyPlaced) {
@@ -166,8 +165,15 @@ export const BaccaratView = React.memo<{
         // Panda 8: Player wins with 3-card total of 8
         else if (type === 'PANDA8') won = p > b && p === 8 && gameState.playerCards.length === 3;
         // Perfect Pairs (same rank AND same suit)
-        else if (type === 'P_PERFECT_PAIR') won = gameState.playerCards.length >= 2 && gameState.playerCards[0].rank === gameState.playerCards[1].rank && gameState.playerCards[0].suit === gameState.playerCards[1].suit;
-        else if (type === 'B_PERFECT_PAIR') won = gameState.dealerCards.length >= 2 && gameState.dealerCards[0].rank === gameState.dealerCards[1].rank && gameState.dealerCards[0].suit === gameState.dealerCards[1].suit;
+        else if (type === 'PERFECT_PAIR') {
+            const playerPair = gameState.playerCards.length >= 2
+                && gameState.playerCards[0].rank === gameState.playerCards[1].rank
+                && gameState.playerCards[0].suit === gameState.playerCards[1].suit;
+            const bankerPair = gameState.dealerCards.length >= 2
+                && gameState.dealerCards[0].rank === gameState.dealerCards[1].rank
+                && gameState.dealerCards[0].suit === gameState.dealerCards[1].suit;
+            won = playerPair || bankerPair;
+        }
 
         if (won) return 'border-action-success text-action-success shadow-[0_0_10px_rgba(74,222,128,0.5)] animate-pulse bg-action-success/10';
         return 'border-gray-800 bg-black/40 text-gray-500';
@@ -324,7 +330,7 @@ export const BaccaratView = React.memo<{
                             {/* Banker Win */}
                             <div className="flex items-center justify-between p-2 border border-gray-800 rounded bg-black/40">
                                 <span className="text-sm text-action-success font-bold">BANKER WIN</span>
-                                <span className="text-xs text-gray-400">0.95:1</span>
+                                <span className="text-xs text-gray-400">1:1 (6 pays 1:2)</span>
                             </div>
                             {/* Tie */}
                             <div className="flex items-center justify-between p-2 border border-gray-800 rounded bg-black/40">
@@ -346,8 +352,7 @@ export const BaccaratView = React.memo<{
                                 { type: 'P_DRAGON', payout: 'Varies', desc: 'Player natural or +4' },
                                 { type: 'B_DRAGON', payout: 'Varies', desc: 'Banker natural or +4' },
                                 { type: 'PANDA8', payout: '25:1', desc: 'Player 3-card 8' },
-                                { type: 'P.PP', payout: '25:1', desc: 'Player perfect pair' },
-                                { type: 'B.PP', payout: '25:1', desc: 'Banker perfect pair' },
+                                { type: 'PERF.PAIR', payout: '25:1 / 250:1', desc: 'Either suited pair / both suited pairs' },
                             ].map((bet) => (
                                 <div key={bet.type} className="border border-gray-800 rounded bg-black/40 p-2">
                                     <div className="flex items-center justify-between mb-1">
@@ -535,7 +540,7 @@ export const BaccaratView = React.memo<{
 
                     {/* Mobile: Simplified controls */}
                     <div className="flex md:hidden gap-2">
-                        <MobileDrawer label="BETS" title="PLACE BETS">
+                        <BetsDrawer title="PLACE BETS">
                             <div className="space-y-4">
                                 {/* Normal Bets */}
                                 <div className="rounded border border-gray-800 bg-black/40 p-2 space-y-2">
@@ -589,11 +594,8 @@ export const BaccaratView = React.memo<{
                                         <button onClick={() => actions?.baccaratActions?.placeBet?.('PANDA8')} className={`py-3 rounded border text-xs font-bold ${sideBetAmounts.PANDA8 > 0 ? 'border-amber-400 bg-amber-500/20 text-amber-300' : 'border-gray-700 bg-gray-900 text-gray-400'}`}>
                                             PANDA8
                                         </button>
-                                        <button onClick={() => actions?.baccaratActions?.placeBet?.('P_PERFECT_PAIR')} className={`py-3 rounded border text-xs font-bold ${sideBetAmounts.P_PERFECT_PAIR > 0 ? 'border-amber-400 bg-amber-500/20 text-amber-300' : 'border-gray-700 bg-gray-900 text-gray-400'}`}>
-                                            P.PP
-                                        </button>
-                                        <button onClick={() => actions?.baccaratActions?.placeBet?.('B_PERFECT_PAIR')} className={`py-3 rounded border text-xs font-bold ${sideBetAmounts.B_PERFECT_PAIR > 0 ? 'border-amber-400 bg-amber-500/20 text-amber-300' : 'border-gray-700 bg-gray-900 text-gray-400'}`}>
-                                            B.PP
+                                        <button onClick={() => actions?.baccaratActions?.placeBet?.('PERFECT_PAIR')} className={`py-3 rounded border text-xs font-bold ${sideBetAmounts.PERFECT_PAIR > 0 ? 'border-amber-400 bg-amber-500/20 text-amber-300' : 'border-gray-700 bg-gray-900 text-gray-400'}`}>
+                                            PERF.PAIR
                                         </button>
                                     </div>
                                 </div>
@@ -613,7 +615,7 @@ export const BaccaratView = React.memo<{
                                     </div>
                                 </div>
                             </div>
-                        </MobileDrawer>
+                        </BetsDrawer>
                     </div>
                 </div>
             </div>

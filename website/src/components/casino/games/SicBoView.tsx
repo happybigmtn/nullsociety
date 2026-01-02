@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useCallback, useState } from 'react';
 import { GameState, SicBoBet } from '../../../types';
 import { MobileDrawer } from '../MobileDrawer';
+import { BetsDrawer } from '../BetsDrawer';
 import { getSicBoTotalItems, getSicBoCombinationItems, calculateSicBoTotalExposure, calculateSicBoCombinationExposure } from '../../../utils/gameUtils';
 import { DiceThrow2D } from '../GameComponents';
 import { Label } from '../ui/Label';
@@ -333,7 +334,7 @@ export const SicBoView = React.memo<{
 
                     {/* Mobile: Bet Menu Drawer */}
                     <div className="flex md:hidden items-center gap-2">
-                        <MobileDrawer label="BETS" title="PLACE BETS">
+                        <BetsDrawer title="PLACE BETS">
                             <div className="space-y-4">
                                 {/* Simple Bets */}
                                 <div className="rounded-2xl border border-titanium-100 bg-white p-3 space-y-2">
@@ -401,7 +402,7 @@ export const SicBoView = React.memo<{
                                     </button>
                                 </div>
                             </div>
-                        </MobileDrawer>
+                        </BetsDrawer>
                     </div>
 
                     {/* ROLL Button */}

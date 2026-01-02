@@ -162,7 +162,7 @@ export const useDeal = ({
         }
       }
 
-      if (gameState.type === GameType.BLACKJACK) {
+        if (gameState.type === GameType.BLACKJACK) {
         if (isPendingRef.current) {
           logDebug('[useDeal] Blackjack deal/reveal blocked - transaction pending');
           return;
@@ -172,11 +172,21 @@ export const useDeal = ({
           isPendingRef.current = true;
           try {
             const sideBet21p3 = gameState.blackjack21Plus3Bet || 0;
+            const sideBetLuckyLadies = gameState.blackjackLuckyLadiesBet || 0;
+            const sideBetPerfectPairs = gameState.blackjackPerfectPairsBet || 0;
+            const sideBetBustIt = gameState.blackjackBustItBet || 0;
+            const sideBetRoyalMatch = gameState.blackjackRoyalMatchBet || 0;
+            const sideBetTotal =
+              sideBet21p3 + sideBetLuckyLadies + sideBetPerfectPairs + sideBetBustIt + sideBetRoyalMatch;
             let payload: Uint8Array;
-            if (sideBet21p3 > 0) {
-              payload = new Uint8Array(9);
+            if (sideBetTotal > 0) {
+              payload = new Uint8Array(41);
               payload[0] = 7;
               new DataView(payload.buffer).setBigUint64(1, BigInt(sideBet21p3), false);
+              new DataView(payload.buffer).setBigUint64(9, BigInt(sideBetLuckyLadies), false);
+              new DataView(payload.buffer).setBigUint64(17, BigInt(sideBetPerfectPairs), false);
+              new DataView(payload.buffer).setBigUint64(25, BigInt(sideBetBustIt), false);
+              new DataView(payload.buffer).setBigUint64(33, BigInt(sideBetRoyalMatch), false);
             } else {
               payload = new Uint8Array([4]);
             }
@@ -184,7 +194,7 @@ export const useDeal = ({
             setGameState(prev => ({
               ...prev,
               message: 'DEALING...',
-              sessionWager: sideBet21p3 > 0 ? prev.sessionWager + sideBet21p3 : prev.sessionWager,
+              sessionWager: sideBetTotal > 0 ? prev.sessionWager + sideBetTotal : prev.sessionWager,
             }));
             const result = await chainService.sendMove(sessionId, payload);
             if (result.txHash) setLastTxSig(result.txHash);

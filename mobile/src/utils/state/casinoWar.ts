@@ -20,10 +20,13 @@ export function parseCasinoWarState(stateBlob: Uint8Array): CasinoWarStateUpdate
   const stageByte = parsed.stage;
   const stage = stageByte === 1 ? 'war' : stageByte === 2 ? 'complete' : 'betting';
 
+  const tieBetValue = typeof parsed.tieBet === 'bigint' ? Number(parsed.tieBet) : parsed.tieBet;
+  const tieBet = Number.isFinite(tieBetValue) ? tieBetValue : 0;
+
   return {
     playerCard: playerCard ?? null,
     dealerCard: dealerCard ?? null,
     stage,
-    tieBet: Number.isFinite(parsed.tieBet) ? parsed.tieBet : 0,
+    tieBet,
   };
 }

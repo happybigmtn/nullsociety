@@ -7,12 +7,15 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { getString, setString, STORAGE_KEYS } from './storage';
+import { stripTrailingSlash } from '../utils/url';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: false,
     shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -25,9 +28,13 @@ const opsBase =
   process.env.EXPO_PUBLIC_ANALYTICS_URL ??
   '';
 
+const isExpoGo =
+  Constants.appOwnership === 'expo' ||
+  (Constants as unknown as { executionEnvironment?: string }).executionEnvironment === 'storeClient';
+
 const registerPushToken = async (token: string, publicKey?: string | null) => {
   if (!opsBase) return;
-  const endpoint = `${opsBase.replace(/\\/$/, '')}/push/register`;
+  const endpoint = `${stripTrailingSlash(opsBase)}/push/register`;
   try {
     await fetch(endpoint, {
       method: 'POST',
@@ -47,6 +54,9 @@ const registerPushToken = async (token: string, publicKey?: string | null) => {
 export async function initializeNotifications(publicKey?: string | null): Promise<string | null> {
   try {
     if (!Device.isDevice) {
+      return null;
+    }
+    if (isExpoGo) {
       return null;
     }
 

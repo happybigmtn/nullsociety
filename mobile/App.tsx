@@ -8,6 +8,8 @@
  * - 60fps animations, native haptics
  * - On-chain provably fair gaming
  */
+import './src/utils/cryptoPolyfill';
+import { initializeErrorReporter } from './src/services/errorReporter';
 import { registerRootComponent } from 'expo';
 import { StatusBar, StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -15,6 +17,8 @@ import { RootNavigator } from './src/navigation/RootNavigator';
 import { COLORS } from './src/constants/theme';
 import { useAppState, useGatewaySession, useWebSocketReconnectOnForeground } from './src/hooks';
 import { AuthProvider, WebSocketProvider } from './src/context';
+
+initializeErrorReporter();
 
 function GatewaySessionBridge({ children }: { children: React.ReactNode }) {
   useGatewaySession();

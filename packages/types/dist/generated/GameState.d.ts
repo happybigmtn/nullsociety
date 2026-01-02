@@ -64,6 +64,10 @@ export type GameState = {
     blackjackStack: Array<BlackjackSplitHand>;
     completedHands: Array<CompletedHand>;
     blackjack21Plus3Bet: number;
+    blackjackLuckyLadiesBet: number;
+    blackjackPerfectPairsBet: number;
+    blackjackBustItBet: number;
+    blackjackRoyalMatchBet: number;
     blackjackPlayerValue: number | null;
     blackjackDealerValue: number | null;
     blackjackActions: BlackjackActionState;

@@ -7,6 +7,7 @@ import fsp from "fs/promises";
 import path from "path";
 
 const app = express();
+app.disable("x-powered-by");
 app.use(express.json({ limit: "2mb" }));
 
 const PORT = Number.parseInt(process.env.OPS_PORT ?? "9020", 10);
@@ -32,15 +33,30 @@ const OPS_ALLOW_NO_ORIGIN = ["1", "true", "yes"].includes(
   String(process.env.OPS_ALLOW_NO_ORIGIN ?? "").toLowerCase(),
 );
 
+const isProduction = ["production", "prod"].includes(
+  String(process.env.NODE_ENV ?? "").toLowerCase(),
+);
+
+const requireAllowedOrigins =
+  isProduction ||
+  ["1", "true", "yes"].includes(
+    String(process.env.OPS_REQUIRE_ALLOWED_ORIGINS ?? "").toLowerCase(),
+  );
+
 const allowedOrigins = (process.env.OPS_ALLOWED_ORIGINS ?? "")
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
 
+if (requireAllowedOrigins && allowedOrigins.length === 0) {
+  throw new Error("OPS_ALLOWED_ORIGINS must be set when origin checks are required");
+}
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin && OPS_ALLOW_NO_ORIGIN) {
+      const normalizedOrigin = origin === "null" ? null : origin;
+      if (!normalizedOrigin && OPS_ALLOW_NO_ORIGIN) {
         callback(null, true);
         return;
       }
@@ -48,7 +64,7 @@ app.use(
         callback(null, true);
         return;
       }
-      if (origin && allowedOrigins.includes(origin)) {
+      if (normalizedOrigin && allowedOrigins.includes(normalizedOrigin)) {
         callback(null, true);
         return;
       }
@@ -67,8 +83,16 @@ await ensureDir(EVENTS_DIR);
 await ensureDir(LEAGUE_DIR);
 await ensureDir(SEASON_DIR);
 await ensureDir(ECONOMY_DIR);
+const requireAdminToken =
+  isProduction ||
+  ["1", "true", "yes"].includes(
+    String(process.env.OPS_REQUIRE_ADMIN_TOKEN ?? "").toLowerCase(),
+  );
+const adminToken = (process.env.OPS_ADMIN_TOKEN ?? "").trim();
 
-const adminToken = process.env.OPS_ADMIN_TOKEN ?? "";
+if (requireAdminToken && !adminToken) {
+  throw new Error("OPS_ADMIN_TOKEN must be set when admin auth is required");
+}
 
 const requireAdmin: express.RequestHandler = (req, res, next) => {
   if (!adminToken) {

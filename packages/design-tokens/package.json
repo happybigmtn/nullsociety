@@ -3,30 +3,43 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "main": "./index.js",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "react-native": "./dist/index.js",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
     },
     "./colors": {
       "types": "./dist/colors.d.ts",
-      "import": "./dist/colors.js"
+      "react-native": "./dist/colors.js",
+      "import": "./dist/colors.js",
+      "require": "./dist/colors.js"
     },
     "./typography": {
       "types": "./dist/typography.d.ts",
-      "import": "./dist/typography.js"
+      "react-native": "./dist/typography.js",
+      "import": "./dist/typography.js",
+      "require": "./dist/typography.js"
     },
     "./spacing": {
       "types": "./dist/spacing.d.ts",
-      "import": "./dist/spacing.js"
+      "react-native": "./dist/spacing.js",
+      "import": "./dist/spacing.js",
+      "require": "./dist/spacing.js"
     },
     "./animations": {
       "types": "./dist/animations.d.ts",
-      "import": "./dist/animations.js"
+      "react-native": "./dist/animations.js",
+      "import": "./dist/animations.js",
+      "require": "./dist/animations.js"
     },
     "./shadows": {
       "types": "./dist/shadows.d.ts",
-      "import": "./dist/shadows.js"
+      "react-native": "./dist/shadows.js",
+      "import": "./dist/shadows.js",
+      "require": "./dist/shadows.js"
     }
   },
   "scripts": {

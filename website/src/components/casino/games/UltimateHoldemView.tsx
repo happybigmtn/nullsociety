@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { GameState } from '../../../types';
 import { Hand } from '../GameComponents';
 import { MobileDrawer } from '../MobileDrawer';
+import { BetsDrawer } from '../BetsDrawer';
 import { SideBetMenu } from './SideBetMenu';
 
 interface UltimateHoldemViewProps {
@@ -379,7 +380,7 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
                     <div className="flex md:hidden flex-col gap-2">
                         <div className="flex items-center gap-2">
                             {gameState.stage === 'BETTING' && (
-                                <MobileDrawer label="BETS" title="PLACE BETS">
+                                <BetsDrawer title="PLACE BETS">
                                     <div className="space-y-4">
                                         {/* Bonus Bets */}
                                         <div className="rounded border border-gray-800 bg-black/40 p-2 space-y-2">
@@ -459,7 +460,7 @@ export const UltimateHoldemView = React.memo<UltimateHoldemViewProps & { lastWin
                                             </div>
                                         </div>
                                     </div>
-                                </MobileDrawer>
+                                </BetsDrawer>
                             )}
 
                             {/* Primary Button */}

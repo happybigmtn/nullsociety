@@ -8,6 +8,7 @@ User=nullspace
 Group=nullspace
 WorkingDirectory=/opt/nullspace/services/auth
 EnvironmentFile=/etc/nullspace/auth.env
+Environment=NODE_ENV=production
 ExecStart=/usr/bin/node dist/server.js
 Restart=on-failure
 RestartSec=5

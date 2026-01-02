@@ -13,7 +13,6 @@ import { GameHandler, type HandlerContext, type HandleResult } from './base.js';
 import { GameType } from '../codec/index.js';
 import { generateSessionId } from '../codec/transactions.js';
 import { ErrorCodes, createError } from '../types/errors.js';
-import { UltimateHoldemMove as SharedUltimateHoldemMove } from '@nullspace/constants';
 import type {
   OutboundMessage,
   UltimateTXBetRequest,
@@ -21,12 +20,7 @@ import type {
   UltimateTXLegacyBetRequest,
   UltimateTXLegacyDealRequest,
 } from '@nullspace/protocol/mobile';
-
-/**
- * Ultimate Holdem action codes matching execution/src/casino/ultimate_holdem.rs
- * Now using shared constants directly from @nullspace/constants
- */
-const UthAction = SharedUltimateHoldemMove;
+import { encodeGameActionPayload } from '@nullspace/protocol';
 
 export class UltimateHoldemHandler extends GameHandler {
   constructor() {
@@ -89,15 +83,13 @@ export class UltimateHoldemHandler extends GameHandler {
     // Step 2: Send Deal move to deal cards (atomic batch when side bets are set)
     const tripsValue = typeof trips === 'number' ? trips : 0;
     const hasSideBets = tripsValue > 0 || sixCard > 0 || progressive > 0;
-    let dealPayload = new Uint8Array([UthAction.Deal]);
-    if (hasSideBets) {
-      dealPayload = new Uint8Array(25);
-      dealPayload[0] = UthAction.AtomicDeal;
-      const view = new DataView(dealPayload.buffer);
-      view.setBigUint64(1, BigInt(tripsValue), false);
-      view.setBigUint64(9, BigInt(sixCard), false);
-      view.setBigUint64(17, BigInt(progressive), false);
-    }
+    const dealPayload = encodeGameActionPayload({
+      game: 'ultimateholdem',
+      action: 'deal',
+      trips: tripsValue,
+      sixCard,
+      progressive,
+    });
     const dealResult = await this.makeMove(ctx, dealPayload);
 
     if (!dealResult.success) {
@@ -123,15 +115,11 @@ export class UltimateHoldemHandler extends GameHandler {
     msg: UltimateTXBetRequest | UltimateTXLegacyBetRequest
   ): Promise<HandleResult> {
     const multiplier = msg.multiplier;
-    const action = multiplier === 4
-      ? UthAction.Bet4x
-      : multiplier === 3
-        ? UthAction.Bet3x
-        : multiplier === 2
-          ? UthAction.Bet2x
-          : UthAction.Bet1x;
-
-    const payload = new Uint8Array([action]);
+    const payload = encodeGameActionPayload({
+      game: 'ultimateholdem',
+      action: 'bet',
+      multiplier: multiplier === 4 || multiplier === 3 || multiplier === 2 ? multiplier : 1,
+    });
     const betResult = await this.makeMove(ctx, payload);
 
     if (!betResult.success) {
@@ -140,7 +128,7 @@ export class UltimateHoldemHandler extends GameHandler {
 
     // If in AwaitingReveal, auto-reveal
     if (betResult.response?.type === 'game_move') {
-      const revealPayload = new Uint8Array([UthAction.Reveal]);
+      const revealPayload = encodeGameActionPayload({ game: 'ultimateholdem', action: 'reveal' });
       return this.makeMove(ctx, revealPayload);
     }
 
@@ -149,13 +137,13 @@ export class UltimateHoldemHandler extends GameHandler {
 
   private async handleCheck(ctx: HandlerContext): Promise<HandleResult> {
     // Check action (0) - pass without betting
-    const payload = new Uint8Array([UthAction.Check]);
+    const payload = encodeGameActionPayload({ game: 'ultimateholdem', action: 'check' });
     return this.makeMove(ctx, payload);
   }
 
   private async handleFold(ctx: HandlerContext): Promise<HandleResult> {
     // Fold action (5) - forfeit at river
-    const payload = new Uint8Array([UthAction.Fold]);
+    const payload = encodeGameActionPayload({ game: 'ultimateholdem', action: 'fold' });
     return this.makeMove(ctx, payload);
   }
 }

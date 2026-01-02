@@ -3040,6 +3040,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "nullspace-live-table"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "axum 0.7.9",
+ "commonware-cryptography",
+ "futures-util",
+ "nullspace-execution",
+ "nullspace-types",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "nullspace-node"
 version = "0.0.1"
 dependencies = [

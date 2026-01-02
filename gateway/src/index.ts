@@ -5,6 +5,7 @@
  * Enables full-stack testing with real on-chain game execution.
  */
 import './telemetry.js';
+import { createServer } from 'node:http';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { createHandlerRegistry, type HandlerContext } from './handlers/index.js';
 import { SessionManager, NonceManager, ConnectionLimiter } from './session/index.js';
@@ -12,25 +13,92 @@ import { SubmitClient } from './backend/index.js';
 import { ErrorCodes, createError } from './types/errors.js';
 import { OutboundMessageSchema, type OutboundMessage, getOutboundMessageGameType } from '@nullspace/protocol/mobile';
 import { trackGatewayFaucet, trackGatewayResponse, trackGatewaySession } from './ops.js';
+import { crapsLiveTable } from './live-table/index.js';
+import { logDebug, logError, logInfo, logWarn } from './logger.js';
+
+const NODE_ENV = process.env.NODE_ENV ?? 'development';
+const IS_PROD = NODE_ENV === 'production';
+
+const readStringEnv = (key: string, fallback: string, requiredInProd = false): string => {
+  const raw = process.env[key]?.trim();
+  if (raw) return raw;
+  if (requiredInProd && IS_PROD) {
+    throw new Error(`Missing required env: ${key}`);
+  }
+  return fallback;
+};
+
+const parsePositiveInt = (
+  key: string,
+  fallback: number,
+  options: { allowZero?: boolean; requiredInProd?: boolean } = {},
+): number => {
+  const raw = process.env[key];
+  if (!raw) {
+    if (options.requiredInProd && IS_PROD) {
+      throw new Error(`Missing required env: ${key}`);
+    }
+    return fallback;
+  }
+  const parsed = Number(raw);
+  const valid = Number.isFinite(parsed) && (options.allowZero ? parsed >= 0 : parsed > 0);
+  if (!valid) {
+    if (IS_PROD) {
+      throw new Error(`Invalid ${key}: ${raw}`);
+    }
+    logWarn(`[Gateway] Invalid ${key}=${raw}; using ${fallback}`);
+    return fallback;
+  }
+  return Math.floor(parsed);
+};
 
 // Configuration from environment
-const PORT = parseInt(process.env.GATEWAY_PORT || '9010', 10);
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
-const MAX_CONNECTIONS_PER_IP = parseInt(process.env.MAX_CONNECTIONS_PER_IP || '5', 10);
-const MAX_TOTAL_SESSIONS = parseInt(process.env.MAX_TOTAL_SESSIONS || '1000', 10);
+const PORT = parsePositiveInt('GATEWAY_PORT', 9010, { requiredInProd: true });
+const BACKEND_URL = readStringEnv('BACKEND_URL', 'http://localhost:8080', true);
+const GATEWAY_ORIGIN = readStringEnv('GATEWAY_ORIGIN', `http://localhost:${PORT}`, true);
+const GATEWAY_DATA_DIR = readStringEnv('GATEWAY_DATA_DIR', '.gateway-data', true);
+const MAX_CONNECTIONS_PER_IP = parsePositiveInt('MAX_CONNECTIONS_PER_IP', 5, { requiredInProd: true });
+const MAX_TOTAL_SESSIONS = parsePositiveInt('MAX_TOTAL_SESSIONS', 1000, { requiredInProd: true });
 const DEFAULT_FAUCET_AMOUNT = 1000n;
 const FAUCET_COOLDOWN_MS = 60_000;
-const BALANCE_REFRESH_MS = parseInt(process.env.BALANCE_REFRESH_MS || '60000', 10);
+const BALANCE_REFRESH_MS = parsePositiveInt('BALANCE_REFRESH_MS', 60_000);
+const NONCE_PERSIST_INTERVAL_MS = parsePositiveInt(
+  'GATEWAY_NONCE_PERSIST_INTERVAL_MS',
+  15_000,
+  { allowZero: true },
+);
+const GATEWAY_ALLOW_NO_ORIGIN = ['1', 'true', 'yes'].includes(
+  String(process.env.GATEWAY_ALLOW_NO_ORIGIN ?? '').toLowerCase(),
+);
+const GATEWAY_ALLOWED_ORIGINS = (process.env.GATEWAY_ALLOWED_ORIGINS ?? '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+const validateProductionEnv = (): void => {
+  if (!IS_PROD) return;
+  parsePositiveInt('GATEWAY_SESSION_RATE_LIMIT_POINTS', 10, { requiredInProd: true });
+  parsePositiveInt('GATEWAY_SESSION_RATE_LIMIT_WINDOW_MS', 60 * 60 * 1000, { requiredInProd: true });
+  parsePositiveInt('GATEWAY_SESSION_RATE_LIMIT_BLOCK_MS', 60 * 60 * 1000, { requiredInProd: true });
+  parsePositiveInt('GATEWAY_EVENT_TIMEOUT_MS', 30_000, { allowZero: true, requiredInProd: true });
+  if (GATEWAY_ALLOWED_ORIGINS.length === 0) {
+    throw new Error('GATEWAY_ALLOWED_ORIGINS must be set in production');
+  }
+};
+
+validateProductionEnv();
 
 // Core services
-const nonceManager = new NonceManager();
-const submitClient = new SubmitClient(BACKEND_URL);
-const sessionManager = new SessionManager(submitClient, BACKEND_URL, nonceManager);
+const nonceManager = new NonceManager({ origin: GATEWAY_ORIGIN, dataDir: GATEWAY_DATA_DIR });
+const submitClient = new SubmitClient(BACKEND_URL, 10_000, GATEWAY_ORIGIN);
+const sessionManager = new SessionManager(submitClient, BACKEND_URL, nonceManager, GATEWAY_ORIGIN);
 const connectionLimiter = new ConnectionLimiter({
   maxConnectionsPerIp: MAX_CONNECTIONS_PER_IP,
   maxTotalSessions: MAX_TOTAL_SESSIONS,
 });
 const handlers = createHandlerRegistry();
+
+crapsLiveTable.configure({ submitClient, nonceManager, backendUrl: BACKEND_URL, origin: GATEWAY_ORIGIN });
 
 /**
  * Send JSON message to client
@@ -62,7 +130,7 @@ async function handleMessage(ws: WebSocket, rawData: Buffer): Promise<void> {
   }
 
   const msgType = msg.type as string | undefined;
-  console.log(`[Gateway] Received message: ${msgType}`, JSON.stringify(msg).slice(0, 200));
+  logDebug(`[Gateway] Received message: ${msgType}`, JSON.stringify(msg).slice(0, 200));
 
   if (!msgType) {
     sendError(ws, ErrorCodes.INVALID_MESSAGE, 'Missing message type');
@@ -157,16 +225,21 @@ async function handleMessage(ws: WebSocket, rawData: Buffer): Promise<void> {
     submitClient,
     nonceManager,
     backendUrl: BACKEND_URL,
+    origin: GATEWAY_ORIGIN,
   };
 
   // Execute handler
-  console.log(`[Gateway] Executing handler for ${validatedType}...`);
+  logDebug(`[Gateway] Executing handler for ${validatedType}...`);
   const result = await handler.handleMessage(ctx, validatedMsg);
-  console.log(`[Gateway] Handler result:`, result.success ? 'success' : 'failed', result.error?.message ?? '');
+  logDebug(
+    `[Gateway] Handler result:`,
+    result.success ? 'success' : 'failed',
+    result.error?.message ?? '',
+  );
 
   if (result.success) {
     if (result.response) {
-      console.log(`[Gateway] Sending response:`, JSON.stringify(result.response).slice(0, 200));
+      logDebug(`[Gateway] Sending response:`, JSON.stringify(result.response).slice(0, 200));
       send(ws, result.response);
       trackGatewayResponse(session, result.response as Record<string, unknown>);
     }
@@ -175,17 +248,48 @@ async function handleMessage(ws: WebSocket, rawData: Buffer): Promise<void> {
   }
 }
 
-// Create WebSocket server
-const wss = new WebSocketServer({ port: PORT });
+// Create HTTP server with healthz endpoint, then attach WebSocket server
+const server = createServer((req, res) => {
+  if (req.method === 'GET' && req.url?.split('?')[0] === '/healthz') {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+  res.statusCode = 404;
+  res.end();
+});
+
+const wss = new WebSocketServer({ server });
+server.listen(PORT);
 
 wss.on('connection', async (ws: WebSocket, req) => {
   const clientIp = req.socket.remoteAddress ?? 'unknown';
-  console.log(`[Gateway] Client connected from ${clientIp}`);
+  const originHeader = req.headers.origin;
+  const originValue = typeof originHeader === 'string' ? originHeader : null;
+  const origin = originValue === 'null' ? null : originValue;
+
+  if (GATEWAY_ALLOWED_ORIGINS.length > 0) {
+    if (!origin) {
+      if (!GATEWAY_ALLOW_NO_ORIGIN) {
+        logWarn('[Gateway] Connection rejected: missing origin header');
+        sendError(ws, ErrorCodes.INVALID_MESSAGE, 'Origin required');
+        ws.close(1008, 'Origin required');
+        return;
+      }
+    } else if (!GATEWAY_ALLOWED_ORIGINS.includes(origin)) {
+      logWarn(`[Gateway] Connection rejected: origin not allowed (${origin})`);
+      sendError(ws, ErrorCodes.INVALID_MESSAGE, 'Origin not allowed');
+      ws.close(1008, 'Origin not allowed');
+      return;
+    }
+  }
+  logDebug(`[Gateway] Client connected from ${clientIp}`);
 
   // Check connection limits before proceeding
   const limitCheck = connectionLimiter.canConnect(clientIp);
   if (!limitCheck.allowed) {
-    console.log(`[Gateway] Connection rejected: ${limitCheck.reason}`);
+    logWarn(`[Gateway] Connection rejected: ${limitCheck.reason}`);
     sendError(ws, limitCheck.code ?? ErrorCodes.BACKEND_UNAVAILABLE, limitCheck.reason ?? 'Connection limit exceeded');
     ws.close(1013, limitCheck.reason); // 1013 = Try Again Later
     return;
@@ -217,7 +321,7 @@ wss.on('connection', async (ws: WebSocket, req) => {
       try {
         await handleMessage(ws, data);
       } catch (err) {
-        console.error('[Gateway] Message handling error:', err);
+        logError('[Gateway] Message handling error:', err);
         sendError(
           ws,
           ErrorCodes.BACKEND_UNAVAILABLE,
@@ -228,17 +332,20 @@ wss.on('connection', async (ws: WebSocket, req) => {
 
     // Handle disconnect
     ws.on('close', () => {
-      console.log(`[Gateway] Client disconnected: ${session.id}`);
-      sessionManager.destroySession(ws);
+      logDebug(`[Gateway] Client disconnected: ${session.id}`);
+      const destroyed = sessionManager.destroySession(ws);
+      if (destroyed) {
+        crapsLiveTable.removeSession(destroyed);
+      }
       connectionLimiter.unregisterConnection(clientIp, connectionId);
     });
 
     // Handle errors
     ws.on('error', (err) => {
-      console.error(`[Gateway] WebSocket error for ${session.id}:`, err);
+      logError(`[Gateway] WebSocket error for ${session.id}:`, err);
     });
   } catch (err) {
-    console.error('[Gateway] Session creation error:', err);
+    logError('[Gateway] Session creation error:', err);
     sendError(
       ws,
       ErrorCodes.BACKEND_UNAVAILABLE,
@@ -251,31 +358,40 @@ wss.on('connection', async (ws: WebSocket, req) => {
 });
 
 wss.on('error', (err) => {
-  console.error('[Gateway] Server error:', err);
+  logError('[Gateway] Server error:', err);
 });
+
+const noncePersistTimer =
+  NONCE_PERSIST_INTERVAL_MS > 0
+    ? setInterval(() => {
+        nonceManager.persist();
+      }, NONCE_PERSIST_INTERVAL_MS)
+    : null;
+noncePersistTimer?.unref?.();
 
 // Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('[Gateway] Shutting down...');
+const shutdown = (label: string): void => {
+  logInfo(`[Gateway] ${label}...`);
   nonceManager.persist();
+  if (noncePersistTimer) {
+    clearInterval(noncePersistTimer);
+  }
   wss.close(() => {
-    console.log('[Gateway] Server closed');
-    process.exit(0);
+    server.close(() => {
+      logInfo('[Gateway] Server closed');
+      process.exit(0);
+    });
   });
-});
+};
 
-process.on('SIGTERM', () => {
-  console.log('[Gateway] Terminating...');
-  nonceManager.persist();
-  wss.close(() => {
-    process.exit(0);
-  });
-});
+process.on('SIGINT', () => shutdown('Shutting down'));
+process.on('SIGTERM', () => shutdown('Terminating'));
 
 // Restore nonces on startup
 nonceManager.restore();
 
-console.log(`[Gateway] Mobile gateway listening on ws://0.0.0.0:${PORT}`);
-console.log(`[Gateway] Backend URL: ${BACKEND_URL}`);
-console.log(`[Gateway] Connection limits: ${MAX_CONNECTIONS_PER_IP} per IP, ${MAX_TOTAL_SESSIONS} total`);
-console.log(`[Gateway] Registered handlers for ${handlers.size} game types`);
+logInfo(`[Gateway] Mobile gateway listening on ws://0.0.0.0:${PORT}`);
+logInfo(`[Gateway] Backend URL: ${BACKEND_URL}`);
+logInfo(`[Gateway] Gateway Origin: ${GATEWAY_ORIGIN}`);
+logInfo(`[Gateway] Connection limits: ${MAX_CONNECTIONS_PER_IP} per IP, ${MAX_TOTAL_SESSIONS} total`);
+logInfo(`[Gateway] Registered handlers for ${handlers.size} game types`);

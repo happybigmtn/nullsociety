@@ -1,5 +1,6 @@
 use super::super::*;
 use super::casino_error_vec;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn settle_freeroll_credits(
     player: &mut nullspace_types::casino::Player,
@@ -1864,6 +1865,867 @@ impl<'a, S: State> Layer<'a, S> {
         }])
     }
 
+    pub(in crate::layer) async fn handle_global_table_init(
+        &mut self,
+        public: &PublicKey,
+        config: &nullspace_types::casino::GlobalTableConfig,
+    ) -> anyhow::Result<Vec<Event>> {
+        if !super::is_admin_public_key(public) {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_UNAUTHORIZED,
+                "Unauthorized admin instruction",
+            ));
+        }
+        if config.min_bet == 0 {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_BET,
+                "Minimum bet must be greater than zero",
+            ));
+        }
+        if config.max_bet < config.min_bet {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_BET,
+                "Maximum bet must be >= minimum bet",
+            ));
+        }
+        if config.betting_ms == 0
+            || config.lock_ms == 0
+            || config.payout_ms == 0
+            || config.cooldown_ms == 0
+        {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Timing windows must be greater than zero",
+            ));
+        }
+
+        let game_type = config.game_type;
+        self.insert(
+            Key::GlobalTableConfig(game_type),
+            Value::GlobalTableConfig(config.clone()),
+        );
+
+        if self
+            .get(&Key::GlobalTableRound(game_type))
+            .await?
+            .is_none()
+        {
+            let round = default_global_table_round(game_type);
+            self.insert(
+                Key::GlobalTableRound(game_type),
+                Value::GlobalTableRound(round),
+            );
+        }
+
+        Ok(Vec::new())
+    }
+
+    pub(in crate::layer) async fn handle_global_table_open_round(
+        &mut self,
+        public: &PublicKey,
+        game_type: nullspace_types::casino::GameType,
+    ) -> anyhow::Result<Vec<Event>> {
+        if !super::is_admin_public_key(public) {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_UNAUTHORIZED,
+                "Unauthorized admin instruction",
+            ));
+        }
+        if game_type != nullspace_types::casino::GameType::Craps {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Global table supports craps only",
+            ));
+        }
+
+        let config = match self.get(&Key::GlobalTableConfig(game_type)).await? {
+            Some(Value::GlobalTableConfig(config)) => config,
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_INVALID_MOVE,
+                    "Global table config missing",
+                ))
+            }
+        };
+
+        let now_ms = self.seed.view.saturating_mul(3_000);
+        let mut round = match self.get(&Key::GlobalTableRound(game_type)).await? {
+            Some(Value::GlobalTableRound(round)) => round,
+            _ => default_global_table_round(game_type),
+        };
+
+        let can_open = round.round_id == 0
+            || (matches!(
+                round.phase,
+                nullspace_types::casino::GlobalTablePhase::Cooldown
+            ) && now_ms >= round.phase_ends_at_ms);
+        if !can_open {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Round already active",
+            ));
+        }
+
+        round.round_id = round.round_id.saturating_add(1);
+        round.phase = nullspace_types::casino::GlobalTablePhase::Betting;
+        round.phase_ends_at_ms = now_ms.saturating_add(config.betting_ms);
+        round.roll_seed.clear();
+
+        self.insert(
+            Key::GlobalTableRound(game_type),
+            Value::GlobalTableRound(round.clone()),
+        );
+
+        Ok(vec![Event::GlobalTableRoundOpened { round }])
+    }
+
+    pub(in crate::layer) async fn handle_global_table_submit_bets(
+        &mut self,
+        public: &PublicKey,
+        game_type: nullspace_types::casino::GameType,
+        round_id: u64,
+        bets: &[nullspace_types::casino::GlobalTableBet],
+    ) -> anyhow::Result<Vec<Event>> {
+        if game_type != nullspace_types::casino::GameType::Craps {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Global table supports craps only",
+            ));
+        }
+
+        if bets.is_empty() {
+            return Ok(vec![Event::GlobalTableBetRejected {
+                player: public.clone(),
+                round_id,
+                error_code: nullspace_types::casino::ERROR_INVALID_BET,
+                message: "No bets provided".to_string(),
+            }]);
+        }
+
+        let config = match self.get(&Key::GlobalTableConfig(game_type)).await? {
+            Some(Value::GlobalTableConfig(config)) => config,
+            _ => {
+                return Ok(vec![Event::GlobalTableBetRejected {
+                    player: public.clone(),
+                    round_id,
+                    error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
+                    message: "Global table config missing".to_string(),
+                }])
+            }
+        };
+
+        let now_ms = self.seed.view.saturating_mul(3_000);
+        let mut round = match self.get(&Key::GlobalTableRound(game_type)).await? {
+            Some(Value::GlobalTableRound(round)) => round,
+            _ => {
+                return Ok(vec![Event::GlobalTableBetRejected {
+                    player: public.clone(),
+                    round_id,
+                    error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
+                    message: "Round not initialized".to_string(),
+                }])
+            }
+        };
+
+        if round.round_id != round_id {
+            return Ok(vec![Event::GlobalTableBetRejected {
+                player: public.clone(),
+                round_id,
+                error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
+                message: "Round ID mismatch".to_string(),
+            }]);
+        }
+
+        if !matches!(
+            round.phase,
+            nullspace_types::casino::GlobalTablePhase::Betting
+        ) || now_ms >= round.phase_ends_at_ms
+        {
+            return Ok(vec![Event::GlobalTableBetRejected {
+                player: public.clone(),
+                round_id,
+                error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
+                message: "Betting window closed".to_string(),
+            }]);
+        }
+
+        let mut player = match self.casino_player_or_error(public, None).await? {
+            Ok(player) => player,
+            Err(_) => {
+                return Ok(vec![Event::GlobalTableBetRejected {
+                    player: public.clone(),
+                    round_id,
+                    error_code: nullspace_types::casino::ERROR_PLAYER_NOT_FOUND,
+                    message: "Player not found".to_string(),
+                }])
+            }
+        };
+
+        let mut player_session = match self
+            .get(&Key::GlobalTablePlayerSession(game_type, public.clone()))
+            .await?
+        {
+            Some(Value::GlobalTablePlayerSession(session)) => session,
+            _ => {
+                let session = nullspace_types::casino::GameSession {
+                    id: round.round_id,
+                    player: public.clone(),
+                    game_type,
+                    bet: 0,
+                    state_blob: vec![],
+                    move_count: 0,
+                    created_at: self.seed.view,
+                    is_complete: false,
+                    super_mode: nullspace_types::casino::SuperModeState::default(),
+                    is_tournament: false,
+                    tournament_id: None,
+                };
+                nullspace_types::casino::GlobalTablePlayerSession {
+                    game_type,
+                    session,
+                    last_settled_round: round.round_id.saturating_sub(1),
+                }
+            }
+        };
+
+        if player_session.last_settled_round.saturating_add(1) != round.round_id {
+            return Ok(vec![Event::GlobalTableBetRejected {
+                player: public.clone(),
+                round_id,
+                error_code: nullspace_types::casino::ERROR_INVALID_MOVE,
+                message: "Previous round not settled".to_string(),
+            }]);
+        }
+
+        if bets.len() > config.max_bets_per_round as usize {
+            return Ok(vec![Event::GlobalTableBetRejected {
+                player: public.clone(),
+                round_id,
+                error_code: nullspace_types::casino::ERROR_INVALID_BET,
+                message: "Too many bets submitted".to_string(),
+            }]);
+        }
+
+        ensure_craps_session_state(&mut player_session.session, &round, &self.seed);
+        player_session.session.is_complete = false;
+
+        let mut working_session = player_session.session.clone();
+        let mut delta: i64 = 0;
+        for bet in bets {
+            if bet.amount < config.min_bet || bet.amount > config.max_bet {
+                return Ok(vec![Event::GlobalTableBetRejected {
+                    player: public.clone(),
+                    round_id,
+                    error_code: nullspace_types::casino::ERROR_INVALID_BET,
+                    message: "Bet amount out of range".to_string(),
+                }]);
+            }
+            let mut payload = Vec::with_capacity(11);
+            payload.push(0);
+            payload.push(bet.bet_type);
+            payload.push(bet.target);
+            payload.extend_from_slice(&bet.amount.to_be_bytes());
+            let mut rng = crate::casino::GameRng::new(&self.seed, round.round_id, 0);
+            let result =
+                crate::casino::process_game_move(&mut working_session, &payload, &mut rng);
+            let result = match result {
+                Ok(result) => result,
+                Err(_) => {
+                    return Ok(vec![Event::GlobalTableBetRejected {
+                        player: public.clone(),
+                        round_id,
+                        error_code: nullspace_types::casino::ERROR_INVALID_BET,
+                        message: "Invalid bet".to_string(),
+                    }])
+                }
+            };
+            delta = delta.saturating_add(game_result_delta(&result));
+        }
+
+        if delta < 0 {
+            let deduction = delta
+                .checked_neg()
+                .and_then(|v| u64::try_from(v).ok())
+                .unwrap_or(0);
+            if player.balances.chips < deduction {
+                return Ok(vec![Event::GlobalTableBetRejected {
+                    player: public.clone(),
+                    round_id,
+                    error_code: nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
+                    message: "Insufficient chips".to_string(),
+                }]);
+            }
+            player.balances.chips = player.balances.chips.saturating_sub(deduction);
+            if deduction > 0 {
+                self.update_house_pnl(deduction as i128).await?;
+            }
+        } else if delta > 0 {
+            let addition = u64::try_from(delta).unwrap_or(0);
+            player.balances.chips = player.balances.chips.saturating_add(addition);
+            if addition > 0 {
+                self.update_house_pnl(-(addition as i128)).await?;
+            }
+        }
+
+        player_session.session = working_session;
+        for bet in bets {
+            add_table_total(&mut round.totals, bet.bet_type, bet.target, bet.amount);
+        }
+
+        self.insert(
+            Key::CasinoPlayer(public.clone()),
+            Value::CasinoPlayer(player.clone()),
+        );
+        self.insert(
+            Key::GlobalTablePlayerSession(game_type, public.clone()),
+            Value::GlobalTablePlayerSession(player_session.clone()),
+        );
+        self.insert(
+            Key::GlobalTableRound(game_type),
+            Value::GlobalTableRound(round),
+        );
+
+        let mut events = vec![Event::GlobalTableBetAccepted {
+            player: public.clone(),
+            round_id,
+            bets: bets.to_vec(),
+            player_balances: nullspace_types::casino::PlayerBalanceSnapshot::from_player(&player),
+        }];
+        if let Some(event) = self
+            .update_casino_leaderboard(public, &player)
+            .await?
+        {
+            events.push(event);
+        }
+        Ok(events)
+    }
+
+    pub(in crate::layer) async fn handle_global_table_lock(
+        &mut self,
+        public: &PublicKey,
+        game_type: nullspace_types::casino::GameType,
+        round_id: u64,
+    ) -> anyhow::Result<Vec<Event>> {
+        if !super::is_admin_public_key(public) {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_UNAUTHORIZED,
+                "Unauthorized admin instruction",
+            ));
+        }
+        if game_type != nullspace_types::casino::GameType::Craps {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Global table supports craps only",
+            ));
+        }
+
+        let config = match self.get(&Key::GlobalTableConfig(game_type)).await? {
+            Some(Value::GlobalTableConfig(config)) => config,
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_INVALID_MOVE,
+                    "Global table config missing",
+                ))
+            }
+        };
+        let now_ms = self.seed.view.saturating_mul(3_000);
+        let mut round = match self.get(&Key::GlobalTableRound(game_type)).await? {
+            Some(Value::GlobalTableRound(round)) => round,
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_INVALID_MOVE,
+                    "Round not initialized",
+                ))
+            }
+        };
+
+        if round.round_id != round_id {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Round ID mismatch",
+            ));
+        }
+
+        if !matches!(
+            round.phase,
+            nullspace_types::casino::GlobalTablePhase::Betting
+        ) || now_ms < round.phase_ends_at_ms
+        {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Betting still open",
+            ));
+        }
+
+        round.phase = nullspace_types::casino::GlobalTablePhase::Locked;
+        round.phase_ends_at_ms = now_ms.saturating_add(config.lock_ms);
+        self.insert(
+            Key::GlobalTableRound(game_type),
+            Value::GlobalTableRound(round.clone()),
+        );
+
+        Ok(vec![Event::GlobalTableLocked {
+            game_type,
+            round_id,
+            phase_ends_at_ms: round.phase_ends_at_ms,
+        }])
+    }
+
+    pub(in crate::layer) async fn handle_global_table_reveal(
+        &mut self,
+        public: &PublicKey,
+        game_type: nullspace_types::casino::GameType,
+        round_id: u64,
+    ) -> anyhow::Result<Vec<Event>> {
+        if !super::is_admin_public_key(public) {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_UNAUTHORIZED,
+                "Unauthorized admin instruction",
+            ));
+        }
+        if game_type != nullspace_types::casino::GameType::Craps {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Global table supports craps only",
+            ));
+        }
+
+        let config = match self.get(&Key::GlobalTableConfig(game_type)).await? {
+            Some(Value::GlobalTableConfig(config)) => config,
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_INVALID_MOVE,
+                    "Global table config missing",
+                ))
+            }
+        };
+
+        let now_ms = self.seed.view.saturating_mul(3_000);
+        let mut round = match self.get(&Key::GlobalTableRound(game_type)).await? {
+            Some(Value::GlobalTableRound(round)) => round,
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_INVALID_MOVE,
+                    "Round not initialized",
+                ))
+            }
+        };
+
+        if round.round_id != round_id {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Round ID mismatch",
+            ));
+        }
+
+        if !matches!(
+            round.phase,
+            nullspace_types::casino::GlobalTablePhase::Locked
+        ) || now_ms < round.phase_ends_at_ms
+        {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Round not locked",
+            ));
+        }
+
+        let mut rng = crate::casino::GameRng::new(&self.seed, round.round_id, 0);
+        round.roll_seed = rng.state().to_vec();
+
+        let mut table_session = nullspace_types::casino::GameSession {
+            id: round.round_id,
+            player: public.clone(),
+            game_type,
+            bet: 0,
+            state_blob: vec![],
+            move_count: 0,
+            created_at: self.seed.view,
+            is_complete: false,
+            super_mode: nullspace_types::casino::SuperModeState::default(),
+            is_tournament: false,
+            tournament_id: None,
+        };
+        let mut init_rng = crate::casino::GameRng::new(&self.seed, round.round_id, 0);
+        crate::casino::init_game(&mut table_session, &mut init_rng);
+        sync_craps_session_to_table(&mut table_session, &round);
+
+        let seed_bytes: [u8; 32] = round
+            .roll_seed
+            .as_slice()
+            .try_into()
+            .unwrap_or([0u8; 32]);
+        let mut roll_rng = crate::casino::GameRng::from_state(seed_bytes);
+        let _ = crate::casino::process_game_move(&mut table_session, &[2], &mut roll_rng)
+            .map_err(|_| anyhow::anyhow!("roll failed"))?;
+
+        if let Some(state) = read_craps_table_state(&table_session.state_blob) {
+            round.main_point = state.main_point;
+            round.d1 = state.d1;
+            round.d2 = state.d2;
+            round.made_points_mask = state.made_points_mask;
+            round.epoch_point_established = state.epoch_point_established;
+            round.field_paytable = state.field_paytable;
+        }
+
+        round.phase = nullspace_types::casino::GlobalTablePhase::Payout;
+        round.phase_ends_at_ms = now_ms.saturating_add(config.payout_ms);
+
+        self.insert(
+            Key::GlobalTableRound(game_type),
+            Value::GlobalTableRound(round.clone()),
+        );
+
+        Ok(vec![Event::GlobalTableOutcome { round }])
+    }
+
+    pub(in crate::layer) async fn handle_global_table_settle(
+        &mut self,
+        public: &PublicKey,
+        game_type: nullspace_types::casino::GameType,
+        round_id: u64,
+    ) -> anyhow::Result<Vec<Event>> {
+        if game_type != nullspace_types::casino::GameType::Craps {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Global table supports craps only",
+            ));
+        }
+
+        let mut round = match self.get(&Key::GlobalTableRound(game_type)).await? {
+            Some(Value::GlobalTableRound(round)) => round,
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_INVALID_MOVE,
+                    "Round not initialized",
+                ))
+            }
+        };
+
+        if round.round_id != round_id {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Round ID mismatch",
+            ));
+        }
+
+        if round.roll_seed.len() != 32 {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Round outcome not revealed",
+            ));
+        }
+
+        let mut player = match self.casino_player_or_error(public, None).await? {
+            Ok(player) => player,
+            Err(events) => return Ok(events),
+        };
+
+        let mut player_session = match self
+            .get(&Key::GlobalTablePlayerSession(game_type, public.clone()))
+            .await?
+        {
+            Some(Value::GlobalTablePlayerSession(session)) => session,
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_INVALID_MOVE,
+                    "Player not registered for global table",
+                ))
+            }
+        };
+
+        if player_session.last_settled_round.saturating_add(1) != round.round_id {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Round already settled or out of order",
+            ));
+        }
+
+        ensure_craps_session_state(&mut player_session.session, &round, &self.seed);
+        player_session.session.is_complete = false;
+
+        let bet_count = bet_count_from_blob(&player_session.session.state_blob);
+        let before_bets = extract_craps_bets(&player_session.session.state_blob);
+
+        let payout_delta = if bet_count == 0 {
+            sync_craps_session_to_table(&mut player_session.session, &round);
+            0
+        } else {
+            let seed_bytes: [u8; 32] = round
+                .roll_seed
+                .as_slice()
+                .try_into()
+                .unwrap_or([0u8; 32]);
+            let mut roll_rng = crate::casino::GameRng::from_state(seed_bytes);
+            let result = crate::casino::process_game_move(
+                &mut player_session.session,
+                &[2],
+                &mut roll_rng,
+            )
+            .map_err(|_| anyhow::anyhow!("settle failed"))?;
+
+            let mut delta = game_result_delta(&result);
+            match result {
+                crate::casino::GameResult::ContinueWithUpdate { .. } => {
+                    if delta > 0 {
+                        let addition = u64::try_from(delta).unwrap_or(0);
+                        player.balances.chips = player.balances.chips.saturating_add(addition);
+                        if addition > 0 {
+                            self.update_house_pnl(-(addition as i128)).await?;
+                        }
+                    } else if delta < 0 {
+                        let deduction = delta
+                            .checked_neg()
+                            .and_then(|v| u64::try_from(v).ok())
+                            .unwrap_or(0);
+                        if player.balances.chips < deduction {
+                            return Ok(casino_error_vec(
+                                public,
+                                None,
+                                nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
+                                "Insufficient chips for settlement",
+                            ));
+                        }
+                        player.balances.chips = player.balances.chips.saturating_sub(deduction);
+                        if deduction > 0 {
+                            self.update_house_pnl(deduction as i128).await?;
+                        }
+                    }
+                }
+                crate::casino::GameResult::Win(base_payout, _) => {
+                    let mut payout = base_payout as i64;
+                    let was_doubled = player.modifiers.active_double
+                        && player.modifiers.doubles > 0;
+                    if was_doubled {
+                        payout = payout.saturating_mul(2);
+                        player.modifiers.doubles = player.modifiers.doubles.saturating_sub(1);
+                    }
+                    let addition = u64::try_from(payout).unwrap_or(0);
+                    player.balances.chips = player.balances.chips.saturating_add(addition);
+                    if addition > 0 {
+                        self.update_house_pnl(-(addition as i128)).await?;
+                    }
+                    player.clear_active_modifiers();
+                    delta = payout;
+                }
+                crate::casino::GameResult::Push(refund, _) => {
+                    player.balances.chips = player.balances.chips.saturating_add(refund);
+                    if refund > 0 {
+                        self.update_house_pnl(-(refund as i128)).await?;
+                    }
+                    player.clear_active_modifiers();
+                    delta = refund as i64;
+                }
+                crate::casino::GameResult::LossPreDeducted(total_loss, _) => {
+                    let shields_pool = &mut player.modifiers.shields;
+                    if player.modifiers.active_shield && *shields_pool > 0 && total_loss > 0 {
+                        *shields_pool = shields_pool.saturating_sub(1);
+                        player.balances.chips =
+                            player.balances.chips.saturating_add(total_loss);
+                        self.update_house_pnl(-(total_loss as i128)).await?;
+                        delta = 0;
+                    } else {
+                        delta = 0;
+                    }
+                    player.clear_active_modifiers();
+                }
+                crate::casino::GameResult::LossWithExtraDeduction(extra, _) => {
+                    if extra > 0 {
+                        if player.balances.chips < extra {
+                            return Ok(casino_error_vec(
+                                public,
+                                None,
+                                nullspace_types::casino::ERROR_INSUFFICIENT_FUNDS,
+                                "Insufficient chips for settlement",
+                            ));
+                        }
+                        player.balances.chips = player.balances.chips.saturating_sub(extra);
+                        self.update_house_pnl(extra as i128).await?;
+                    }
+                    player.clear_active_modifiers();
+                    delta = -(extra as i64);
+                }
+                crate::casino::GameResult::Continue(_) | crate::casino::GameResult::Loss(_) => {
+                    delta = 0;
+                }
+            }
+
+            if player_session.session.is_complete {
+                player_session.session.is_complete = false;
+                let now = self.seed.view.saturating_mul(3);
+                record_play_session(&mut player, &player_session.session, now);
+            }
+
+            delta
+        };
+
+        player_session.last_settled_round = round.round_id;
+
+        let after_bets = extract_craps_bets(&player_session.session.state_blob);
+        apply_bet_totals_delta(&mut round.totals, &before_bets, &after_bets);
+
+        self.insert(
+            Key::CasinoPlayer(public.clone()),
+            Value::CasinoPlayer(player.clone()),
+        );
+        self.insert(
+            Key::GlobalTablePlayerSession(game_type, public.clone()),
+            Value::GlobalTablePlayerSession(player_session.clone()),
+        );
+        self.insert(
+            Key::GlobalTableRound(game_type),
+            Value::GlobalTableRound(round),
+        );
+
+        let mut events = vec![Event::GlobalTablePlayerSettled {
+            player: public.clone(),
+            round_id,
+            payout: payout_delta,
+            player_balances: nullspace_types::casino::PlayerBalanceSnapshot::from_player(&player),
+            my_bets: after_bets,
+        }];
+        if let Some(event) = self
+            .update_casino_leaderboard(public, &player)
+            .await?
+        {
+            events.push(event);
+        }
+        Ok(events)
+    }
+
+    pub(in crate::layer) async fn handle_global_table_finalize(
+        &mut self,
+        public: &PublicKey,
+        game_type: nullspace_types::casino::GameType,
+        round_id: u64,
+    ) -> anyhow::Result<Vec<Event>> {
+        if !super::is_admin_public_key(public) {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_UNAUTHORIZED,
+                "Unauthorized admin instruction",
+            ));
+        }
+        if game_type != nullspace_types::casino::GameType::Craps {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Global table supports craps only",
+            ));
+        }
+
+        let config = match self.get(&Key::GlobalTableConfig(game_type)).await? {
+            Some(Value::GlobalTableConfig(config)) => config,
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_INVALID_MOVE,
+                    "Global table config missing",
+                ))
+            }
+        };
+
+        let now_ms = self.seed.view.saturating_mul(3_000);
+        let mut round = match self.get(&Key::GlobalTableRound(game_type)).await? {
+            Some(Value::GlobalTableRound(round)) => round,
+            _ => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_INVALID_MOVE,
+                    "Round not initialized",
+                ))
+            }
+        };
+
+        if round.round_id != round_id {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Round ID mismatch",
+            ));
+        }
+
+        if !matches!(
+            round.phase,
+            nullspace_types::casino::GlobalTablePhase::Payout
+        ) || now_ms < round.phase_ends_at_ms
+        {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Round not ready for finalize",
+            ));
+        }
+
+        round.phase = nullspace_types::casino::GlobalTablePhase::Cooldown;
+        round.phase_ends_at_ms = now_ms.saturating_add(config.cooldown_ms);
+        self.insert(
+            Key::GlobalTableRound(game_type),
+            Value::GlobalTableRound(round.clone()),
+        );
+
+        Ok(vec![Event::GlobalTableFinalized { game_type, round_id }])
+    }
+
     async fn update_casino_leaderboard(
         &mut self,
         public: &PublicKey,
@@ -2040,6 +2902,231 @@ impl<'a, S: State> Layer<'a, S> {
         house.net_pnl += amount;
         self.insert(Key::House, Value::House(house));
         Ok(())
+    }
+}
+
+struct CrapsTableState {
+    main_point: u8,
+    d1: u8,
+    d2: u8,
+    made_points_mask: u8,
+    epoch_point_established: bool,
+    field_paytable: u8,
+}
+
+fn default_global_table_round(
+    game_type: nullspace_types::casino::GameType,
+) -> nullspace_types::casino::GlobalTableRound {
+    nullspace_types::casino::GlobalTableRound {
+        game_type,
+        round_id: 0,
+        phase: nullspace_types::casino::GlobalTablePhase::Cooldown,
+        phase_ends_at_ms: 0,
+        main_point: 0,
+        d1: 0,
+        d2: 0,
+        made_points_mask: 0,
+        epoch_point_established: false,
+        field_paytable: 0,
+        roll_seed: Vec::new(),
+        totals: Vec::new(),
+    }
+}
+
+fn ensure_craps_session_state(
+    session: &mut nullspace_types::casino::GameSession,
+    round: &nullspace_types::casino::GlobalTableRound,
+    seed: &nullspace_types::Seed,
+) {
+    if session.state_blob.is_empty() {
+        let mut rng = crate::casino::GameRng::new(seed, round.round_id, 0);
+        let _ = crate::casino::init_game(session, &mut rng);
+    }
+    sync_craps_session_to_table(session, round);
+}
+
+fn sync_craps_session_to_table(
+    session: &mut nullspace_types::casino::GameSession,
+    round: &nullspace_types::casino::GlobalTableRound,
+) {
+    if session.state_blob.len() < 8 {
+        return;
+    }
+    session.state_blob[1] = if round.main_point == 0 { 0 } else { 1 };
+    session.state_blob[2] = round.main_point;
+    session.state_blob[3] = round.d1;
+    session.state_blob[4] = round.d2;
+    session.state_blob[5] = round.made_points_mask;
+    session.state_blob[6] = if round.epoch_point_established { 1 } else { 0 };
+
+    let bet_count = session.state_blob[7] as usize;
+    let rules_offset = 8usize.saturating_add(bet_count.saturating_mul(19));
+    if session.state_blob.len() >= rules_offset + 1 {
+        session.state_blob[rules_offset] = round.field_paytable;
+    }
+}
+
+fn bet_count_from_blob(blob: &[u8]) -> usize {
+    if blob.len() < 8 {
+        return 0;
+    }
+    blob[7] as usize
+}
+
+fn read_craps_table_state(blob: &[u8]) -> Option<CrapsTableState> {
+    if blob.len() < 8 || blob[0] != 2 {
+        return None;
+    }
+    let bet_count = blob[7] as usize;
+    let rules_offset = 8usize.saturating_add(bet_count.saturating_mul(19));
+    let field_paytable = if blob.len() >= rules_offset + 1 {
+        blob[rules_offset]
+    } else {
+        0
+    };
+    Some(CrapsTableState {
+        main_point: blob[2],
+        d1: blob[3],
+        d2: blob[4],
+        made_points_mask: blob[5],
+        epoch_point_established: blob[6] != 0,
+        field_paytable,
+    })
+}
+
+fn extract_craps_bets(
+    blob: &[u8],
+) -> Vec<nullspace_types::casino::GlobalTableBet> {
+    if blob.len() < 8 || blob[0] != 2 {
+        return Vec::new();
+    }
+    let bet_count = blob[7] as usize;
+    let mut bets = Vec::with_capacity(bet_count);
+    let mut offset = 8usize;
+    for _ in 0..bet_count {
+        if offset + 19 > blob.len() {
+            break;
+        }
+        let bet_type = blob[offset];
+        let target = blob[offset + 1];
+        let amount = u64::from_be_bytes([
+            blob[offset + 3],
+            blob[offset + 4],
+            blob[offset + 5],
+            blob[offset + 6],
+            blob[offset + 7],
+            blob[offset + 8],
+            blob[offset + 9],
+            blob[offset + 10],
+        ]);
+        if amount > 0 {
+            bets.push(nullspace_types::casino::GlobalTableBet {
+                bet_type,
+                target,
+                amount,
+            });
+        }
+        offset = offset.saturating_add(19);
+    }
+    bets
+}
+
+fn add_table_total(
+    totals: &mut Vec<nullspace_types::casino::GlobalTableTotal>,
+    bet_type: u8,
+    target: u8,
+    amount: u64,
+) {
+    if amount == 0 {
+        return;
+    }
+    if let Some(existing) = totals
+        .iter_mut()
+        .find(|entry| entry.bet_type == bet_type && entry.target == target)
+    {
+        existing.amount = existing.amount.saturating_add(amount);
+        return;
+    }
+    if totals.len() >= 64 {
+        return;
+    }
+    totals.push(nullspace_types::casino::GlobalTableTotal {
+        bet_type,
+        target,
+        amount,
+    });
+}
+
+fn subtract_table_total(
+    totals: &mut Vec<nullspace_types::casino::GlobalTableTotal>,
+    bet_type: u8,
+    target: u8,
+    amount: u64,
+) {
+    if amount == 0 {
+        return;
+    }
+    if let Some(idx) = totals
+        .iter()
+        .position(|entry| entry.bet_type == bet_type && entry.target == target)
+    {
+        let entry = &mut totals[idx];
+        entry.amount = entry.amount.saturating_sub(amount);
+        if entry.amount == 0 {
+            totals.remove(idx);
+        }
+    }
+}
+
+fn apply_bet_totals_delta(
+    totals: &mut Vec<nullspace_types::casino::GlobalTableTotal>,
+    before: &[nullspace_types::casino::GlobalTableBet],
+    after: &[nullspace_types::casino::GlobalTableBet],
+) {
+    let mut before_map: BTreeMap<(u8, u8), u64> = BTreeMap::new();
+    let mut after_map: BTreeMap<(u8, u8), u64> = BTreeMap::new();
+    for bet in before {
+        let entry = before_map.entry((bet.bet_type, bet.target)).or_insert(0);
+        *entry = entry.saturating_add(bet.amount);
+    }
+    for bet in after {
+        let entry = after_map.entry((bet.bet_type, bet.target)).or_insert(0);
+        *entry = entry.saturating_add(bet.amount);
+    }
+
+    let mut keys = BTreeSet::new();
+    keys.extend(before_map.keys().copied());
+    keys.extend(after_map.keys().copied());
+    for key in keys {
+        let before_amt = before_map.get(&key).copied().unwrap_or(0);
+        let after_amt = after_map.get(&key).copied().unwrap_or(0);
+        if after_amt > before_amt {
+            add_table_total(
+                totals,
+                key.0,
+                key.1,
+                after_amt.saturating_sub(before_amt),
+            );
+        } else if before_amt > after_amt {
+            subtract_table_total(
+                totals,
+                key.0,
+                key.1,
+                before_amt.saturating_sub(after_amt),
+            );
+        }
+    }
+}
+
+fn game_result_delta(result: &crate::casino::GameResult) -> i64 {
+    match result {
+        crate::casino::GameResult::Continue(_) => 0,
+        crate::casino::GameResult::ContinueWithUpdate { payout, .. } => *payout,
+        crate::casino::GameResult::Win(amount, _) => *amount as i64,
+        crate::casino::GameResult::Push(amount, _) => *amount as i64,
+        crate::casino::GameResult::LossWithExtraDeduction(extra, _) => -(*extra as i64),
+        crate::casino::GameResult::Loss(_) => 0,
+        crate::casino::GameResult::LossPreDeducted(_, _) => 0,
     }
 }
 

@@ -2,12 +2,21 @@
  * Nonce management with recovery mechanism
  * Per-player nonce tracking to prevent replay attacks
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'fs';
 import { join, resolve } from 'path';
 
 type NonceManagerOptions = {
   dataDir?: string;
   legacyPath?: string;
+  origin?: string;
 };
 
 const DEFAULT_DATA_DIR = '.gateway-data';
@@ -21,11 +30,13 @@ export class NonceManager {
   private persistPath: string;
   private dataDir: string;
   private legacyPath: string;
+  private origin: string;
 
   constructor(options: NonceManagerOptions = {}) {
     this.dataDir = resolve(options.dataDir ?? process.env.GATEWAY_DATA_DIR ?? DEFAULT_DATA_DIR);
     this.persistPath = join(this.dataDir, DEFAULT_NONCE_FILE);
     this.legacyPath = resolve(options.legacyPath ?? LEGACY_NONCE_FILE);
+    this.origin = options.origin ?? 'http://localhost:9010';
     this.ensureDataDir();
     this.migrateLegacyFile();
   }
@@ -147,7 +158,11 @@ export class NonceManager {
    */
   async syncFromBackend(publicKeyHex: string, backendUrl: string): Promise<boolean> {
     try {
-      const response = await fetch(`${backendUrl}/account/${publicKeyHex}`);
+      const response = await fetch(`${backendUrl}/account/${publicKeyHex}`, {
+        headers: {
+          Origin: this.origin,
+        },
+      });
       if (response.ok) {
         const account = await response.json();
         const onChainNonce = BigInt(account.nonce);
@@ -206,7 +221,10 @@ export class NonceManager {
       for (const [k, v] of this.nonces.entries()) {
         data[k] = v.toString();
       }
-      writeFileSync(this.persistPath, JSON.stringify(data, null, 2), { mode: 0o600 });
+      const tmpPath = `${this.persistPath}.tmp`;
+      writeFileSync(tmpPath, JSON.stringify(data, null, 2), { mode: 0o600 });
+      chmodSync(tmpPath, 0o600);
+      renameSync(tmpPath, this.persistPath);
       chmodSync(this.persistPath, 0o600);
     } catch (err) {
       console.error('Failed to persist nonces:', err);
