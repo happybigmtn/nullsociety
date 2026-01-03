@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { WebSocket } from 'ws';
 import fetch from 'node-fetch';
 import fs from 'fs/promises';
-import { WasmWrapper } from '../src/api/wasm.js';
+import { WasmWrapper } from '../../src/api/wasm.js';
 
 // Setup globals for browser-like APIs used by the client code.
 global.fetch = fetch;
@@ -45,9 +45,9 @@ let wasmWrapper;
 let simulatorProcess;
 
 async function loadWasmForNode() {
-  const wasmPath = path.join(__dirname, '../wasm/pkg/nullspace_wasm_bg.wasm');
+  const wasmPath = path.join(__dirname, '../../wasm/pkg/nullspace_wasm_bg.wasm');
   const wasmBuffer = await fs.readFile(wasmPath);
-  const wasmJs = await import('../wasm/pkg/nullspace_wasm.js');
+  const wasmJs = await import('../../wasm/pkg/nullspace_wasm.js');
   await wasmJs.default(wasmBuffer);
   return wasmJs;
 }
@@ -71,7 +71,7 @@ async function startSimulator() {
   const identityBytes = wasmWrapper.getIdentity(0n);
   const identityHex = wasmWrapper.bytesToHex(identityBytes);
 
-  const simulatorPath = path.join(__dirname, '../../target/release/nullspace-simulator');
+  const simulatorPath = path.join(__dirname, '../../../target/release/nullspace-simulator');
   const simulatorArgs = ['-p', SIMULATOR_PORT.toString(), '-i', identityHex];
 
   simulatorProcess = spawn(simulatorPath, simulatorArgs, {

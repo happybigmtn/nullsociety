@@ -4,11 +4,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: [
-      'src/components/casino/3d/physics/**/*.test.ts',
-      'src/components/casino/3d/cards/**/*.test.ts',
-      'src/security/**/*.test.ts',
-      'src/services/games/**/*.test.ts',
-      'src/utils/**/*.test.ts',
+      'src/components/casino/3d/physics/**/*.test.{ts,tsx,js,jsx}',
+      'src/components/casino/3d/cards/**/*.test.{ts,tsx,js,jsx}',
+      'src/security/**/*.test.{ts,tsx,js,jsx}',
+      'src/services/games/**/*.test.{ts,tsx,js,jsx}',
+      'src/utils/**/*.test.{ts,tsx,js,jsx}',
     ],
   },
 });

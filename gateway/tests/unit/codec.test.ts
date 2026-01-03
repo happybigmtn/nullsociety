@@ -11,14 +11,14 @@ import {
   PlayerAction,
   InstructionTag,
   SubmissionTag,
-} from '../src/codec/index.js';
+} from '../../src/codec/index.js';
 import {
   buildTransaction,
   wrapSubmission,
   generateSessionId,
   verifyTransaction,
   ed25519,
-} from '../src/codec/transactions.js';
+} from '../../src/codec/transactions.js';
 
 describe('Instruction Encoders', () => {
   describe('encodeCasinoRegister', () => {

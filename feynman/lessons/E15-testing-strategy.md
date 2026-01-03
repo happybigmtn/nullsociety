@@ -1,6 +1,6 @@
 # E15 - Testing strategy + harnesses (from scratch)
 
-Focus files: `gateway/tests/all-bet-types.test.ts`, `node/src/tests.rs`
+Focus files: `gateway/tests/integration/all-bet-types.test.ts`, `node/src/tests.rs`
 
 Goal: explain how integration and simulation tests validate the gateway and node logic. For every excerpt, you will see **why it matters** and a **plain description of what the code does**.
 

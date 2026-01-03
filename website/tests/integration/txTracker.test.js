@@ -7,7 +7,7 @@ import {
   trackTxConfirmed,
   trackTxFailed,
   trackTxSubmitted,
-} from '../src/services/txTracker.js';
+} from '../../src/services/txTracker.js';
 
 // Mock localStorage for Node.js environment
 global.localStorage = {

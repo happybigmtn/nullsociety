@@ -109,7 +109,7 @@ This roadmap covers deployment, data, scalability, UI/UX usability, security, an
 ### 8) Testing, QA, and Release Management
 - CI/CD pipeline for Rust + web build/test + wasm compilation.
 - End-to-end tests for game flows across all games and devices.
-- Integration bet coverage via `gateway/tests/all-bet-types.test.ts` in staging.
+- Integration bet coverage via `gateway/tests/integration/all-bet-types.test.ts` in staging.
 - Security testing: SAST, dependency scanning, and web vulnerability scans.
 - Staging environment with production-like traffic.
 - Release process with versioning, rollback, and canary deploys.

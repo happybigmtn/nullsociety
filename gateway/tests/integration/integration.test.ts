@@ -202,14 +202,14 @@ describe.skipIf(!INTEGRATION_ENABLED)('Gateway Integration Tests', () => {
 
 describe('Gateway Unit Tests (No Backend)', () => {
   it('should export all game handlers', async () => {
-    const { createHandlerRegistry } = await import('../src/handlers/index.js');
+    const { createHandlerRegistry } = await import('../../src/handlers/index.js');
     const registry = createHandlerRegistry();
 
     // Verify all 10 games are registered
     expect(registry.size).toBe(10);
 
     // Check specific game types
-    const { GameType } = await import('../src/codec/constants.js');
+    const { GameType } = await import('../../src/codec/constants.js');
     expect(registry.has(GameType.Blackjack)).toBe(true);
     expect(registry.has(GameType.HiLo)).toBe(true);
     expect(registry.has(GameType.Roulette)).toBe(true);
@@ -223,7 +223,7 @@ describe('Gateway Unit Tests (No Backend)', () => {
   });
 
   it('should export error codes', async () => {
-    const { ErrorCodes, createError } = await import('../src/types/errors.js');
+    const { ErrorCodes, createError } = await import('../../src/types/errors.js');
 
     expect(ErrorCodes.INVALID_MESSAGE).toBe('INVALID_MESSAGE');
     expect(ErrorCodes.INVALID_BET).toBe('INVALID_BET');
@@ -235,7 +235,7 @@ describe('Gateway Unit Tests (No Backend)', () => {
   });
 
   it('should export session types', async () => {
-    const { NonceManager } = await import('../src/session/nonce.js');
+    const { NonceManager } = await import('../../src/session/nonce.js');
 
     const nonce = new NonceManager();
     const pubKeyHex = '0'.repeat(64);

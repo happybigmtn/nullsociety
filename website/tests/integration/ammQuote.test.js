@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert';
-import { estimateSwapOut, minOutWithSlippage } from '../src/utils/ammQuote.js';
-import { parseAmount } from '../src/utils/amounts.js';
+import { estimateSwapOut, minOutWithSlippage } from '../../src/utils/ammQuote.js';
+import { parseAmount } from '../../src/utils/amounts.js';
 
 describe('ammQuote', () => {
   test('estimateSwapOut returns zeros for missing AMM', () => {

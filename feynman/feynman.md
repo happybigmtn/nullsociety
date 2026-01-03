@@ -22,6 +22,7 @@ Day 1 (Gateway entry and session lifecycle)
 Day 2 (Submission path and mempool)
 - L07-L12
 - Concept Lab B: Distributed systems primer (mempool, blocks, execution)
+ - Concept Lab H: Blockchain + appchain primer (Commonware fit)
 
 Day 3 (Registration + Faucet flow)
 - L13-L18
@@ -48,6 +49,7 @@ Optional extensions (woven into the flow where they fit best)
 - Node/consensus/storage (E03-E05)
 - Protocol + clients + execution internals (E06-E10)
 - Ops/deployment/testing (E11-E16)
+- Commonware primitives deep dive (E17-E25)
 
 ---
 
@@ -56,6 +58,17 @@ Optional extensions (woven into the flow where they fit best)
 ### Foundations (recommended before Day 1)
 - E01 Architecture overview: `feynman/lessons/E01-architecture-overview.md`
 - E02 Component roles + deployment topology: `feynman/lessons/E02-component-roles-topology.md`
+
+### Commonware primitives (recommended after E03-E06)
+- E17 Commonware runtime + scheduling: `feynman/lessons/E17-commonware-runtime.md`
+- E18 Commonware P2P + resolver + broadcast: `feynman/lessons/E18-commonware-p2p-resolver.md`
+- E19 Commonware consensus + marshal: `feynman/lessons/E19-commonware-consensus-marshal.md`
+- E20 Commonware storage (QMDB + MMR + archives): `feynman/lessons/E20-commonware-storage.md`
+- E21 Commonware cryptography + certificates: `feynman/lessons/E21-commonware-cryptography.md`
+- E22 Commonware codec + utils + math: `feynman/lessons/E22-commonware-codec-utils-math.md`
+- E23 Commonware broadcast + stream: `feynman/lessons/E23-commonware-broadcast-stream.md`
+- E24 Commonware deployer + host discovery: `feynman/lessons/E24-commonware-deployer.md`
+- E25 Commonware macros (select + test_traced): `feynman/lessons/E25-commonware-macros.md`
 
 ### Common Path (Mobile -> Chain -> Event)
 - L01 Gateway WS entrypoint and message routing: `feynman/lessons/L01-gateway-index.md`
@@ -133,6 +146,7 @@ Optional extensions (woven into the flow where they fit best)
 - S05 Auth flows + threat model: `feynman/lessons/S05-auth-primer.md`
 - S06 Payments + webhook idempotency: `feynman/lessons/S06-payments-primer.md`
 - S07 Observability + production readiness: `feynman/lessons/S07-ops-primer.md`
+- S08 Blockchain + appchain primer (Commonware fit): `feynman/lessons/S08-blockchain-primer-commonware.md`
 
 ### Ops + Deployment (recommended after Day 7)
 - E11 Telemetry, logs, and ops events: `feynman/lessons/E11-telemetry-ops.md`

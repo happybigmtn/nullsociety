@@ -7,8 +7,8 @@ import {
   buildTransaction,
   wrapSubmission,
   encodeVarint,
-} from '../src/codec/index.js';
-import { TRANSACTION_NAMESPACE } from '../src/codec/constants.js';
+} from '../../src/codec/index.js';
+import { TRANSACTION_NAMESPACE } from '../../src/codec/constants.js';
 
 function toHex(bytes: Uint8Array): string {
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ');

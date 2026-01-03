@@ -1,5 +1,6 @@
 # Peer address mappings (testnet template)
 # Format: "<public_key_hex>": "<ip:port>"
+# Keys must be sorted and unique (required by commonware p2p peer set handling).
 addresses:
   "<NODE0_PUBLIC_KEY_HEX>": "10.0.0.10:9000"
   "<NODE1_PUBLIC_KEY_HEX>": "10.0.0.11:9000"

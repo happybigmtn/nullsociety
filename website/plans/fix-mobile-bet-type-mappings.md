@@ -461,7 +461,7 @@ const sicBoBetToNumeric = (bet: SicBoBet) => {
 #### Tasks
 
 - [ ] **5.1** Create comprehensive bet type test suite
-  - Location: `/gateway/tests/bet-parity.test.ts`
+  - Location: `/gateway/tests/integration/bet-parity.test.ts`
 
 ```typescript
 // bet-parity.test.ts
@@ -515,7 +515,7 @@ describe('Bet Type Parity Tests', () => {
 - [ ] **5.2** Create local validator integration tests
   - Test each bet type succeeds on-chain
   - Verify correct bet type recorded in state
-  - File: `/gateway/tests/integration.test.ts`
+  - File: `/gateway/tests/integration/integration.test.ts`
 
 - [ ] **5.3** Test Craps target value bets
   - YES with targets: 4, 5, 6, 8, 9, 10
@@ -543,8 +543,8 @@ RUN_INTEGRATION=true npm test -- tests/integration.test.ts
 #### Relevant Files
 
 ```
-/gateway/tests/bet-parity.test.ts            # NEW - bet parity tests
-/gateway/tests/integration.test.ts:1-100     # Existing integration tests
+/gateway/tests/integration/bet-parity.test.ts            # NEW - bet parity tests
+/gateway/tests/integration/integration.test.ts:1-100     # Existing integration tests
 ./start-local-network.sh                     # Validator startup script
 ```
 

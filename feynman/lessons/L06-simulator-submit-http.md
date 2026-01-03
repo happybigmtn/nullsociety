@@ -343,12 +343,12 @@ fn log_summary_decode_stages(bytes: &[u8]) {
     };
 
     if let Err(e) = AggregationCertificate::read(&mut reader) {
-        tracing::warn!(view = progress.view, height = progress.height, "Summary decode failed at certificate: {:?}", e);
+        tracing::warn!(view = progress.view.get(), height = progress.height, "Summary decode failed at certificate: {:?}", e);
         return;
     }
 
     if let Err(e) = Proof::<Digest>::read_cfg(&mut reader, &nullspace_types::api::MAX_STATE_PROOF_NODES) {
-        tracing::warn!(view = progress.view, height = progress.height, "Summary decode failed at state_proof: {:?}", e);
+        tracing::warn!(view = progress.view.get(), height = progress.height, "Summary decode failed at state_proof: {:?}", e);
         return;
     }
     // ... decode state ops, events proof, events ops ...

@@ -176,7 +176,7 @@ Submission::Summary(summary) => {
         Err(err) => {
             tracing::warn!(
                 ?err,
-                view = summary.progress.view,
+                view = summary.progress.view.get(),
                 height = summary.progress.height,
                 state_ops = summary.state_proof_ops.len(),
                 events_ops = summary.events_proof_ops.len(),

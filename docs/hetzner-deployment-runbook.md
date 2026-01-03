@@ -94,6 +94,7 @@ NODES=4 OUTPUT=configs/testnet INDEXER=http://<INDEXER_HOST>:8080 \
 ```
 
 Distribute `nodeN.yaml` + `peers.yaml` to each validator host.
+Ensure `peers.yaml` entries are sorted and unique; the node will refuse to start otherwise.
 Set `NODE_CONFIG` and `NODE_PEERS` (or `NODE_HOSTS`) in `/etc/nullspace/node.env`.
 
 ## 6) Load balancers

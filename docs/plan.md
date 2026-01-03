@@ -75,7 +75,7 @@ Business strategy summary and CEO view: `BUSINESS_PLAN.md`.
 - Business/compliance gates: formation path, KYC/AML + responsible gaming scope, and geo-fencing plan if required.
 - Phase 2 gating: CCA testnet rehearsal + auction parameter validation and contract security plan/audit.
 - Product polish: onboarding status copy + accessibility/readability pass updated; remaining UX polish is ongoing.
-- Gateway: shared protocol validation updated for roulette/sic bo numeric bet types and `hilo_deal` amount; session rate limiting and event timeouts are configurable; integration bet-type coverage runs in `gateway/tests/all-bet-types.test.ts`.
+- Gateway: shared protocol validation updated for roulette/sic bo numeric bet types and `hilo_deal` amount; session rate limiting and event timeouts are configurable; integration bet-type coverage runs in `gateway/tests/integration/all-bet-types.test.ts`.
 - Gateway integration testing surfaced the default session creation rate limit (10/hr) and submit endpoint rate limits as bottlenecks; testnet must set explicit rate-limit profiles to avoid onboarding stalls and internal 429s.
 - AI strategy defaults to disabled in staging/testnet to avoid external API dependencies; enable only when Gemini keys + billing are provisioned.
 - Local staging load test completed (200 bots, 120s, 0 failures); production-scale run still pending.

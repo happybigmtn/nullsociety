@@ -18,7 +18,15 @@
     "test": {
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"],
-      "inputs": ["src/**", "test/**"]
+      "inputs": [
+        "src/**",
+        "test/**",
+        "tests/**",
+        "**/__tests__/**",
+        "vitest.config.*",
+        "jest.config.*",
+        "package.json"
+      ]
     },
     "lint": {
       "inputs": ["src/**", "*.config.js", "*.config.ts"]

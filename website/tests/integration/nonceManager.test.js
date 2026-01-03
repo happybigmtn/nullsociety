@@ -1,7 +1,7 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
-import { NonceManager } from '../src/api/nonceManager.js';
-import { WasmWrapper } from '../src/api/wasm.js';
+import { NonceManager } from '../../src/api/nonceManager.js';
+import { WasmWrapper } from '../../src/api/wasm.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -62,11 +62,11 @@ let wasmWrapper;
 
 async function loadWasmModule() {
   // Read WASM file directly
-  const wasmPath = path.join(__dirname, '../wasm/pkg/nullspace_wasm_bg.wasm');
+  const wasmPath = path.join(__dirname, '../../wasm/pkg/nullspace_wasm_bg.wasm');
   const wasmBuffer = await fs.readFile(wasmPath);
 
   // Import the JS bindings
-  const wasmJs = await import('../wasm/pkg/nullspace_wasm.js');
+  const wasmJs = await import('../../wasm/pkg/nullspace_wasm.js');
 
   // Initialize with the WASM buffer
   await wasmJs.default(wasmBuffer);

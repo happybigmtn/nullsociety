@@ -131,6 +131,8 @@ NODE_ENV=production METRICS_AUTH_TOKEN=replace-me \
 ./target/release/nullspace-node --config configs/testnet/nodeN.yaml --peers configs/testnet/peers.yaml
 ```
 
+Note: `peers.yaml` entries must be sorted and unique; the node will refuse to start if they are not.
+
 Or with hosts:
 
 ```bash
