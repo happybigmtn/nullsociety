@@ -1,54 +1,187 @@
-# E09 - Mobile app architecture (from scratch, deep dive)
+# E09 - Mobile app architecture (React Native fundamentals + gateway sync)
 
 Focus files:
 - `mobile/App.tsx`
+- `mobile/src/context/WebSocketContext.tsx`
+- `mobile/src/services/websocket.ts`
 - `mobile/src/hooks/useGatewaySession.ts`
 
 Supporting context:
-- `mobile/src/context/WebSocketContext.tsx`
-- `mobile/src/services/websocket.ts`
 - `mobile/src/hooks/useAppState.ts`
+- `mobile/src/hooks/useGameConnection.ts`
 - `mobile/src/stores/gameStore.ts`
-- `mobile/src/utils/numbers.ts`
+- `packages/protocol/src/schema/mobile.ts`
 
-Goal: explain how the mobile app boots, connects to the gateway, and updates UI state from WebSocket messages. This is a full walkthrough of the lifecycle, the data flow, and the concrete code paths that make the app feel "live" while staying safe and deterministic.
-
----
-
-## Learning objectives
-
-After this lesson you should be able to:
-
-1) Trace the app boot sequence from `App.tsx` to the first balance fetch.
-2) Explain how the WebSocket connection is created, validated, and reconnected.
-3) Describe how `useGatewaySession` interprets messages and updates the store.
-4) Explain how app lifecycle events (background/foreground) affect state persistence.
-5) Identify the key failure modes and why the current design is robust against them.
+Goal: start with React Native fundamentals, then walk through how the mobile client connects to the gateway, stays in sync with the web app, and updates UI state from authoritative messages.
 
 ---
 
-## 1) The big picture: a live client for a deterministic chain
+## 0) Big idea (Feynman summary)
 
-The mobile app is a live client for a deterministic blockchain system. That means it has to juggle two competing constraints:
+The mobile app is a React Native client that renders UI locally but treats the gateway as the source of truth. It stays in sync by:
 
-- It must feel real-time (low latency, live updates, live table events).
-- It must stay consistent with the chain (authoritative state comes from the gateway and validators).
+- sharing the same protocol schema as the web app,
+- maintaining one WebSocket connection,
+- updating a single state store from incoming messages,
+- reconnecting and rehydrating on mobile lifecycle changes.
 
-The architecture is therefore centered around **a single shared WebSocket connection**, a **centralized store**, and **reactive hooks** that update UI state as messages arrive.
+If you understand those four ideas, the rest of the code is just wiring.
 
 ---
 
-## 2) Entry point: `mobile/App.tsx`
+## 1) React Native fundamentals (for readers with zero RN background)
 
-`App.tsx` is the root of the Expo app. It is intentionally small, because its job is to compose app-wide providers and lifecycle hooks.
+This section is longer on purpose. You should be able to understand how React Native works, then map that directly to how our app stays in sync with the gateway.
 
-Key lines (simplified):
+### 1.1 What React Native actually is
+
+React Native lets you write UI in JavaScript/TypeScript using React, but the UI that appears on screen is **native** (iOS/Android) views, not HTML.
+
+Think of it as:
+
+- **React (JS)** describes the UI tree.
+- **React Native renderer** turns that tree into **native views**.
+
+So you write `<View>` and `<Text>` in JS, and React Native renders native equivalents.
+
+### 1.2 The runtime model: JS thread + UI thread
+
+React Native has at least two main threads:
+
+- **JS thread**: runs your app logic (hooks, state updates, message parsing).
+- **UI thread**: renders native views and animations.
+
+The JS thread updates state, React calculates what changed, and the renderer sends updates to the UI thread. That means:
+
+- expensive JS work can block UI if done at the wrong time,
+- animations often run on the UI thread (Reanimated) to stay smooth.
+
+In our app this is why:
+
+- `react-native-reanimated` is used for animations,
+- `InteractionManager.runAfterInteractions` delays state updates until after UI work.
+
+### 1.3 React components, props, and state
+
+React Native is still React. The core ideas are:
+
+- **Components** are functions that return UI.
+- **Props** flow down into components.
+- **State** is local data that triggers re-render when it changes.
+
+The same rules apply:
+
+- State updates are async and batched.
+- UI is derived from state, not mutated directly.
+
+### 1.4 Hooks are the behavioral layer
+
+Hooks add behavior to components:
+
+- `useState` stores component state.
+- `useEffect` runs side effects (network, subscriptions).
+- `useMemo` caches derived values.
+- `useCallback` stabilizes function references.
+
+We build custom hooks (like `useGatewaySession`, `useGameConnection`) to bundle complex behavior into reusable units.
+
+### 1.5 Layout and styling (no CSS cascade)
+
+React Native styling is not CSS. It is JS objects.
+
+Key differences:
+
+- **Flexbox is default** for layout.
+- No cascade: styles are explicit and local.
+- Units are device-independent pixels (numbers, not strings).
+
+Example mental model:
 
 ```tsx
-import './src/utils/cryptoPolyfill';
-import { initializeErrorReporter } from './src/services/errorReporter';
+<View style={{ flex: 1, padding: 16 }}>
+  <Text style={{ fontSize: 18 }}>Hello</Text>
+</View>
+```
 
-initializeErrorReporter();
+The styles are simple objects, and arrays merge styles in order.
+
+### 1.6 Navigation is also React
+
+React Navigation treats screens as components. Navigation state is React state:
+
+- `RootNavigator` decides which screen tree to render.
+- Screen changes are just component tree changes.
+
+This matters because all screens still share the same providers and store.
+
+### 1.7 Networking and async in RN
+
+React Native uses the same `fetch` and `WebSocket` APIs you know from the web, but:
+
+- networking is tied to mobile lifecycle (background can suspend sockets),
+- reconnect logic must be explicit.
+
+So the "mobile-specific" part is mostly about lifecycle, not syntax.
+
+### 1.8 App lifecycle: foreground/background
+
+Phones suspend apps. When an app goes to background:
+
+- JS may pause,
+- sockets may disconnect,
+- UI state may be dropped.
+
+That is why we use `useAppState` and `useWebSocketReconnectOnForeground`. React Native apps must explicitly rehydrate and reconnect when coming back.
+
+### 1.9 How our app maps onto these fundamentals
+
+Now connect the fundamentals to our code:
+
+- **Component tree**: `App.tsx` is the root. Everything starts there.
+- **Providers**: auth, WebSocket, session hooks are global.
+- **State**: `useGameStore` holds shared state (balance, session, UI prefs).
+- **Hooks**: `useGatewaySession` listens to gateway messages and updates the store.
+- **Screens**: subscribe to store + parse game state bytes for UI.
+
+The architecture is a standard React Native app, but with a strict rule:
+
+> All authoritative state comes from the gateway, never from local prediction.
+
+That rule is what keeps mobile and web in sync.
+
+### 1.10 Sync with gateway in RN terms
+
+If you think in React Native primitives, sync looks like this:
+
+1) **WebSocket** receives a message (async event).
+2) `useGatewaySession` **handles the event** (hook logic).
+3) The store **updates state** (Zustand).
+4) The component tree **re-renders** (React).
+
+This is the same one-way data flow React teaches, but driven by the gateway instead of local user actions. The gateway is just another event source.
+
+---
+
+## 2) Entry point and provider stack
+
+### 2.1 App boot sequence (`mobile/App.tsx`)
+
+At startup, the app does three things in order:
+
+1) Loads crypto polyfills.
+2) Initializes error reporting.
+3) Mounts the provider stack.
+
+Key idea: boot should be deterministic and fast. All global services are created at the top level.
+
+Concrete excerpt:
+
+```tsx
+function GatewaySessionBridge({ children }: { children: React.ReactNode }) {
+  useGatewaySession();
+  useWebSocketReconnectOnForeground();
+  return children;
+}
 
 function App() {
   useAppState();
@@ -65,252 +198,209 @@ function App() {
     </GestureHandlerRootView>
   );
 }
-
-registerRootComponent(App);
 ```
 
-### 2.1 Crypto polyfill
+Walkthrough:
 
-The first import is `cryptoPolyfill`. This ensures that cryptographic primitives expected by libraries are available in React Native. Without it, some crypto operations would fail at runtime. This is a classic React Native issue: not all Node or browser globals are available by default.
+1) `useAppState()` wires AppState persistence (background/foreground) before any screens render.
+2) `WebSocketProvider` creates a single socket for the whole tree.
+3) `GatewaySessionBridge` runs `useGatewaySession()` exactly once for the tree and wires reconnect-on-foreground.
+4) `RootNavigator` renders screens; those screens can access the shared socket/store through hooks.
 
-### 2.2 Error reporting
+### 2.2 Provider stack (why it exists)
 
-`initializeErrorReporter()` runs before the component is rendered. This is deliberate: error reporting should be active as early as possible so crashes during boot are captured.
+The provider stack composes shared dependencies:
 
-### 2.3 The provider stack
+- `AuthProvider` for authentication state.
+- `WebSocketProvider` for the gateway connection.
+- `GatewaySessionBridge` to run session and reconnect hooks.
+- `RootNavigator` for screen routing.
 
-The provider stack defines the app's shared services:
-
-- `AuthProvider` handles authentication state.
-- `WebSocketProvider` creates a single shared connection to the gateway.
-- `GatewaySessionBridge` invokes session boot logic (more on that below).
-- `RootNavigator` renders the actual screens.
-
-A key architecture choice: **the WebSocket is a singleton**. If each screen created its own socket, the server would see multiple conflicting sessions. The `WebSocketProvider` prevents that.
+This is the canonical React pattern for global services: build once, use everywhere.
 
 ---
 
-## 3) `GatewaySessionBridge`: where side effects live
+## 3) The shared protocol boundary (mobile <-> gateway <-> web)
 
-`GatewaySessionBridge` is a tiny component that exists only to run hooks:
+### 3.1 One protocol, two clients
+
+Both the mobile app and the web app use the same message schema from `@nullspace/protocol/mobile`. This creates a shared contract:
+
+- The gateway emits messages in a known format.
+- Both clients parse those messages the same way.
+- Balance, session, and game updates are interpreted consistently.
+
+This is the primary reason the two clients stay in sync: they agree on the protocol and both trust the gateway as the authority.
+
+### 3.2 The gateway is the source of truth
+
+The clients do not simulate authoritative state. They render what the gateway reports. This avoids drift between mobile and web:
+
+- Balance updates always come from gateway messages.
+- Game state is driven by `game_started`, `game_move`, and `game_result`.
+- Global table updates come from live table message types.
+
+If the gateway changes, both clients update in the same way because they share the same protocol definitions.
+
+---
+
+## 4) WebSocket transport (the live connection)
+
+### 4.1 The WebSocket service
+
+`mobile/src/services/websocket.ts` owns the connection lifecycle:
+
+- opens the WebSocket,
+- validates incoming JSON minimally,
+- reconnects with backoff on unclean close.
+
+This layer is intentionally low-level: it only cares about connectivity and message shape.
+
+Concrete excerpt:
+
+```ts
+ws.current.onmessage = (event) => {
+  const raw = JSON.parse(event.data);
+  const baseResult = BaseMessageSchema.safeParse(raw);
+  if (!baseResult.success) {
+    console.error('Invalid message format:', baseResult.error.message);
+    return;
+  }
+  setLastMessage(raw as T);
+};
+```
+
+Walkthrough:
+
+1) Parse JSON.
+2) Validate minimal structure (must have a `type`).
+3) Store as `lastMessage` for higher-level hooks.
+
+This keeps the transport layer fast and pushes semantic handling up to `useGatewaySession` and game screens.
+
+### 4.2 WebSocket context
+
+`WebSocketContext.tsx` exposes a singleton connection:
+
+- a shared `send` function,
+- `lastMessage`,
+- connection state and retry metadata.
+
+This prevents each screen from opening its own socket, which would produce inconsistent sessions.
+
+Concrete excerpt:
 
 ```tsx
-function GatewaySessionBridge({ children }) {
-  useGatewaySession();
-  useWebSocketReconnectOnForeground();
-  return children;
+export function WebSocketProvider({ children, url }: WebSocketProviderProps) {
+  const wsUrl = url ?? getWebSocketUrl();
+  const manager = useWebSocket<GameMessage>(wsUrl);
+  return (
+    <WebSocketContext.Provider value={manager}>
+      {children}
+    </WebSocketContext.Provider>
+  );
 }
 ```
 
-This pattern keeps `App` readable while still centralizing global side effects. Think of it as the "session bootstrap" wrapper.
+Walkthrough:
 
-Two hooks are invoked here:
-
-- `useGatewaySession`: handles session setup, balance requests, and analytics.
-- `useWebSocketReconnectOnForeground`: handles reconnect when the app returns to foreground.
-
----
-
-## 4) App lifecycle persistence: `useAppState`
-
-The `useAppState` hook stores and restores key UI state when the app is backgrounded. It does this using MMKV storage (a fast key-value store for React Native).
-
-Key behaviors:
-
-- On initial mount, it initializes storage and restores cached values.
-- When the app goes to background, it persists balance and selected chip.
-- When the app comes back to foreground, it restores those values.
-
-Why this matters:
-
-- Without persistence, a backgrounded app would lose the user's context.
-- With persistence, the UI can rehydrate instantly while the gateway catches up.
-
-A subtle design detail: `VALID_CHIP_VALUES` ensures that restored chip values are within the allowed set. This prevents corrupted storage from putting the UI into an invalid state.
+1) Pick a URL (env override, dev host, or prod).
+2) Create one `useWebSocket` manager.
+3) Share it across the entire component tree.
 
 ---
 
-## 5) WebSocket architecture: a single shared connection
+## 5) Session orchestration (`useGatewaySession`)
 
-The WebSocket connection is managed by a custom hook in `mobile/src/services/websocket.ts` and exposed through a React context in `WebSocketContext.tsx`.
+This hook is the core of the mobile client. It wires protocol messages into the store.
 
-### 5.1 `WebSocketProvider`
+### 5.1 Connect -> balance
 
-The provider creates the connection once and shares it:
+When the socket is connected, the app sends `get_balance`. This forces an authoritative state refresh on every connect or reconnect.
 
-```tsx
-const manager = useWebSocket<GameMessage>(wsUrl);
-return (
-  <WebSocketContext.Provider value={manager}>
-    {children}
-  </WebSocketContext.Provider>
-);
-```
+Concrete excerpt:
 
-This is crucial for consistency: all screens observe the same `lastMessage` and share the same connection state.
-
-### 5.2 `useWebSocket`: connection lifecycle and reconnection
-
-The `useWebSocket` hook encapsulates connection behavior:
-
-- It opens a WebSocket to the URL returned by `getWebSocketUrl()`.
-- It parses messages and validates them against `BaseMessageSchema`.
-- It reconnects with exponential backoff if the connection drops.
-
-The connection state flows through `connectionState` and `isConnected`. The hook also exposes a `reconnect` function for manual triggers.
-
-### 5.3 Environment-aware URL selection
-
-`getWebSocketUrl()` chooses the URL based on environment:
-
-- In dev, it uses Expo host metadata to connect to the local machine.
-- In production, it defaults to `wss://api.nullspace.casino/ws`.
-
-This is a pragmatic approach: developers get local testing without manual configuration, while production uses a secure WebSocket endpoint.
-
----
-
-## 5.4) WebSocket event handling in detail
-
-The `useWebSocket` hook wires the low-level browser WebSocket events into app state:
-
-- `onopen`: marks the connection as connected, resets reconnect counters, and clears reconnect attempts.
-- `onmessage`: parses JSON, validates it with `BaseMessageSchema.safeParse`, then stores it as `lastMessage`.
-- `onerror`: logs diagnostics (URL, readyState, error). This is used to debug flaky networks.
-- `onclose`: handles reconnect logic if the close was not clean.
-
-The logic for reconnect is careful and intentional. It does **not** reconnect if the close was clean (`event.wasClean`). This avoids reconnect loops when the server explicitly closes the socket (for example, during maintenance or a version upgrade). If the close is not clean, the hook uses exponential backoff with a max delay and a max number of attempts. The result is a resilient but bounded retry strategy.
-
-The hook also uses `useRef` for reconnect counters and timeouts. That is important: reconnect counters should not trigger re-renders. React state is reserved for values that affect UI (connection state, last message). This is a clean separation of concerns.
-
----
-
-## 5.5) Minimal validation is still validation
-
-Notice that `BaseMessageSchema` only checks that a message has a `type` field. This is intentionally minimal. Deep validation happens in higher-level schemas (see `@nullspace/protocol/mobile`), but the WebSocket layer still filters out obviously malformed JSON. This prevents random data or garbage messages from breaking the UI logic.
-
-Minimal validation at the socket layer is also a performance choice. The socket might receive frequent messages (live tables, state updates). Full validation of every message could be expensive. The design splits validation into layers: quick structural validation at the socket, then deeper handling in the session hook.
-
----
-
-## 6) The `useGatewaySession` hook: the heart of session management
-
-`useGatewaySession` glues everything together. It watches the WebSocket state, interprets incoming messages, updates the store, and emits analytics events.
-
-### 6.1 Dependencies and stores
-
-The hook pulls state and actions from several sources:
-
-- `useWebSocketContext` provides `connectionState`, `send`, and `lastMessage`.
-- `useGameStore` provides actions to update balance, session info, and faucet status.
-- `parseNumeric` normalizes numeric values from either number or string.
-- Analytics functions (`initAnalytics`, `track`, `setAnalyticsContext`).
-
-This design keeps the hook focused on orchestration rather than data modeling.
-
-### 6.2 Analytics initialization
-
-The hook initializes analytics once, on mount:
-
-```tsx
+```ts
 useEffect(() => {
-  void initAnalytics();
-}, []);
+  if (connectionState === 'connected') {
+    send({ type: 'get_balance' });
+  }
+}, [connectionState, send]);
 ```
 
-This ensures analytics is ready before any meaningful events are tracked.
+This is why reconnect always converges to the gateway state.
 
-### 6.3 Fetching balance on connect
+### 5.2 session_ready -> session identity
 
-When the socket connects, the hook immediately requests the balance:
+When `session_ready` arrives:
 
-```tsx
-if (connectionState === 'connected') {
+- session id and public key are stored,
+- analytics context is set,
+- the app re-requests balance for redundancy.
+
+Redundancy is intentional: it reduces the risk of stale balance after reconnect.
+
+Concrete excerpt:
+
+```ts
+if (lastMessage.type === 'session_ready') {
+  lastSessionIdRef.current = lastMessage.sessionId;
+  setSessionInfo({
+    sessionId: lastMessage.sessionId,
+    publicKey: lastMessage.publicKey,
+    registered: lastMessage.registered,
+    hasBalance: lastMessage.hasBalance,
+  });
+  setAnalyticsContext({ publicKey: lastMessage.publicKey });
   send({ type: 'get_balance' });
+  return;
 }
 ```
 
-This is a simple but important flow: the app must always get an authoritative balance from the server, not from local cache.
+Walkthrough:
 
-### 6.4 Handling `session_ready`
+1) Store the session id in a ref (no re-render churn).
+2) Update the shared store (global session identity).
+3) Set analytics context for tracing.
+4) Request balance again to confirm authoritative state.
 
-The `session_ready` message is the gateway saying "you have a session now." The hook does several things in response:
+### 5.3 balance, game, and live table messages
 
-- Stores the session id in a ref so it survives re-renders.
-- Updates the store with session info (public key, registration, balance status).
-- Sets analytics context to the public key.
-- Tracks a session started event.
-- Parses the initial balance if provided.
-- Sends another `get_balance` request to confirm state.
+The hook updates store state in response to:
 
-This sequence is deliberately redundant. It treats `session_ready` as both a state update and a trigger for a fresh balance fetch. Redundancy is good here: it helps recover from races.
+- `balance` (canonical balance update),
+- `game_started`, `game_move`, `game_result` (game lifecycle),
+- live table message types (global table state and results).
 
-#### 6.4.1 Why `lastSessionIdRef` is a ref, not state
+Every update is treated as authoritative. The UI never tries to predict balance locally.
 
-The hook stores the session id in a `useRef`. That means it does not trigger re-renders when it changes. This is intentional. The session id is not needed to render most UI elements on every message. Instead, it is used as a stable reference for other hooks or functions that may need the session id without causing a re-render storm.
+Concrete excerpt:
 
-Using a ref also avoids a subtle bug: if the session id were stored in state, every change would re-run the hook logic in ways that might duplicate analytics or extra `get_balance` calls. The ref is a stable, low-noise storage location.
-
-#### 6.4.2 Analytics context and privacy considerations
-
-When `session_ready` arrives, the hook calls `setAnalyticsContext({ publicKey })`. This ties future events to a stable identifier. It is useful for debugging and product analytics, but it also means the public key is part of analytics context. This is an explicit design choice: the system values traceability of sessions over anonymous metrics. If privacy requirements change, this is the place you would start auditing.
-
-### 6.5 Handling `balance`
-
-The `balance` message updates the store with the latest account balance and registration state. It also checks if the faucet was just claimed:
-
-```tsx
-if (lastMessage.message === 'FAUCET_CLAIMED') {
-  setFaucetStatus('success', 'Faucet claimed');
-  void track('casino.faucet.claimed', { source: 'mobile' });
+```ts
+if (lastMessage.type === 'game_result' || lastMessage.type === 'game_move') {
+  const balanceValue = parseNumeric(lastMessage.balance ?? lastMessage.finalChips);
+  if (balanceValue !== null) {
+    setBalance(balanceValue);
+    setBalanceReady(true);
+  }
 }
 ```
 
-This is an example of how protocol messages drive UI feedback: a backend event becomes a UI toast and an analytics event.
+This is the key sync rule: if the gateway provides a balance, it overwrites local UI state.
 
-### 6.6 Handling `game_started`
+### 5.4 Faucet flow
 
-When a game starts, the hook:
+The faucet helper in `useGatewaySession`:
 
-- Tracks a game started event.
-- Updates the balance if included in the message.
+- sets local status to pending,
+- sends `faucet_claim`,
+- reconciles success or error on the next message.
 
-The important idea: the app does not compute balances itself. It trusts the server as the source of truth.
+This is a consistent pattern: send a command, wait for a message, update the store.
 
-### 6.7 Handling live table updates
+Concrete excerpt:
 
-For live table messages (`live_table_state`, `live_table_result`, `live_table_confirmation`), the hook extracts balance and updates it. This keeps the account balance consistent even when bets are placed in the live table flow.
-
-### 6.8 Handling `game_result` and `game_move`
-
-When a game result arrives, the hook tracks a completion event and updates balance from either `balance` or `finalChips`. It also handles `game_move` messages in case they include balance updates.
-
-This is a pragmatic design: different message types sometimes include balances, so the hook treats them all as potential balance updates.
-
-### 6.9 Error handling and faucet flow
-
-If an error arrives while a faucet request is pending, the hook sets the faucet status to error and surfaces the error message. This ensures the UI does not stay stuck in "pending" forever.
-
----
-
-## 6.10) Foreground reconnect logic
-
-`useWebSocketReconnectOnForeground` listens to `AppState` transitions and triggers a reconnect when the app becomes active. It does this with two refs:
-
-- `appStateRef` tracks the previous app state.
-- `connectionStateRef` tracks the latest socket state.
-
-When the app transitions from background or inactive to active, the hook checks whether the socket is already connected. If not, it calls `reconnect()`. This pattern avoids unnecessary reconnects and prevents reconnect storms when the app is already online.
-
-This hook exists because mobile operating systems frequently suspend network activity in the background. Without an explicit reconnect on foreground, the socket could remain stale even though the UI looks active.
-
----
-
-## 7) The faucet request helper
-
-The hook exposes `requestFaucet`:
-
-```tsx
+```ts
 const requestFaucet = useCallback((amount?: number) => {
   setFaucetStatus('pending', 'Requesting faucet...');
   if (typeof amount === 'number' && amount > 0) {
@@ -321,125 +411,183 @@ const requestFaucet = useCallback((amount?: number) => {
 }, [send, setFaucetStatus]);
 ```
 
-This encapsulates two ideas:
-
-- The UI does not need to know protocol details; it calls a helper.
-- The helper updates state before sending, so the UI can immediately show feedback.
+The UI becomes "pending" immediately, then resolves when the gateway replies.
 
 ---
 
-## 8) The store: a single source of UI truth
+## 6) UI state and game screens
 
-`useGameStore` (Zustand) holds the session state that all screens use:
+### 6.1 Single store for UI truth
 
-- `balance` and `balanceReady`
-- `sessionId`, `publicKey`
-- `registered`, `hasBalance`
-- `faucetStatus` and `faucetMessage`
-- `selectedChip`
+`useGameStore` is the single source of truth for session state:
 
-This is a deliberate choice: a single store avoids inconsistencies across screens and avoids prop-drilling. The `useGatewaySession` hook is the sole writer for many of these fields, making it easier to audit state changes.
+- balance and balance readiness,
+- session identifiers,
+- faucet state,
+- selected chip and other UI preferences.
 
----
+Every screen subscribes to the same store, so the UI stays coherent across navigation.
 
-## 8.1) Parsing numeric values safely
+Concrete excerpt:
 
-The gateway sometimes sends numeric values as strings (for example, balances or payouts). This is common when values can exceed JavaScript's safe integer range. The `parseNumeric` helper in `mobile/src/utils/numbers.ts` handles this by accepting either a finite number or a numeric string and returning a `number` or `null`.
+```ts
+export const useGameStore = create<GameState>((set) => ({
+  balance: 0,
+  balanceReady: false,
+  selectedChip: 25,
+  setBalance: (balance) => set({ balance }),
+  setBalanceReady: (ready) => set({ balanceReady: ready }),
+}));
+```
 
-This design has tradeoffs:
+Walkthrough:
 
-- It keeps UI math simple because the store always uses `number`.
-- It risks precision loss for very large values, but the UI mostly displays balances rather than performing critical arithmetic.
+1) Zustand holds canonical UI state.
+2) Any component can subscribe to `balance` or `selectedChip`.
+3) Updates from `useGatewaySession` propagate to all screens.
 
-The key is that authoritative accounting still happens on-chain. The UI uses numbers for display, not for consensus-critical computation.
+### 6.2 Game screens are message-driven
 
-The helper also rejects `NaN`, `Infinity`, empty strings, and non-numeric strings. That means a malformed message will not silently corrupt the UI state.
+Game screens do not connect directly to the socket. They use hooks like:
 
----
+- `useGameConnection` (reads `lastMessage`, exposes `send`),
+- `useChipBetting` (local bet UI state).
 
-## 9) Data flow summary (message to UI)
+When a `game_move` message arrives, the screen parses the state bytes and updates its local game view. That is the pattern across the casino screens.
 
-The message flow is:
+Concrete excerpt (Hi-Lo):
 
-1) Gateway sends JSON message via WebSocket.
-2) `useWebSocket` validates the message shape against `BaseMessageSchema`.
-3) `useGatewaySession` reads `lastMessage`, matches on `type`, and updates the store.
-4) UI components subscribe to `useGameStore` and re-render.
+```ts
+const { isDisconnected, send, lastMessage } = useGameConnection<GameMessage>();
 
-This architecture keeps the system predictable. There is exactly one ingress point for gateway data and exactly one state store for UI updates.
+useEffect(() => {
+  if (!lastMessage) return;
+  if (lastMessage.type === 'game_started' || lastMessage.type === 'game_move') {
+    const stateBytes = decodeStateBytes((lastMessage as { state?: unknown }).state);
+    if (!stateBytes) return;
+    InteractionManager.runAfterInteractions(() => {
+      const parsed = parseHiLoState(stateBytes);
+      if (!parsed?.currentCard) return;
+      setState((prev) => ({
+        ...prev,
+        currentCard: parsed.currentCard,
+        phase: 'playing',
+        message: 'Make your call',
+      }));
+    });
+    return;
+  }
+}, [lastMessage]);
+```
 
----
+Walkthrough:
 
-## 9.1) A concrete timeline (app launch to first bet)
+1) Screen subscribes to `lastMessage` from the shared socket.
+2) It decodes state bytes (binary compact game state).
+3) It parses them into a typed game state object.
+4) It updates local UI state after interactions to avoid jank.
 
-To make the flow less abstract, here is a concrete timeline for a typical user session:
-
-1) The user opens the app. `App.tsx` initializes error reporting, storage, and providers.
-2) `WebSocketProvider` creates a single socket connection. The socket transitions to `connecting`.
-3) When the socket opens, `connectionState` becomes `connected` and `useGatewaySession` sends `get_balance`.
-4) The gateway responds with `session_ready` (includes session id and public key). The hook stores the session id, sets analytics context, and triggers another `get_balance`.
-5) The gateway responds with `balance` (and possibly `FAUCET_CLAIMED` if the user just claimed faucet). The UI now shows a valid balance.
-6) The user starts a game. The gateway sends `game_started` and includes a new balance. The hook updates the store and logs the analytics event.
-7) During the game, the gateway may send `game_move` updates (for example, live state changes or table updates). The hook updates balance when present.
-8) At game completion, the gateway sends `game_result`. The hook logs the completion event and updates balance again.
-
-Notice that the UI always follows the gateway. It does not attempt to predict or simulate game logic. This is deliberate: in a blockchain system, the chain is the authority, and the UI is just a projection.
-
-This timeline also explains why redundant `get_balance` requests exist. The app prefers to be slightly chatty if it means it recovers quickly from missed messages or reconnects.
-
----
-
-## 10) Failure modes and how the design handles them
-
-### 10.1 Reconnect storms
-
-If the app reconnects too aggressively, it can overload the gateway. The `useWebSocket` hook uses exponential backoff with a max delay and a max number of attempts. This limits load and prevents tight reconnect loops.
-
-### 10.2 Invalid messages
-
-Messages are validated by `BaseMessageSchema`. If a message is malformed, it is ignored and logged. This prevents untrusted data from polluting state.
-
-### 10.3 Balance format drift
-
-`parseNumeric` accepts numbers or numeric strings and rejects invalid values. This protects the app if the gateway changes balance formats slightly (for example, returning strings). Without this, the balance could become `NaN` and break the UI.
-
-### 10.4 Race conditions
-
-Messages can arrive out of order. The hook uses idempotent updates: it always sets the store based on the latest message. It does not try to compute deltas locally. This reduces the risk of stale UI state.
-
-### 10.5 Observability and diagnostics
-
-The WebSocket layer logs connection errors, reconnect attempts, and invalid message formats. These logs are crucial when diagnosing flaky networks or gateway misconfigurations. On mobile, where connectivity is variable, explicit logging is often the only way to understand what happened on a user's device.
-
-The analytics hooks also act as a lightweight observability system. Events like `casino.session.started`, `casino.game.started`, and `casino.game.completed` can be aggregated to detect drop-offs or failures in the user funnel. This is a subtle but important part of the architecture: **correctness is not just code correctness; it is also operational correctness**. When these events spike or disappear, you know a core workflow is broken even if the UI looks fine.
+This is how game screens stay live without owning the socket.
 
 ---
 
-## 11) Extensibility: adding new message types
+## 7) How the mobile app stays in sync with the web app
 
-If you add a new message type, you must:
+### 7.1 Shared protocol, shared authority
 
-1) Add it to `@nullspace/protocol/mobile` schema.
-2) Update `useGatewaySession` to handle it (if it affects balance or session state).
-3) Consider whether analytics should track it.
+The mobile app and web app both:
 
-This is a predictable workflow. The app's architecture makes it obvious where new protocol changes should be reflected.
+- consume the same protocol schema,
+- rely on the same gateway messages,
+- update their state from those messages.
+
+This is the sync mechanism. There is no device-to-device sync. Both clients are projections of the same backend state.
+
+### 7.2 What happens if both clients are open
+
+If the same account is used on two clients, each client:
+
+- has its own session id,
+- receives authoritative updates from the gateway,
+- refreshes balance on connect.
+
+Because balance and game results are authoritative, each client converges to the same state after messages arrive.
+
+### 7.3 What prevents drift
+
+Drift is prevented by design:
+
+- the gateway is the only source of truth,
+- local state is overwritten by gateway updates,
+- reconnect triggers a fresh balance fetch.
+
+This is why the architecture is consistent across mobile and web.
 
 ---
 
-## 12) Feynman recap: explain it like I am five
+## 8) Mobile lifecycle and resilience
 
-Imagine the app is a radio. The gateway is the broadcast station. The WebSocket is the antenna. The store is the scoreboard you show your friends. When the station sends an update, the radio catches it, checks that it looks like a real message, and then updates the scoreboard. If the station is silent or drops out, the radio keeps trying to tune back in.
+### 8.1 AppState persistence
+
+`useAppState` persists small pieces of UI state (balance, selected chip) so the app can rehydrate quickly after backgrounding.
+
+This is not authoritative state. It is a UI convenience that gets overwritten by gateway updates on reconnect.
+
+Concrete excerpt:
+
+```ts
+AppState.addEventListener('change', (nextAppState) => {
+  const previousState = appStateRef.current;
+  if (previousState === 'active' && (nextAppState === 'background' || nextAppState === 'inactive')) {
+    persistGameState();
+  }
+  if ((previousState === 'background' || previousState === 'inactive') && nextAppState === 'active') {
+    restoreGameState();
+  }
+  appStateRef.current = nextAppState;
+});
+```
+
+Walkthrough:
+
+1) On background: cache balance + selected chip locally.
+2) On foreground: restore immediately for snappy UI.
+3) Gateway balance will still overwrite later.
+
+### 8.2 Foreground reconnect
+
+`useWebSocketReconnectOnForeground` reconnects when the app becomes active. Mobile OSes suspend sockets in the background, so explicit reconnect is required for correctness.
+
+### 8.3 Failure modes and safeguards
+
+The design anticipates:
+
+- flaky networks (backoff reconnect),
+- malformed messages (schema check),
+- stale balances (re-fetch on connect).
+
+The system is intentionally conservative: it prefers to re-sync rather than guess.
 
 ---
 
-## 13) Exercises
+## 9) Data flow summary (message -> UI)
 
-1) Why does the app send `get_balance` right after it connects?
-2) What is the difference between `session_ready` and `balance` messages?
-3) How does the app avoid showing stale balance values after reconnect?
-4) Why is `BaseMessageSchema` validation important before processing messages?
-5) If you add a new game result field, where should it be validated and stored?
+1) Gateway sends a JSON message over WebSocket.
+2) `useWebSocket` validates it and exposes `lastMessage`.
+3) `useGatewaySession` and screen hooks react to the message.
+4) The store updates, and the UI re-renders.
+
+This is the full loop: transport -> session -> store -> UI.
+
+---
+
+## 10) Exercises
+
+1) Why is `get_balance` sent on every connect, even if local cache exists?
+2) Which parts of state are authoritative vs UI-only?
+3) How do game screens avoid opening their own WebSocket connections?
+4) What makes the mobile and web clients stay in sync without talking to each other?
+5) If you add a new protocol message, which files must change?
 
 ---
 

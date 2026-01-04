@@ -476,6 +476,130 @@ What this code does:
 
 ---
 
+## Extended deep dive: execution semantics and invariants
+
+The execution layer is where "protocol correctness" meets "game logic." It is worth understanding the deeper invariants that the code is enforcing.
+
+### 15) Why nonce mismatches are skipped, not fatal
+
+In `execute`, a nonce mismatch causes the transaction to be skipped, not rejected with an error. This is a policy choice:
+
+- It keeps blocks progressing even if some transactions are stale.
+- It reduces the chance of a single bad transaction invalidating the entire block.
+
+The tradeoff is visibility: if a client repeatedly submits stale nonces, the chain will silently skip those transactions. That can confuse users unless the gateway or indexer reports the mismatch.
+
+This policy is common in batch execution systems: treat invalid items as no-ops, continue with the rest.
+
+### 16) Why outputs include both events and transactions
+
+The execution loop appends:
+
+- `Output::Event` for each event produced by handlers.
+- `Output::Transaction` for the transaction itself.
+
+This means the output stream is an interleaving of events and transactions.
+
+Why include the transaction output at all?
+
+Because downstream components build proofs and summaries that must show both "what happened" and "which transaction caused it." Including the transaction in the output stream makes that explicit.
+
+### 17) The pending map as a deterministic overlay
+
+The `Layer` uses a `BTreeMap` for `pending` updates, not a `HashMap`. That is subtle but important:
+
+- `BTreeMap` has a deterministic iteration order.
+- Deterministic iteration order helps reproducibility when you commit staged changes.
+
+If you used a hash map, the iteration order could change across runs, which might affect ordering-sensitive processes like proof generation.
+
+This is one of those "small choices" that makes the system deterministic.
+
+### 18) The role of the seed and seed view
+
+The Layer stores `seed` and `seed_view`. The seed is used by game logic for randomness. The view number is extracted once and reused because it is referenced frequently.
+
+This is both a performance and correctness choice:
+
+- It ensures all handlers use the same seed and view for a block.
+- It avoids repeated decoding or cloning.
+
+The seed is effectively the "randomness anchor" for the block. If two nodes used different seeds, they would diverge immediately.
+
+### 19) Why "get or init" helpers matter
+
+The `get_or_init_*` helpers enforce a key invariant: required state objects exist before use.
+
+This avoids a class of bugs where handlers assume a value exists and then panic on `None`. Instead, the Layer creates a default state on first use.
+
+This pattern also helps with migrations: if you introduce a new state object, old databases that do not have the key will still work because the default is constructed on demand.
+
+### 20) Determinism depends on two inputs, not one
+
+The determinism test shows that outputs depend on:
+
+1) the seed
+2) the transaction list
+
+If either changes, the output changes.
+
+That is an important mental model. The seed is not "extra"; it is part of the execution input. Any test or simulation that ignores the seed is incomplete.
+
+### 21) Feynman analogy: a ledger with scratch paper
+
+Think of the Layer as an accountant who uses scratch paper:
+
+- The underlying state is the official ledger.
+- The pending map is the scratch paper for the current block.
+- `commit` is when the accountant copies the scratch paper into the ledger.
+
+This explains why `get` checks pending first: the accountant uses the most recent notes, not yesterday's ledger entry.
+
+### 22) A practical checklist for extending the execution layer
+
+If you add a new instruction:
+
+1) Add it to the dispatch match in `apply`.
+2) Implement a handler in the correct domain module.
+3) Ensure the handler uses `self.insert` to stage state changes.
+4) Emit events that downstream indexers expect.
+5) Add a determinism test or extend existing ones.
+
+Missing any of these will cause subtle bugs. The dispatch table is the single source of truth for what can be executed.
+
+---
+
+### 23) Processed nonces: why the executor returns them
+
+The `execute` function returns a `BTreeMap<PublicKey, u64>` of processed nonces. This is not a random extra return value; it is how the caller updates nonce state efficiently.
+
+Rather than scanning the outputs to infer which transactions were accepted, the executor explicitly reports the next nonce for each account that processed successfully. This keeps the state transition logic clean and avoids redundant computation.
+
+It also ensures determinism. The map is ordered (BTreeMap), so downstream code that iterates it will do so in a stable order.
+
+### 24) About the optional thread pool
+
+The signature of `execute` accepts a thread pool when the `parallel` feature is enabled. In the current code path the parameter is unused (`_pool`), but the presence of the parameter indicates a design intent:
+
+- In the future, execution could be parallelized at the instruction level.
+- Any parallelization must preserve deterministic ordering and data dependencies.
+
+This is a non-trivial constraint. You cannot just "run instructions in parallel" without careful analysis of shared state, nonce dependencies, and event ordering.
+
+The current sequential loop is the safe default. The thread pool parameter is a placeholder for future work, not a guarantee of parallel speedups today.
+
+---
+
+### 25) Deletes and tombstones in the pending map
+
+The `pending` map stores `Status::Update` or `Status::Delete`. That means the Layer can represent deletions explicitly, not just additions.
+
+This matters when instructions remove data (for example, ending a game session or clearing temporary state). Without a delete marker, a removed key could appear to still exist when reading through the overlay.
+
+So the Layer tracks deletions as first-class state changes. That is part of why the overlay is correct and consistent. It prevents ghost state from leaking into later reads unexpectedly.
+
+---
+
 ## Key takeaways
 - The Layer is a staging overlay that validates nonces, applies instructions, and collects events.
 - Instruction dispatch is centralized and grouped by domain.

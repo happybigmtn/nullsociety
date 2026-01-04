@@ -287,6 +287,246 @@ Syntax notes:
 
 ---
 
+## Extended deep dive: verification and auditing policy
+
+This file is small, but it encodes policy decisions that matter in production. Below are the deeper concepts to internalize.
+
+### 8) Seed verification and why it uses a certificate verifier
+
+Seeds are verified using a BLS threshold certificate. The verifier is built from the simulator's identity (the validator set).
+
+This is important because it prevents a single validator from injecting arbitrary randomness. The seed must be collectively signed by a quorum of validators.
+
+The call `seed.verify(&verifier, NAMESPACE)` does two things at once:
+
+- It checks the certificate threshold and signer set.
+- It ensures domain separation with the `NAMESPACE` string.
+
+If either check fails, the seed is rejected. That is the correct behavior: if randomness is not collectively agreed upon, the chain's fairness is compromised.
+
+### 9) Summary verification: two outputs, two paths
+
+The `summary.verify` call returns two sets of digests:
+
+- state digests
+- event digests
+
+Why two?
+
+Because state and events are indexed separately. State digests ensure the key-value store is consistent. Event digests ensure the event log is consistent.
+
+The submission handler applies them in a deliberate order:
+
+1) `submit_events(...)`
+2) `submit_state(...)`
+
+This ensures that event indexing stays ahead of state queries. That might sound backwards at first, but it is a common design: events are what clients subscribe to, and they should become visible as soon as possible.
+
+### 10) Summary failure logging is intentionally rich
+
+When summary verification fails, the log includes:
+
+- the view and height,
+- the number of state ops,
+- the number of event ops,
+- the error itself.
+
+This is not just for debugging; it also helps detect malicious inputs. If a peer repeatedly sends summaries with unusually large ops counts or wrong views, you can flag it as suspicious.
+
+### 11) Admin logging: the full set of privileged actions
+
+The excerpt shows two admin instructions, but the real list is longer. The match arms include:
+
+- `CasinoSetTournamentLimit`
+- `SetPolicy`
+- `SetTreasury`
+- `SetTreasuryVesting`
+- `ReleaseTreasuryAllocation`
+- `FundRecoveryPool`
+- `RetireVaultDebt`
+- `RetireWorstVaultDebt`
+- `SeedAmm`
+- `FinalizeAmmBootstrap`
+- `UpdateOracle`
+- `BridgeDeposit`
+- `FinalizeBridgeWithdrawal`
+
+These are high-impact actions: treasury changes, oracle updates, bridge operations, and AMM bootstrapping. Logging them creates an immutable audit trail for governance and incident response.
+
+### 12) Why some fields are hashed and others are logged raw
+
+Large structured fields like policy, treasury, and vesting are logged as hashes. That keeps logs small and prevents sensitive configuration details from being dumped into plaintext logs.
+
+On the other hand, small scalar fields like `amount` or `price_vusdt_numerator` are logged directly. Those values are often necessary to understand the action (for example, the size of a treasury release).
+
+This split is a policy choice: log enough to be auditable, not so much that logs become a data leak.
+
+### 13) The `log_admin` flag and performance
+
+The `apply_submission` function takes a `log_admin` boolean. This gives the caller (the HTTP layer) control over whether admin logging is enabled.
+
+Why make it optional?
+
+- Logging has overhead.
+- In high-throughput environments, you may want to disable it temporarily.
+- Some test environments may not care about audit logs.
+
+By making it a flag, the code keeps logging policy separate from submission validation.
+
+### 14) Where semantic validation happens
+
+Notice that the transactions path does not verify signatures or nonces. It simply passes transactions to the simulator.
+
+This is a deliberate separation of concerns:
+
+- This file checks submission types and summary/seed validity.
+- The actual transaction validity checks happen in the execution engine.
+
+That means "invalid transaction" is not an error here; it is a later-stage rejection.
+
+### 15) Feynman analogy: three mail bins
+
+Imagine a mail room with three bins:
+
+- One bin is for random seeds (requires a special stamp).
+- One bin is for normal letters (transactions).
+- One bin is for audit packages (summaries with proofs).
+
+The submission router is the person who checks the envelope and puts it into the correct bin. If the stamp is wrong, the envelope is rejected. If the package does not include the right paperwork, it is rejected.
+
+That is what `apply_submission` does. It is a router with verification rules.
+
+### 16) Practical debugging checklist
+
+If submissions are failing in production, use this checklist:
+
+1) If the error is `InvalidSeed`, confirm the validator set and NAMESPACE match.
+2) If the error is `InvalidSummary`, inspect the ops counts and view height in logs.
+3) If transactions appear to do nothing, confirm they are reaching the simulator and then inspect execution logs.
+4) If admin logs are missing, confirm the HTTP layer sets `log_admin = true`.
+
+This checklist aligns with the actual code paths and will save debugging time.
+
+---
+
+### 17) The audit hash helper: deterministic, compact, and portable
+
+`audit_hash` uses `Encode` + SHA-256 to build a compact fingerprint of large structures.
+
+Why not log the raw structure?
+
+- Policies and treasuries can be large.
+- Logging full payloads can leak sensitive configuration.
+- Logs are expensive to store and ship.
+
+By hashing the encoded bytes, you get a stable identifier that can be compared across systems. If two nodes log the same hash, they observed the same payload, even if they do not log the payload itself.
+
+This is a classic "audit trail" technique: you keep a cryptographic commitment in logs and store the full payload elsewhere.
+
+### 18) Digest vs certificate vs signature (clear separation)
+
+It is easy to confuse these terms:
+
+- **Digest**: a hash of data (e.g., a transaction hash).
+- **Signature**: proof that a signer approved a specific message.
+- **Certificate**: a threshold signature or aggregated proof from multiple signers.
+
+In this file:
+
+- `tx.digest()` produces a digest used for logging.
+- `seed.verify(...)` checks a certificate from the validator set.
+- `summary.verify(...)` checks summary proofs and returns digests.
+
+Keeping these concepts separate is crucial. A digest alone does not prove anything; it just identifies bytes. A certificate proves that a quorum signed the same bytes.
+
+### 19) Why the router does not validate transactions
+
+You might expect the submission router to validate transactions, but it does not. Instead it hands them to `simulator.submit_transactions`.
+
+That is intentional:
+
+- The execution engine has the full context to validate transactions (current state, nonce, balances).
+- Validating in two places would be redundant and risk inconsistent logic.
+
+So the router stays thin: it routes, logs, and rejects only clearly invalid submission types (bad seed, bad summary).
+
+This split is a design principle: do minimal validation at the boundary, then do full validation at the execution layer.
+
+### 20) Admin logs as a governance signal
+
+The admin logs are not just for debugging; they are a governance signal. They tell you:
+
+- which admin key initiated changes,
+- which transaction hash represents the change,
+- what type of change it was.
+
+In a production system, you can pipe these logs into an audit dashboard. That lets you answer questions like "who changed policy last week" or "when was the oracle updated."
+
+Because the logs include hashes (and not the full payload), you can store the full payload elsewhere, perhaps in a secured governance registry.
+
+### 21) Potential extension: structured audit events
+
+Right now, admin logging is done via `tracing::info!` statements. That is good for logs, but not structured enough for machine consumption.
+
+A natural extension would be:
+
+- emit a dedicated "admin_event" record with fields,
+- publish those events to a dedicated audit stream,
+- store them in an immutable log.
+
+This file is not implementing that, but the current structure (hashes + metadata) already points in that direction.
+
+### 22) Feynman summary of submit routing
+
+If you had to explain this file to a new engineer in one minute:
+
+- There are three submission types: seed, transactions, summary.
+- Seed and summary are verified here because they are global consistency inputs.
+- Transactions are passed through to the executor, because only the executor can validate them.
+- Admin transactions are logged for audit.
+
+Everything else in the file is supporting those four lines.
+
+---
+
+### 23) Ordering and concurrency details
+
+Two ordering choices matter in this file:
+
+1) **Summary processing order**: events first, then state.  
+   This keeps event subscribers ahead of state readers. A client that listens to events will see the new round as soon as possible, even if state indexing is still catching up.
+
+2) **Async boundaries**: `submit_events` and `submit_state` are `await`ed.  
+   That means summary processing is serialized: the simulator completes the event submission before it begins state submission. This is safer than firing both at once because it preserves a predictable ordering for any downstream consumers.
+
+The use of `Arc<Simulator>` in `apply_submission` is also a concurrency detail. It allows the simulator to be shared across concurrent tasks without copying the underlying state. Each async handler gets a clone of the `Arc`, which increments a reference count rather than duplicating data.
+
+This is a standard Rust concurrency pattern:
+
+- `Arc` gives shared ownership.
+- interior mutability is handled inside the simulator.
+
+Understanding these details helps you reason about potential races. For example, if you wondered "could a summary be applied while a seed is applied?" the answer depends on how the simulator queues those internal operations. At this layer, the routing is sequential within a single call, but multiple submissions can still be processed concurrently by the HTTP layer.
+
+That is why the simulator itself must be concurrency-safe. The routing file is just the entry point.
+
+---
+
+### 24) Suggested tests and invariants
+
+If you want confidence in this file, focus on these invariants:
+
+1) A seed with an invalid certificate must always return `InvalidSeed`.
+2) A malformed summary must always return `InvalidSummary` and include view/height in logs.
+3) Admin transactions should always produce a log record with `action`, `admin`, and `tx_hash`.
+4) Transaction submissions should never fail here due to state conditions (that is the executor's job).
+
+These tests do not require full integration. You can construct minimal submissions and call `apply_submission` directly with a mock simulator to validate behavior.
+
+If those tests pass, you can be confident that higher-level HTTP failures are coming from elsewhere, not from the submission router itself. This is the core contract. Period.
+
+---
+
 ## Key takeaways
 - The simulator accepts three submission types and validates each differently.
 - Seed and summary verification protect randomness and state integrity.

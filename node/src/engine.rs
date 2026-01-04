@@ -279,7 +279,7 @@ impl<
         );
 
         // Create the application
-        let identity = cfg.identity.sharing.public().clone();
+        let identity = *cfg.identity.sharing.public();
         let public_key = cfg.identity.signer.public_key();
         let (
             application,
@@ -442,7 +442,7 @@ impl<
             context.with_label("consensus"),
             simplex::Config {
                 scheme: epoch_supervisor.scheme(),
-                elector: simplex::elector::Random::default(),
+                elector: simplex::elector::Random,
                 blocker: cfg.blocker.clone(),
                 automaton: application_mailbox.clone(),
                 relay: application_mailbox.clone(),

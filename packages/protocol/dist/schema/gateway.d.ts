@@ -23,8 +23,8 @@ export declare const startGameSchema: z.ZodEffects<z.ZodObject<{
     requestId: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     type: "start_game";
-    bet: string;
     gameType: GameType;
+    bet: string;
     requestId?: string | undefined;
     sideBets?: {
         amount: string;
@@ -32,8 +32,8 @@ export declare const startGameSchema: z.ZodEffects<z.ZodObject<{
     }[] | undefined;
 }, {
     type: "start_game";
-    bet: string;
     gameType: number;
+    bet: string;
     requestId?: string | undefined;
     sideBets?: {
         amount: string;
@@ -41,8 +41,8 @@ export declare const startGameSchema: z.ZodEffects<z.ZodObject<{
     }[] | undefined;
 }>, {
     type: "start_game";
-    bet: string;
     gameType: GameType;
+    bet: string;
     requestId?: string | undefined;
     sideBets?: {
         amount: string;
@@ -50,8 +50,8 @@ export declare const startGameSchema: z.ZodEffects<z.ZodObject<{
     }[] | undefined;
 }, {
     type: "start_game";
-    bet: string;
     gameType: number;
+    bet: string;
     requestId?: string | undefined;
     sideBets?: {
         amount: string;
@@ -80,8 +80,8 @@ export declare const clientMessageSchema: z.ZodUnion<[z.ZodEffects<z.ZodObject<{
     requestId: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     type: "start_game";
-    bet: string;
     gameType: GameType;
+    bet: string;
     requestId?: string | undefined;
     sideBets?: {
         amount: string;
@@ -89,8 +89,8 @@ export declare const clientMessageSchema: z.ZodUnion<[z.ZodEffects<z.ZodObject<{
     }[] | undefined;
 }, {
     type: "start_game";
-    bet: string;
     gameType: number;
+    bet: string;
     requestId?: string | undefined;
     sideBets?: {
         amount: string;
@@ -98,8 +98,8 @@ export declare const clientMessageSchema: z.ZodUnion<[z.ZodEffects<z.ZodObject<{
     }[] | undefined;
 }>, {
     type: "start_game";
-    bet: string;
     gameType: GameType;
+    bet: string;
     requestId?: string | undefined;
     sideBets?: {
         amount: string;
@@ -107,8 +107,8 @@ export declare const clientMessageSchema: z.ZodUnion<[z.ZodEffects<z.ZodObject<{
     }[] | undefined;
 }, {
     type: "start_game";
-    bet: string;
     gameType: number;
+    bet: string;
     requestId?: string | undefined;
     sideBets?: {
         amount: string;

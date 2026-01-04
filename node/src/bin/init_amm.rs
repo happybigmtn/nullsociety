@@ -130,8 +130,7 @@ async fn main() -> anyhow::Result<()> {
     wait_for_block(&client, &args.url).await?;
 
     // Step 4: Deposit collateral (default 30% LTV for new accounts)
-    let collateral_amount =
-        (INITIAL_VUSDT_AMOUNT * 10_000 + MAX_LTV_BPS - 1) / MAX_LTV_BPS;
+    let collateral_amount = (INITIAL_VUSDT_AMOUNT * 10_000).div_ceil(MAX_LTV_BPS);
     println!("Step 4: Deposit {} RNG as collateral", collateral_amount);
     let tx_deposit_collateral = Transaction::sign(
         &lp_signer,

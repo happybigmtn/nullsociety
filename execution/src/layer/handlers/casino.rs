@@ -1,5 +1,6 @@
-use super::super::*;
 use super::casino_error_vec;
+use super::super::*;
+use commonware_cryptography::{sha256::Sha256, Hasher};
 use std::collections::{BTreeMap, BTreeSet};
 
 const SECS_PER_VIEW: u64 = 3;
@@ -157,15 +158,14 @@ fn proof_of_play_multiplier(
         .saturating_mul(age_weight)
         .checked_div(PROOF_WEIGHT_SCALE)
         .unwrap_or(0);
-    let weight = PROOF_WEIGHT_BASE
+    PROOF_WEIGHT_BASE
         .saturating_add(
             PROOF_WEIGHT_MULTIPLIER
                 .saturating_mul(activity_age)
                 .checked_div(PROOF_WEIGHT_SCALE)
                 .unwrap_or(0),
         )
-        .clamp(PROOF_WEIGHT_MIN, PROOF_WEIGHT_SCALE);
-    weight
+        .clamp(PROOF_WEIGHT_MIN, PROOF_WEIGHT_SCALE)
 }
 impl<'a, S: State> Layer<'a, S> {
     // === Casino Handler Methods ===
@@ -1791,11 +1791,10 @@ impl<'a, S: State> Layer<'a, S> {
         // Calculate payout weights (1/rank harmonic distribution)
         let mut weights = Vec::with_capacity(num_winners);
         let mut total_weight: u128 = 0;
-        for i in 0..num_winners {
+        for (i, (_, _, proof_weight)) in rankings.iter().take(num_winners).enumerate() {
             let base_weight = PROOF_WEIGHT_SCALE / (i as u128 + 1);
-            let proof_weight = rankings[i].2;
             let w = base_weight
-                .saturating_mul(proof_weight)
+                .saturating_mul(*proof_weight)
                 .checked_div(PROOF_WEIGHT_SCALE)
                 .unwrap_or(0);
             weights.push(w);
@@ -1804,8 +1803,7 @@ impl<'a, S: State> Layer<'a, S> {
 
         // Distribute Prize Pool
         if total_weight > 0 && tournament.prize_pool > 0 {
-            for i in 0..num_winners {
-                let (pk, _, _) = &rankings[i];
+            for (i, (pk, _, _)) in rankings.iter().take(num_winners).enumerate() {
                 let weight = weights[i];
                 let payout = (tournament.prize_pool as u128)
                     .saturating_mul(weight)
@@ -1989,6 +1987,7 @@ impl<'a, S: State> Layer<'a, S> {
         round.round_id = round.round_id.saturating_add(1);
         round.phase = nullspace_types::casino::GlobalTablePhase::Betting;
         round.phase_ends_at_ms = now_ms.saturating_add(config.betting_ms);
+        round.rng_commit.clear();
         round.roll_seed.clear();
 
         self.insert(
@@ -2147,7 +2146,10 @@ impl<'a, S: State> Layer<'a, S> {
             payload.push(bet.bet_type);
             payload.push(bet.target);
             payload.extend_from_slice(&bet.amount.to_be_bytes());
-            let mut rng = crate::casino::GameRng::new(&self.seed, round.round_id, 0);
+            let mut rng = crate::casino::GameRng::from_state(round_roll_seed_or_default(
+                &round,
+                &self.seed,
+            ));
             let result =
                 crate::casino::process_game_move(&mut working_session, &payload, &mut rng);
             let result = match result {
@@ -2293,6 +2295,9 @@ impl<'a, S: State> Layer<'a, S> {
 
         round.phase = nullspace_types::casino::GlobalTablePhase::Locked;
         round.phase_ends_at_ms = now_ms.saturating_add(config.lock_ms);
+        let roll_seed = derive_global_table_roll_seed(&self.seed, round.round_id);
+        round.roll_seed = roll_seed.to_vec();
+        round.rng_commit = hash_roll_seed(&round.roll_seed);
         self.insert(
             Key::GlobalTableRound(game_type),
             Value::GlobalTableRound(round.clone()),
@@ -2375,8 +2380,35 @@ impl<'a, S: State> Layer<'a, S> {
             ));
         }
 
-        let mut rng = crate::casino::GameRng::new(&self.seed, round.round_id, 0);
-        round.roll_seed = rng.state().to_vec();
+        let roll_seed = match roll_seed_from_round(&round) {
+            Some(seed) => seed,
+            None if round.rng_commit.is_empty() => {
+                let seed = derive_global_table_roll_seed(&self.seed, round.round_id);
+                round.roll_seed = seed.to_vec();
+                round.rng_commit = hash_roll_seed(&round.roll_seed);
+                seed
+            }
+            None => {
+                return Ok(casino_error_vec(
+                    public,
+                    None,
+                    nullspace_types::casino::ERROR_INVALID_MOVE,
+                    "Round RNG commit missing",
+                ));
+            }
+        };
+        let expected_commit = hash_roll_seed(&roll_seed);
+        if !round.rng_commit.is_empty() && round.rng_commit != expected_commit {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Round RNG commit mismatch",
+            ));
+        }
+        if round.rng_commit.is_empty() {
+            round.rng_commit = expected_commit;
+        }
 
         let mut table_session = nullspace_types::casino::GameSession {
             id: round.round_id,
@@ -2391,18 +2423,19 @@ impl<'a, S: State> Layer<'a, S> {
             is_tournament: false,
             tournament_id: None,
         };
-        let mut init_rng = crate::casino::GameRng::new(&self.seed, round.round_id, 0);
-        crate::casino::init_game(&mut table_session, &mut init_rng);
+        let mut init_rng = crate::casino::GameRng::from_state(roll_seed);
+        let _ = crate::casino::init_game(&mut table_session, &mut init_rng);
         sync_craps_session_to_table(&mut table_session, &round);
 
-        let seed_bytes: [u8; 32] = round
-            .roll_seed
-            .as_slice()
-            .try_into()
-            .unwrap_or([0u8; 32]);
-        let mut roll_rng = crate::casino::GameRng::from_state(seed_bytes);
-        let _ = crate::casino::process_game_move(&mut table_session, &[2], &mut roll_rng)
-            .map_err(|_| anyhow::anyhow!("roll failed"))?;
+        let mut roll_rng = crate::casino::GameRng::from_state(roll_seed);
+        if crate::casino::process_game_move(&mut table_session, &[2], &mut roll_rng).is_err() {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Round roll failed",
+            ));
+        }
 
         if let Some(state) = read_craps_table_state(&table_session.state_blob) {
             round.main_point = state.main_point;
@@ -2460,6 +2493,19 @@ impl<'a, S: State> Layer<'a, S> {
             ));
         }
 
+        if !matches!(
+            round.phase,
+            nullspace_types::casino::GlobalTablePhase::Payout
+                | nullspace_types::casino::GlobalTablePhase::Cooldown
+        ) {
+            return Ok(casino_error_vec(
+                public,
+                None,
+                nullspace_types::casino::ERROR_INVALID_MOVE,
+                "Round outcome not revealed",
+            ));
+        }
+
         if round.roll_seed.len() != 32 {
             return Ok(casino_error_vec(
                 public,
@@ -2508,12 +2554,8 @@ impl<'a, S: State> Layer<'a, S> {
             sync_craps_session_to_table(&mut player_session.session, &round);
             0
         } else {
-            let seed_bytes: [u8; 32] = round
-                .roll_seed
-                .as_slice()
-                .try_into()
-                .unwrap_or([0u8; 32]);
-            let mut roll_rng = crate::casino::GameRng::from_state(seed_bytes);
+            let roll_seed = roll_seed_from_round(&round).unwrap_or([0u8; 32]);
+            let mut roll_rng = crate::casino::GameRng::from_state(roll_seed);
             let result = crate::casino::process_game_move(
                 &mut player_session.session,
                 &[2],
@@ -2932,9 +2974,32 @@ fn default_global_table_round(
         made_points_mask: 0,
         epoch_point_established: false,
         field_paytable: 0,
+        rng_commit: Vec::new(),
         roll_seed: Vec::new(),
         totals: Vec::new(),
     }
+}
+
+fn derive_global_table_roll_seed(seed: &nullspace_types::Seed, round_id: u64) -> [u8; 32] {
+    crate::casino::GameRng::new(seed, round_id, 0).state()
+}
+
+fn roll_seed_from_round(round: &nullspace_types::casino::GlobalTableRound) -> Option<[u8; 32]> {
+    round.roll_seed.as_slice().try_into().ok()
+}
+
+fn round_roll_seed_or_default(
+    round: &nullspace_types::casino::GlobalTableRound,
+    seed: &nullspace_types::Seed,
+) -> [u8; 32] {
+    roll_seed_from_round(round)
+        .unwrap_or_else(|| derive_global_table_roll_seed(seed, round.round_id))
+}
+
+fn hash_roll_seed(roll_seed: &[u8]) -> Vec<u8> {
+    let mut hasher = Sha256::new();
+    hasher.update(roll_seed);
+    hasher.finalize().0.to_vec()
 }
 
 fn ensure_craps_session_state(
@@ -2943,7 +3008,7 @@ fn ensure_craps_session_state(
     seed: &nullspace_types::Seed,
 ) {
     if session.state_blob.is_empty() {
-        let mut rng = crate::casino::GameRng::new(seed, round.round_id, 0);
+        let mut rng = crate::casino::GameRng::from_state(round_roll_seed_or_default(round, seed));
         let _ = crate::casino::init_game(session, &mut rng);
     }
     sync_craps_session_to_table(session, round);
@@ -2965,7 +3030,7 @@ fn sync_craps_session_to_table(
 
     let bet_count = session.state_blob[7] as usize;
     let rules_offset = 8usize.saturating_add(bet_count.saturating_mul(19));
-    if session.state_blob.len() >= rules_offset + 1 {
+    if session.state_blob.len() > rules_offset {
         session.state_blob[rules_offset] = round.field_paytable;
     }
 }
@@ -2983,7 +3048,7 @@ fn read_craps_table_state(blob: &[u8]) -> Option<CrapsTableState> {
     }
     let bet_count = blob[7] as usize;
     let rules_offset = 8usize.saturating_add(bet_count.saturating_mul(19));
-    let field_paytable = if blob.len() >= rules_offset + 1 {
+    let field_paytable = if blob.len() > rules_offset {
         blob[rules_offset]
     } else {
         0

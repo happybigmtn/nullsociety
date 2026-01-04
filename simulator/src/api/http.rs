@@ -10,22 +10,26 @@ use commonware_consensus::aggregation::{scheme::bls12381_threshold, types::Certi
 use commonware_cryptography::{
     bls12381::primitives::variant::MinSig,
     ed25519::PublicKey,
-    sha256::Digest,
+    sha256::{Digest, Sha256},
+    Hasher,
 };
 use commonware_storage::{
     mmr::Proof,
-    qmdb::{any::unordered::variable, keyless},
+    qmdb::{
+        any::unordered::{variable, Update as StorageUpdate},
+        keyless,
+    },
 };
 use commonware_utils::from_hex;
 use nullspace_types::{
     api::Submission,
-    execution::{Output, Progress, Value},
+    execution::{Key, Output, Progress, Value},
     Query as ChainQuery,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::metrics::LatencySnapshot;
 use crate::submission::apply_submission;
@@ -41,12 +45,60 @@ struct HealthzResponse {
     ok: bool,
 }
 
+#[derive(Deserialize)]
+pub(super) struct GlobalTablePresenceUpdate {
+    gateway_id: String,
+    player_count: u64,
+}
+
+#[derive(Serialize)]
+struct GlobalTablePresenceResponse {
+    total_players: u64,
+    gateway_count: usize,
+    ttl_ms: u64,
+}
+
+#[derive(Serialize)]
+struct AccountResponse {
+    nonce: u64,
+    balance: u64,
+}
+
 pub(super) async fn healthz() -> Response {
     Json(HealthzResponse { ok: true }).into_response()
 }
 
 pub(super) async fn config(AxumState(simulator): AxumState<Arc<Simulator>>) -> Response {
     Json(simulator.config.clone()).into_response()
+}
+
+pub(super) async fn global_table_presence(
+    headers: HeaderMap,
+    AxumState(simulator): AxumState<Arc<Simulator>>,
+    Json(payload): Json<GlobalTablePresenceUpdate>,
+) -> Response {
+    if let Some(status) = presence_auth_error(&headers) {
+        return status.into_response();
+    }
+
+    let gateway_id = payload.gateway_id.trim();
+    if gateway_id.is_empty() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+
+    let ttl_ms = presence_ttl_ms();
+    let snapshot = simulator.update_global_table_presence(
+        gateway_id.to_string(),
+        payload.player_count,
+        Duration::from_millis(ttl_ms),
+    );
+
+    Json(GlobalTablePresenceResponse {
+        total_players: snapshot.total_players,
+        gateway_count: snapshot.gateway_count,
+        ttl_ms,
+    })
+    .into_response()
 }
 
 pub(super) async fn ws_metrics(
@@ -137,6 +189,30 @@ fn metrics_auth_error(headers: &HeaderMap) -> Option<StatusCode> {
     } else {
         Some(StatusCode::UNAUTHORIZED)
     }
+}
+
+fn presence_auth_error(headers: &HeaderMap) -> Option<StatusCode> {
+    let token = std::env::var("GLOBAL_TABLE_PRESENCE_TOKEN").unwrap_or_default();
+    if token.is_empty() {
+        return None;
+    }
+    let header_token = headers
+        .get("x-presence-token")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
+    if header_token.as_deref() == Some(token.as_str()) {
+        None
+    } else {
+        Some(StatusCode::UNAUTHORIZED)
+    }
+}
+
+fn presence_ttl_ms() -> u64 {
+    std::env::var("GLOBAL_TABLE_PRESENCE_TTL_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value >= 1_000)
+        .unwrap_or(15_000)
 }
 
 fn render_prometheus_metrics(simulator: &Simulator) -> String {
@@ -537,6 +613,40 @@ pub(super) async fn query_state(
 
     simulator.http_metrics().record_query_state(start.elapsed());
     response
+}
+
+pub(super) async fn get_account(
+    AxumState(simulator): AxumState<Arc<Simulator>>,
+    axum::extract::Path(pubkey): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let raw = match from_hex(&pubkey) {
+        Some(raw) => raw,
+        None => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    let public_key = match PublicKey::read(&mut raw.as_slice()) {
+        Ok(pk) => pk,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+
+    let account_key = Sha256::hash(&Key::Account(public_key.clone()).encode());
+    let nonce = match simulator.query_state(&account_key).await {
+        Some(lookup) => match lookup.operation {
+            StateOp::Update(StorageUpdate(_, Value::Account(account))) => account.nonce,
+            _ => 0,
+        },
+        None => 0,
+    };
+
+    let player_key = Sha256::hash(&Key::CasinoPlayer(public_key).encode());
+    let balance = match simulator.query_state(&player_key).await {
+        Some(lookup) => match lookup.operation {
+            StateOp::Update(StorageUpdate(_, Value::CasinoPlayer(player))) => player.balances.chips,
+            _ => 0,
+        },
+        None => 0,
+    };
+
+    Json(AccountResponse { nonce, balance }).into_response()
 }
 
 pub(super) async fn query_seed(

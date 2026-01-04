@@ -11,10 +11,11 @@
  * The handler chains these automatically for smooth mobile UX.
  */
 import { GameHandler, type HandlerContext, type HandleResult } from './base.js';
-import { GameType, buildBlackjackPayload } from '../codec/index.js';
+import { GameType } from '../codec/index.js';
 import { generateSessionId } from '../codec/transactions.js';
 import { ErrorCodes, createError } from '../types/errors.js';
 import { BlackjackMove as SharedBlackjackMove } from '@nullspace/constants';
+import { encodeGameMovePayload } from '@nullspace/protocol';
 import type { BlackjackDealRequest, OutboundMessage } from '@nullspace/protocol/mobile';
 
 /**
@@ -108,12 +109,12 @@ export class BlackjackHandler extends GameHandler {
   }
 
   private async handleHit(ctx: HandlerContext): Promise<HandleResult> {
-    const payload = buildBlackjackPayload('hit');
+    const payload = encodeGameMovePayload({ game: 'blackjack', move: 'hit' });
     return this.makeMove(ctx, payload);
   }
 
   private async handleStand(ctx: HandlerContext): Promise<HandleResult> {
-    const payload = buildBlackjackPayload('stand');
+    const payload = encodeGameMovePayload({ game: 'blackjack', move: 'stand' });
     const standResult = await this.makeMove(ctx, payload);
 
     if (!standResult.success) {
@@ -132,7 +133,7 @@ export class BlackjackHandler extends GameHandler {
   }
 
   private async handleDouble(ctx: HandlerContext): Promise<HandleResult> {
-    const payload = buildBlackjackPayload('double');
+    const payload = encodeGameMovePayload({ game: 'blackjack', move: 'double' });
     const doubleResult = await this.makeMove(ctx, payload);
 
     if (!doubleResult.success) {
@@ -149,7 +150,7 @@ export class BlackjackHandler extends GameHandler {
   }
 
   private async handleSplit(ctx: HandlerContext): Promise<HandleResult> {
-    const payload = buildBlackjackPayload('split');
+    const payload = encodeGameMovePayload({ game: 'blackjack', move: 'split' });
     return this.makeMove(ctx, payload);
   }
 }

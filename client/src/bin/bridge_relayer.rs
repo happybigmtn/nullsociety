@@ -565,7 +565,7 @@ async fn scan_commonware_withdrawals(
             let amount = rng_to_evm_amount(withdrawal.amount, evm.decimals)?;
             let source = withdrawal_source(&withdrawal);
             let lockbox = evm.lockbox.clone();
-            let call = lockbox.withdraw(to, amount, source.into());
+            let call = lockbox.withdraw(to, amount, source);
             let pending_tx = call
                 .send()
                 .await

@@ -288,7 +288,7 @@ async fn handle_updates_ws(
                             "WebSocket client lagged behind, skipped {} messages. Consider increasing buffer size.",
                             skipped
                         );
-                        record_lagged(&simulator, WsStreamKind::Updates, skipped as u64);
+                        record_lagged(&simulator, WsStreamKind::Updates, skipped);
                         // Continue receiving - client may catch up
                     }
                     Err(broadcast::error::RecvError::Closed) => {
@@ -385,7 +385,7 @@ async fn handle_mempool_ws(
                             "Mempool WebSocket client lagged behind, skipped {} messages. Consider increasing buffer size.",
                             skipped
                         );
-                        record_lagged(&simulator, WsStreamKind::Mempool, skipped as u64);
+                        record_lagged(&simulator, WsStreamKind::Mempool, skipped);
                         // Continue receiving - client may catch up
                     }
                     Err(broadcast::error::RecvError::Closed) => {

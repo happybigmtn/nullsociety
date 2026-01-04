@@ -146,7 +146,7 @@ impl Summary {
         identity: &Identity,
     ) -> Result<(Vec<(Position, Digest)>, Vec<(Position, Digest)>), VerifyError> {
         // Verify the signature
-        let scheme = AggregationScheme::certificate_verifier(identity.clone());
+        let scheme = AggregationScheme::certificate_verifier(*identity);
         let mut rng = rand::thread_rng();
         if !self.certificate.verify(&mut rng, &scheme, NAMESPACE) {
             return Err(VerifyError::InvalidSignature);
@@ -261,7 +261,7 @@ impl PartialEq for Events {
 impl Events {
     pub fn verify(&self, identity: &Identity) -> Result<(), VerifyError> {
         // Verify the signature
-        let scheme = AggregationScheme::certificate_verifier(identity.clone());
+        let scheme = AggregationScheme::certificate_verifier(*identity);
         let mut rng = rand::thread_rng();
         if !self.certificate.verify(&mut rng, &scheme, NAMESPACE) {
             return Err(VerifyError::InvalidSignature);
@@ -341,7 +341,7 @@ pub struct Lookup {
 impl Lookup {
     pub fn verify(&self, identity: &Identity) -> Result<(), VerifyError> {
         // Verify the signature
-        let scheme = AggregationScheme::certificate_verifier(identity.clone());
+        let scheme = AggregationScheme::certificate_verifier(*identity);
         let mut rng = rand::thread_rng();
         if !self.certificate.verify(&mut rng, &scheme, NAMESPACE) {
             return Err(VerifyError::InvalidSignature);
@@ -416,7 +416,7 @@ pub struct FilteredEvents {
 impl FilteredEvents {
     pub fn verify(&self, identity: &Identity) -> Result<(), VerifyError> {
         // Verify the signature
-        let scheme = AggregationScheme::certificate_verifier(identity.clone());
+        let scheme = AggregationScheme::certificate_verifier(*identity);
         let mut rng = rand::thread_rng();
         if !self.certificate.verify(&mut rng, &scheme, NAMESPACE) {
             return Err(VerifyError::InvalidSignature);

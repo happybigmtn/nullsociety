@@ -26,7 +26,53 @@ After this lesson you should be able to:
 
 ---
 
-## 1) The web app as a multi-product SPA
+## 1) Web app fundamentals (before the walkthrough)
+
+### 1.1 What a SPA is
+
+A **Single Page App (SPA)** loads one HTML shell and then renders all views with JavaScript. Navigation is handled by a router, not full page reloads. This enables:
+
+- fast transitions between routes,
+- shared state across pages,
+- lazy loading of heavy sections.
+
+### 1.2 React component tree (the mental model)
+
+React renders a component tree. In the web app:
+
+- the root component mounts global providers and routing,
+- each route renders a component subtree,
+- state updates cause re-render.
+
+This is the same one-way data flow you see in React Native.
+
+### 1.3 Client-side routing basics
+
+React Router maps paths to components. It lets you:
+
+- define nested layouts,
+- lazy load subtrees,
+- preserve state while changing views.
+
+Routes are just components. That's why the routing tree is the architecture.
+
+### 1.4 Lazy loading and Suspense
+
+Large SPAs use **code splitting**: only load code when a route is visited. React's `Suspense` provides a fallback UI while bundles download.
+
+### 1.5 Shared state and side effects
+
+Hooks and shared state (stores/contexts) are used for:
+
+- gateway connections,
+- feature flags,
+- analytics/referrals.
+
+This is why the root layout includes listeners and providers: they must be mounted once for the entire app.
+
+---
+
+## 2) The web app as a multi-product SPA
 
 The web app is not just a casino UI. It is a multi-product single-page app (SPA) that includes:
 
@@ -40,7 +86,7 @@ The architecture therefore favors **route-level modularity**: each major section
 
 ---
 
-## 2) `App.jsx`: the routing spine
+## 3) `App.jsx`: the routing spine
 
 `App.jsx` defines the router and the lazy-loaded layout. The key elements are:
 
@@ -81,19 +127,19 @@ Simplified view:
 </BrowserRouter>
 ```
 
-### 2.1 Why nested layouts matter
+### 3.1 Why nested layouts matter
 
 `AppLayout` provides the global shell for dashboard-like sections (economy, analytics, explorer). `ChainConnectionLayout` is a second-level wrapper that likely enforces chain connectivity prerequisites (wallet connection, chain status) for transactional routes like swap and bridge.
 
 This layering keeps concerns separate: layout handles navigation and scaffolding, while the nested routes handle domain logic.
 
-### 2.2 Global loading fallback
+### 3.2 Global loading fallback
 
 The `Suspense` fallback shows a lightweight terminal-styled loader. This is important because lazy-loaded pages may take a moment to download. A consistent fallback prevents white screens and gives users a perception of responsiveness.
 
 ---
 
-## 3) Feature flags and legacy routes
+## 4) Feature flags and legacy routes
 
 The economy and staking routes are gated by feature flags:
 
@@ -108,7 +154,7 @@ Feature flags also enable A/B testing and staged rollouts. The architecture make
 
 ---
 
-## 4) ReferralListener: a small but important side effect
+## 5) ReferralListener: a small but important side effect
 
 `ReferralListener` is mounted at the top level. It captures referral parameters from the URL and later claims them when the browser regains focus:
 
@@ -119,7 +165,7 @@ This is a nice example of a cross-cutting concern that belongs at the router lev
 
 ---
 
-## 5) `CasinoApp.tsx`: the casino UI engine
+## 6) `CasinoApp.tsx`: the casino UI engine
 
 `CasinoApp` is the root route for the casino experience. It is large because it orchestrates many cross-cutting concerns:
 
@@ -140,7 +186,7 @@ This hook is the casino state machine. Everything else in `CasinoApp` is either 
 
 ---
 
-## 5.1) Game catalog and ordering
+## 6.1) Game catalog and ordering
 
 At the top of `CasinoApp.tsx`, the code constructs a list of games:
 
@@ -154,7 +200,7 @@ This list feeds menus and command palette navigation. The logic assumes that `Ga
 
 ---
 
-## 6) What `useTerminalGame` actually does
+## 7) What `useTerminalGame` actually does
 
 `useTerminalGame` is a compositional hook. It pulls together multiple sub-hooks:
 
@@ -172,7 +218,7 @@ This is a common architectural pattern: **the UI layer should not know about cha
 
 ---
 
-## 6.1) Reading the `useTerminalGame` return value
+## 7.1) Reading the `useTerminalGame` return value
 
 The return value of `useTerminalGame` is large, but you can group it into four categories:
 
@@ -185,7 +231,7 @@ The UI treats these as read-only data plus a small set of actions. The important
 
 ---
 
-## 7) Network labeling and chain connectivity
+## 8) Network labeling and chain connectivity
 
 `CasinoApp` derives a network label from environment variables:
 
@@ -199,7 +245,7 @@ This is small but important. Users should not confuse testnet with production. T
 
 ---
 
-## 8) UI preferences: sound, motion, and touch
+## 9) UI preferences: sound, motion, and touch
 
 `CasinoApp` keeps several UI preferences in localStorage:
 
@@ -213,7 +259,7 @@ The key design decision is **persistence**: if a user disables sound, it should 
 
 ---
 
-## 8.1) Reduced motion and accessibility details
+## 9.1) Reduced motion and accessibility details
 
 The `reducedMotion` preference is derived from two sources:
 
@@ -226,7 +272,7 @@ This is an example of accessible design built into the architecture, not bolted 
 
 ---
 
-## 9) Responsible play settings
+## 10) Responsible play settings
 
 The `ResponsiblePlaySettings` structure is stored in localStorage under `nullspace_responsible_play_v1`. It includes:
 
@@ -247,7 +293,7 @@ These controls are client-side, but they are still valuable: they shape user beh
 
 ---
 
-## 9.1) How `safeDeal` enforces limits in practice
+## 10.1) How `safeDeal` enforces limits in practice
 
 `safeDeal` is the gatekeeper for starting a new round. It only performs checks when the game is at a round boundary (`BETTING` or `RESULT` stage), which prevents mid-round interruptions. The checks include:
 
@@ -264,7 +310,7 @@ This pattern is critical: **UI safety logic wraps, but does not replace, the cor
 
 ---
 
-## 9.2) Session baselines and PnL tracking
+## 10.2) Session baselines and PnL tracking
 
 `CasinoApp` calculates `currentPnl`, `sessionMinutes`, and `netPnl` from `stats` and `rp`. When a session starts, it stores a baseline PnL and a start timestamp. Subsequent PnL checks compute net gain or loss relative to that baseline, not absolute wallet balance. This is important because a user's wallet may change for reasons unrelated to the current session (for example, tournament payouts or airdrops).
 
@@ -272,7 +318,7 @@ By baselining at session start, the UI can enforce loss limits based on actual s
 
 ---
 
-## 10) Command palette, help, and overlays
+## 11) Command palette, help, and overlays
 
 `CasinoApp` manages multiple overlays:
 
@@ -288,7 +334,7 @@ The command palette also integrates with keyboard shortcuts (see `useKeyboardCon
 
 ---
 
-## 10.1) Input refs and focus management
+## 11.1) Input refs and focus management
 
 `CasinoApp` keeps `inputRef` and `customBetRef` so it can programmatically focus inputs when overlays open. This is a small UX detail, but it matters: when a user opens the command palette, they can start typing immediately. When they open custom bet mode, the numeric input is focused without extra clicks.
 
@@ -296,7 +342,7 @@ This is a classic example of how React refs are used for imperative UX improveme
 
 ---
 
-## 11) Keyboard controls: power-user UX
+## 12) Keyboard controls: power-user UX
 
 The `useKeyboardControls` hook (not shown in full here) provides a large set of shortcuts:
 
@@ -312,7 +358,7 @@ The hook also implements game-specific shortcuts (blackjack hit/stand, roulette 
 
 ---
 
-## 11.1) Local UI state belongs in the component
+## 12.1) Local UI state belongs in the component
 
 `CasinoApp` maintains a large number of UI-only state variables: `commandOpen`, `customBetOpen`, `helpOpen`, `helpDetail`, `customBetString`, `searchQuery`, `leaderboardView`, `feedOpen`, `numberInputString`, `focusMode`, and `rewardsOpen`. These states are not part of the core chain or game logic. They are purely presentation concerns.
 
@@ -325,7 +371,7 @@ This division is an architectural choice: global state for things that must be c
 
 ---
 
-## 11.2) Play mode flow (cash vs freeroll)
+## 12.2) Play mode flow (cash vs freeroll)
 
 The casino can operate in different modes. `playMode` is stored in component state and drives which screens are shown:
 
@@ -338,7 +384,7 @@ Separating mode selection from game state is important: you can add new modes or
 
 ---
 
-## 12) QA harness and feature gating
+## 13) QA harness and feature gating
 
 The `qaEnabled` flag is derived from `VITE_QA_BETS`. When enabled, the UI renders a `QABetHarness` component. This is a testing tool that should never appear in production.
 
@@ -346,7 +392,7 @@ This is another example of environment-driven feature gating. It allows QA and d
 
 ---
 
-## 12.1) Wallet and auth indicators
+## 13.1) Wallet and auth indicators
 
 `CasinoApp` imports `WalletPill` and `AuthStatusPill` components. These are small UI elements, but they provide essential situational awareness:
 
@@ -359,7 +405,7 @@ These indicators also serve as anchor points for support and debugging. When a u
 
 ---
 
-## 13) Sound effects and telemetry
+## 14) Sound effects and telemetry
 
 `CasinoApp` calls `setSfxEnabled(soundEnabled)` when the sound preference changes. This lets the sound engine run independently of the UI. Sound effects are a key part of casino feedback, but they must respect user preferences.
 
@@ -367,13 +413,13 @@ The app also tracks events via `track` (telemetry). This mirrors the mobile app 
 
 ---
 
-## 14) Error boundaries
+## 15) Error boundaries
 
 `CasinoApp` wraps large sections in an `ErrorBoundary` component. This prevents a single render error from crashing the entire app. In a complex UI with many game components, this is essential for resilience.
 
 ---
 
-## 15) A simplified data flow
+## 16) A simplified data flow
 
 A casino action flows like this:
 
@@ -386,7 +432,7 @@ The UI does not embed chain logic. It delegates to the hook, which maintains con
 
 ---
 
-## 16) Failure modes and mitigations
+## 17) Failure modes and mitigations
 
 - **Chain offline**: `isOnChain` toggles to `offline`, and the UI can block actions.
 - **Feature flag misconfig**: fallback to legacy UI ensures functionality.
@@ -397,7 +443,7 @@ These are not theoretical. They reflect real conditions: ad blockers, privacy se
 
 ---
 
-## 16.1) Chain responsiveness timeouts
+## 17.1) Chain responsiveness timeouts
 
 Although not shown directly in `CasinoApp.tsx`, the `useTerminalGame` hook wires in `useChainTimeouts`. This subsystem arms timeouts when a transaction is sent and clears them when a response arrives. If a timeout fires, the UI can reset pending state or warn the user that the chain is unresponsive.
 
@@ -407,13 +453,13 @@ Even though this logic lives inside a hook, it has user-visible consequences. It
 
 ---
 
-## 17) Feynman recap: explain it like I am five
+## 18) Feynman recap: explain it like I am five
 
 Think of the web app as a big arcade hall. The front door is the router. Inside, there are different rooms (economy, explorer, casino). The casino room has a big control panel (`useTerminalGame`) that knows how to talk to the chain. All the buttons, sounds, and overlays are just decorations around that panel. If the control panel says the chain is offline, the room closes its doors.
 
 ---
 
-## 18) Exercises
+## 19) Exercises
 
 1) Why does the app use lazy loading for large sections like the explorer?
 2) What is the benefit of routing `economy` and `stake` through feature-flagged components?

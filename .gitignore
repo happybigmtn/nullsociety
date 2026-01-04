@@ -54,6 +54,7 @@ gateway/dist/
 gateway/.gateway-data/
 packages/*/dist/
 website/wasm/pkg/
+website/wasm/pkg-test/
 
 # Editor directories and files
 .vscode/*

@@ -131,6 +131,12 @@ export class CasinoClient {
 
     // Clear event handlers to prevent memory leaks
     this.eventHandlers.clear();
+
+    try {
+      this.wasm?.clearKeypair?.();
+    } catch {
+      // ignore
+    }
   }
 
   /**
@@ -1199,7 +1205,9 @@ export class CasinoClient {
 
     const allowLegacyKeys =
       typeof import.meta !== 'undefined' &&
+      import.meta.env?.PROD !== true &&
       (import.meta.env?.DEV || import.meta.env?.VITE_ALLOW_LEGACY_KEYS === 'true');
+    const isProd = typeof import.meta !== 'undefined' && import.meta.env?.PROD === true;
     const vaultEnabled =
       typeof window !== 'undefined' && localStorage.getItem('nullspace_vault_enabled') === 'true';
     const unlockedVault = (() => {
@@ -1217,11 +1225,18 @@ export class CasinoClient {
     }
 
     if (unlockedVault?.nullspaceEd25519PrivateKey) {
-      this.wasm.createKeypair(unlockedVault.nullspaceEd25519PrivateKey);
+      const keyBytes = new Uint8Array(unlockedVault.nullspaceEd25519PrivateKey);
+      this.wasm.createKeypair(keyBytes);
+      keyBytes.fill(0);
       logDebug('Loaded keypair from vault');
     } else {
       if (!allowLegacyKeys) {
         removeStoredPrivateKey();
+        try {
+          this.wasm.clearKeypair?.();
+        } catch {
+          // ignore
+        }
         console.warn('[CasinoClient] Legacy browser keys disabled. Unlock vault to continue.');
         return null;
       }
@@ -1249,11 +1264,11 @@ export class CasinoClient {
       if (!this.wasm.keypair) {
         const bytes = (() => {
           try {
-            if (typeof globalThis !== 'undefined' && globalThis.crypto?.getRandomValues) {
-              const raw = new Uint8Array(32);
-              globalThis.crypto.getRandomValues(raw);
-              return raw;
-            }
+          if (typeof globalThis !== 'undefined' && globalThis.crypto?.getRandomValues) {
+            const raw = new Uint8Array(32);
+            globalThis.crypto.getRandomValues(raw);
+            return raw;
+          }
           } catch {
             // ignore
           }
@@ -1285,6 +1300,14 @@ export class CasinoClient {
       publicKey: this.wasm.getPublicKeyBytes(),
       publicKeyHex: this.wasm.getPublicKeyHex()
     };
+
+    if (isProd) {
+      try {
+        this.wasm.clearKeypair?.();
+      } catch {
+        // ignore
+      }
+    }
 
     // Store non-secret identifier for the current keypair.
     try {

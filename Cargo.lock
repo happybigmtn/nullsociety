@@ -3145,27 +3145,8 @@ dependencies = [
  "nullspace-types",
  "rand 0.8.5",
  "rayon",
- "tracing",
-]
-
-[[package]]
-name = "nullspace-live-table"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "axum 0.7.9",
- "commonware-consensus",
- "commonware-cryptography",
- "commonware-math",
- "futures-util",
- "nullspace-execution",
- "nullspace-types",
- "rand 0.8.5",
- "serde",
  "serde_json",
- "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

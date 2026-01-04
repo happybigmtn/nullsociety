@@ -2,7 +2,7 @@
 
 Focus file: `architecture.md`
 
-Goal: provide a university-level architecture chapter that explains the global-table model, live-table vs on-chain confirmation, and the system's core tradeoffs. This lesson should stand alone as a rigorous conceptual foundation for everything else in the curriculum.
+Goal: provide a university-level architecture chapter that explains the global-table model, on-chain confirmation flow, and the system's core tradeoffs. This lesson should stand alone as a rigorous conceptual foundation for everything else in the curriculum.
 
 ---
 
@@ -11,7 +11,7 @@ Goal: provide a university-level architecture chapter that explains the global-t
 After this lesson you should be able to:
 
 1) Explain why the system chooses a single global table per game.
-2) Describe the difference between live-table mode and on-chain global table mode.
+2) Describe the on-chain global table confirmation flow and its UX implications.
 3) Trace the full data flow from client to table engine to persistence.
 4) Describe the round timing model and why each phase exists.
 5) Explain how fairness and determinism are enforced.
@@ -84,33 +84,18 @@ This is why the architecture emphasizes a **stateless gateway**. The gateway is 
 
 ---
 
-## 4) Two operational modes: live-table vs on-chain table
+## 4) Single operational mode: on-chain global table
 
-The architecture distinguishes between two modes:
-
-### 4.1 Live-table mode (incremental rollout)
-
-Live-table mode is an off-chain system that reuses on-chain execution logic but runs it in a dedicated service. It is opt-in per game so that existing on-chain flows remain unchanged.
-
-In the current architecture:
-
-- Phase 1 uses a dedicated live-table service (`services/live-table`).
-- Clients join with `craps_live_join` and receive `live_table_state` and `live_table_result` updates.
-- Gateways connect to the live-table service via WebSocket and forward updates to clients.
-
-This mode is about **speed** and **UX**. You get fast round updates and no chain confirmation delay. But the tradeoff is centralization: outcomes are authoritative but not on-chain.
-
-Live-table mode is also a testing ground for the global-table UI and timing logic. It allows the team to prove the round schedule and broadcast mechanics before committing to fully on-chain execution.
-
-### 4.2 On-chain global table (Phase 2)
-
-The long-term target is a fully on-chain global table. In this mode:
+Phase 1 is **fully on-chain**. There is no off-chain live-table service. The gateway
+orchestrates round timing, submits on-chain instructions, and fans out updates to
+clients. In this mode:
 
 - Bet acceptance and round results are confirmed by chain events.
-- The UI can show pending -> confirmed/failed statuses.
-- The chain becomes the canonical source of truth, not just the live-table service.
+- The UI can show pending → confirmed/failed statuses.
+- The chain is the canonical source of truth.
 
-This mode improves trust and auditability, but it introduces chain latency and throughput limits. That is the core tradeoff between live-table and on-chain table modes.
+This improves trust and auditability, but it introduces chain latency and throughput
+limits. That tradeoff is now a core constraint rather than an optional mode.
 
 ---
 
@@ -298,7 +283,7 @@ Mitigations include:
 - **Rate limits**: cap bets per player per round.
 - **Optional fast path**: let the UI update quickly while chain confirmation catches up.
 
-The tradeoff is clear: on-chain global tables improve trust and auditability but reduce maximum throughput compared to off-chain live tables. Batching is the primary tool to keep throughput viable.
+The tradeoff is clear: on-chain global tables improve trust and auditability but reduce maximum throughput. Batching is the primary tool to keep throughput viable.
 
 ---
 
@@ -329,26 +314,28 @@ This is the core scaling intuition: **treat the global table like a broadcast ch
 
 ---
 
-## 13) Live-table mode vs on-chain mode: tradeoff summary
+## 13) Single global table vs sharded tables: tradeoff summary
 
-| Dimension | Live-table mode | On-chain global table |
+| Dimension | Single global table | Sharded tables |
 | --- | --- | --- |
-| Latency | Very low | Higher (chain confirmation) |
-| Trust | Centralized | Decentralized and auditable |
-| Throughput | Higher | Lower (bounded by chain) |
-| Complexity | Lower | Higher (accounts, settlement) |
+| Latency | Higher under load | Lower per shard |
+| Trust | Uniform, shared outcomes | Fragmented experiences |
+| Throughput | Bounded by chain + round cadence | Scales with shard count |
+| UX | One shared event | Multiple smaller events |
 
-This table is the central tradeoff of the architecture. The system chooses live-table mode as an incremental rollout, but the long-term goal is on-chain mode for trust and transparency.
+This table is the central tradeoff of the architecture. The system chooses a single global table because the product goal is shared presence, even though it makes scaling harder.
 
 ---
 
-## 14) Operational configuration (live-table envs)
+## 14) Operational configuration (global table envs)
 
-The architecture lists environment variables that control live-table mode. This is important because it shows that the system was designed to be operationally tunable:
+The architecture lists environment variables that control the global table. This is important because it shows that the system was designed to be operationally tunable:
 
-- Gateway flags: `GATEWAY_LIVE_TABLE_CRAPS`, `GATEWAY_LIVE_TABLE_CRAPS_URL`, `GATEWAY_LIVE_TABLE_TIMEOUT_MS`, `GATEWAY_LIVE_TABLE_RECONNECT_MS`.
-- Live-table service flags: timing, bot counts, bet limits.
-- Client opt-in: `EXPO_PUBLIC_LIVE_TABLE_CRAPS`.
+- Gateway flags: `GATEWAY_LIVE_TABLE_CRAPS`, `GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE`.
+- Timing + limits: `GATEWAY_LIVE_TABLE_BETTING_MS`, `GATEWAY_LIVE_TABLE_LOCK_MS`, `GATEWAY_LIVE_TABLE_PAYOUT_MS`, `GATEWAY_LIVE_TABLE_COOLDOWN_MS`,
+  `GATEWAY_LIVE_TABLE_MIN_BET`, `GATEWAY_LIVE_TABLE_MAX_BET`, `GATEWAY_LIVE_TABLE_MAX_BETS_PER_ROUND`.
+- Fanout tuning: `GATEWAY_LIVE_TABLE_BROADCAST_MS`, `GATEWAY_LIVE_TABLE_BROADCAST_BATCH`.
+- Optional bots: `GATEWAY_LIVE_TABLE_BOT_COUNT`, `GATEWAY_LIVE_TABLE_BOT_PARTICIPATION`, `GATEWAY_LIVE_TABLE_BOT_BET_MIN`, `GATEWAY_LIVE_TABLE_BOT_BET_MAX`.
 
 These are not just configuration details; they are knobs for experimentation. They allow the team to tune timings, bot activity, and connection behavior without code changes.
 
@@ -397,7 +384,13 @@ The tradeoff is that you must build a high-performance, highly reliable single-t
 
 ## 18) Feynman recap
 
-There is one table. Everyone watches it. Gateways are just doors. The table engine decides when bets stop and what outcome happens. It writes everything down so it can be replayed. You can run it fast off-chain or slower on-chain. The architecture is built to make that one-table experience fair, synchronized, and recoverable.
+There is one table. Everyone watches it. Gateways are just doors. The table engine decides when bets stop and what outcome happens. It writes everything down on-chain so it can be replayed and audited. In phase 1 the table runs fully on-chain; the gateway simply fans out updates to keep the experience synchronized. The architecture is built to make that one-table experience fair, synchronized, and recoverable.
+
+One more operational implication: monitoring has to be phase‑aware, not just node‑aware. A healthy gateway with a stuck table is still a broken product. Your alerts should track “round opened” → “round locked” → “outcome revealed” → “round finalized” latencies, because the user experience is defined by those transitions.
+
+A helpful mental test is to imagine a traffic spike during betting. If the round lock takes too long, you do not just lose throughput; you break the shared experience. That is why latency budgets are tied to phases, not just generic request timing.
+
+In practice this means you should chart per phase durations alongside request latency, because the phase timeline is what players actually feel.
 
 ---
 
@@ -406,7 +399,7 @@ There is one table. Everyone watches it. Gateways are just doors. The table engi
 1) Why does the architecture avoid multiple tables per game? What product experience does that enable?
 2) In on-chain mode, why is settlement done in batches instead of all at once?
 3) What does the event log provide that snapshots alone do not?
-4) How would you explain the difference between live-table and on-chain mode to a non-technical user?
+4) How would you explain the single global table model to a non-technical user?
 5) Which component is authoritative for outcomes: gateway or table engine? Why?
 
 ---

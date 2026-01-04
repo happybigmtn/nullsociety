@@ -490,6 +490,113 @@ What this code does:
 
 ---
 
+## Extended deep dive: the simulator HTTP boundary
+
+The `http.rs` file is where raw bytes enter the simulator. Everything on-chain flows through `/submit`. This boundary is therefore both performance-critical and security-critical.
+
+Below are the deeper concepts that are easy to miss if you only read the handlers.
+
+### 12) Decode, apply, publish: the three phases
+
+The `/submit` handler does three things in order:
+
+1) **Decode** raw bytes into a structured `Submission`.
+2) **Apply** the submission to the simulator state.
+3) **Publish** the raw bytes to downstream consumers.
+
+Each phase has a different purpose:
+
+- Decode is about syntactic correctness.
+- Apply is about semantic correctness (valid state transitions).
+- Publish is about event propagation to other subsystems (indexers, WS updates, etc).
+
+The separation matters. A submission might be syntactically valid but semantically invalid. In that case, decoding succeeds but apply fails, and the handler returns 400. That is the correct behavior: the bytes were well-formed, but the action was not allowed.
+
+### 13) Why publish the raw bytes, not the decoded object
+
+The simulator publishes the raw bytes after a successful apply. That seems redundant since it already decoded the submission. But it is intentional:
+
+- The raw bytes are a canonical representation that other components can decode independently.
+- It avoids tight coupling between subsystems. The publisher does not need to pass around Rust objects.
+- It preserves exactly what was submitted, which is valuable for audit or replay.
+
+This is a classic event-sourcing style choice: publish the original event, not the transformed version.
+
+### 14) The summary decode helper is a forensic tool
+
+`log_summary_decode_stages` does not validate proofs; it only identifies which stage of decoding failed. That is why it is useful: when a summary submission fails, you want to know whether it was:
+
+- a bad progress header,
+- a malformed certificate,
+- a corrupt proof,
+- or a bad set of ops.
+
+This is especially valuable in distributed systems where different components may be producing summary submissions. The log tells you exactly where the corruption happened.
+
+### 15) Metrics as a second API surface
+
+The simulator exposes JSON metrics and Prometheus metrics. These are not "nice to have"; they are a second API surface used for operations.
+
+In production, you often debug issues by looking at:
+
+- submit latency histograms,
+- reject counters (origin, rate limit, body size),
+- update lag counters (WS queue full, send timeouts),
+- system gauges (RSS memory).
+
+So while `render_prometheus_metrics` looks like boring string formatting, it is actually the map between internal state and operational visibility.
+
+If you rename a metric here, dashboards will break. That is why the metric names are treated like a stable public API.
+
+### 16) Query endpoints are read-only, but still sensitive
+
+`query_state` and `query_seed` are read-only, but they can still be abused:
+
+- Attackers can spam them to overload state storage.
+- Attackers can scrape state to learn about game activity.
+
+The code does not enforce auth on these endpoints, so you should protect them with:
+
+- a reverse proxy rate limit,
+- caching, or
+- network-level access control.
+
+The lesson is that "read-only" is not the same as "risk-free."
+
+### 17) Feynman analogy: the post office and the ledger
+
+Imagine a post office that accepts sealed envelopes:
+
+- Decode is checking the envelope format.
+- Apply is recording the contents into the ledger.
+- Publish is telling the newspaper that a new record exists.
+
+In this analogy, the HTTP handler is the clerk at the counter: strict about format, fast about decisions, and careful to record every accepted envelope. That is how the simulator stays correct and observable.
+
+---
+
+### 18) Status codes as contract
+
+The `/submit` handler returns:
+
+- **200 OK** when a submission is decoded and applied successfully.
+- **400 Bad Request** when decoding fails or the submission is semantically invalid.
+
+Notice what it does *not* return:
+
+- There is no 500 for "invalid submission." That is intentional. A malformed submission is a client error, not a server failure.
+
+This distinction matters in production:
+
+- If you see a spike of 400s, you likely have a client encoding bug or a nonce mismatch.
+- If you see 500s (from other handlers), you likely have a server issue.
+
+Keeping those categories separate makes dashboards and alerts more meaningful.
+
+Also note the decode failure logging: the handler logs only a short hex preview of the body. That is a deliberate balance between debuggability and safety; it avoids dumping entire payloads into logs while still giving enough bytes to identify corrupted prefixes. It is a sensible default.
+
+---
+
 ## Key takeaways
 - `/submit` is the critical path: decode -> apply -> publish -> record latency.
 - Metrics are available both as JSON and Prometheus, with optional token auth.

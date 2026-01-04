@@ -178,10 +178,10 @@ See how the protocol is executed in practice: runtime, consensus/execution pipel
 - [ ] evm/hardhat.config.js
 - [ ] evm/package-lock.json
 - [ ] evm/package.json
-- [ ] evm/scripts/buildEligibilitySnapshot.mjs
+- [ ] evm/scripts/buildEligibilitySnapshot.js
 - [ ] evm/scripts/deployPhase2.js
 - [ ] evm/scripts/finalizeCca.js
-- [ ] evm/scripts/generateBidders.mjs
+- [ ] evm/scripts/generateBidders.js
 - [ ] evm/scripts/recoveryPoolActions.js
 - [ ] evm/scripts/simulateCcaBids.js
 - [ ] evm/src/abis/cca.js

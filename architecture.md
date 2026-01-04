@@ -17,29 +17,28 @@
 
 Each game variant runs one authoritative "table engine" that owns the state and clock. Players connect to stateless edge gateways over WebSockets. Gateways relay bet intents to the table engine and fan out broadcast updates to clients via a pub/sub fabric. The table engine advances in fixed "rounds" (betting window -> lock -> resolve -> payout -> cooldown). All clients see the same countdown and the same outcome at the same time.
 
-## Live table mode (incremental rollout)
+## Global table mode (Phase 1: on-chain confirmations)
 
-- Live tables are **opt-in per game** so the existing on-chain flows remain unchanged.
-- Phase 1 (Craps) uses a dedicated live-table service (`services/live-table`) that reuses the on-chain execution logic for full bet coverage; clients join using `craps_live_join` and receive `live_table_state`/`live_table_result`.
-- Gateway config (env):
-  - `GATEWAY_LIVE_TABLE_CRAPS` (enable)
-  - `GATEWAY_LIVE_TABLE_CRAPS_URL` (WebSocket URL for live-table service, default `ws://127.0.0.1:9123/ws`)
-  - `GATEWAY_LIVE_TABLE_TIMEOUT_MS`, `GATEWAY_LIVE_TABLE_RECONNECT_MS`
-- Live-table service config (env):
-  - `LIVE_TABLE_HOST`, `LIVE_TABLE_PORT`
-  - `LIVE_TABLE_BETTING_MS`, `LIVE_TABLE_LOCK_MS`, `LIVE_TABLE_PAYOUT_MS`, `LIVE_TABLE_COOLDOWN_MS`, `LIVE_TABLE_TICK_MS`
-  - `LIVE_TABLE_BOT_COUNT`, `LIVE_TABLE_BOT_BALANCE`, `LIVE_TABLE_BOT_BET_MIN`, `LIVE_TABLE_BOT_BET_MAX`, `LIVE_TABLE_BOT_BETS_MIN`, `LIVE_TABLE_BOT_BETS_MAX`, `LIVE_TABLE_BOT_MAX_ACTIVE_BETS`
-- Client config (env):
-  - `EXPO_PUBLIC_LIVE_TABLE_CRAPS` (mobile opt-in)
+The single global table is **on-chain by default**. Bets are accepted and resolved by on-chain
+events, and the gateway fans out updates to clients (pending → confirmed/failed).
 
-## On-chain global table mode (Phase 2: real confirmations)
+Gateway config (env):
+- `GATEWAY_LIVE_TABLE_CRAPS` (enable global craps table; defaults to on in production)
+- `GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE` (required in production for round control)
+- Timing and limits: `GATEWAY_LIVE_TABLE_BETTING_MS`, `GATEWAY_LIVE_TABLE_LOCK_MS`,
+  `GATEWAY_LIVE_TABLE_PAYOUT_MS`, `GATEWAY_LIVE_TABLE_COOLDOWN_MS`,
+  `GATEWAY_LIVE_TABLE_MIN_BET`, `GATEWAY_LIVE_TABLE_MAX_BET`, `GATEWAY_LIVE_TABLE_MAX_BETS_PER_ROUND`
+- Fanout tuning: `GATEWAY_LIVE_TABLE_BROADCAST_MS`, `GATEWAY_LIVE_TABLE_BROADCAST_BATCH`
+- Global presence: `GATEWAY_INSTANCE_ID` (stable gateway ID),
+  `GATEWAY_LIVE_TABLE_PRESENCE_UPDATE_MS`, `GATEWAY_LIVE_TABLE_PRESENCE_TIMEOUT_MS`,
+  `GATEWAY_LIVE_TABLE_PRESENCE_TOKEN` (optional; shared with simulator)
+- Bots (optional): `GATEWAY_LIVE_TABLE_BOT_COUNT`, `GATEWAY_LIVE_TABLE_BOT_PARTICIPATION`,
+  `GATEWAY_LIVE_TABLE_BOT_BET_MIN`, `GATEWAY_LIVE_TABLE_BOT_BET_MAX`,
+  `GATEWAY_LIVE_TABLE_BOT_BETS_MIN`, `GATEWAY_LIVE_TABLE_BOT_BETS_MAX`
 
-Goal: move the **single global table** onto the chain so bet acceptance and round results are
-confirmed by on-chain events (and can be surfaced in the UI as pending → confirmed/failed).
-
-This mode **replaces the off-chain live-table service** for games that require true on-chain
-confirmation semantics. Gateways still provide low-latency fan-out and UX helpers, but
-the canonical bet acceptance and outcomes come from the updates stream.
+Simulator config (env, for global presence aggregation):
+- `GLOBAL_TABLE_PRESENCE_TTL_MS`
+- `GLOBAL_TABLE_PRESENCE_TOKEN` (optional; match `GATEWAY_LIVE_TABLE_PRESENCE_TOKEN`)
 
 ### On-chain data model (per game)
 
@@ -94,7 +93,7 @@ Gateways already consume the updates stream; they should forward:
 This aligns with `docs/ux.md` guidance: surface a lightweight activity ledger with
 pending/confirmed/failed states close to the bet slip.
 
-### Scalability impact (vs. off-chain live table)
+### Scalability impact
 
 **Costs / risks**
 - On-chain confirmations add write load proportional to bets.
@@ -105,11 +104,10 @@ pending/confirmed/failed states close to the bet slip.
 - **Batch settlement**: settle N players per tx to keep compute bounded.
 - **Aggregate totals** on-chain for heatmaps instead of per-bet broadcasts.
 - **Rate limits**: cap bets per player per round; enforce max active bets.
-- **Optional fast path**: keep WebSocket fan-out for UI while the chain confirms in the background.
+- **WS fanout tuning**: throttle state broadcasts and send in batches from the gateway.
 
 Net effect: on-chain global tables improve trust and UI clarity (real confirmations) but
-**reduce maximum throughput** compared to off-chain tables. The batching model above is
-required to keep tens-of-thousands concurrency viable.
+require batching and fanout controls to keep tens-of-thousands concurrency viable.
 
 ## High-level architecture
 

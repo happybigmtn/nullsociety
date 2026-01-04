@@ -4,12 +4,16 @@ This file tracks cumulative issues or potential improvements discovered during t
 Each entry captures the file, issue, impact, and any suggested action.
 
 ## Open Issues
-- packages/protocol/src/encode.ts: `encodeGameStart` is labeled as a placeholder and uses little-endian for amounts while other encoders use big-endian; if consumers call this, it likely won’t match the Rust protocol. Suggest either implement the real spec or remove from the public API until ready.
-- evm/src/abis/*.js: ABIs are hand-maintained; potential for drift from deployed contracts. Suggest generating from Hardhat artifacts or TypeChain output and importing from a single source.
-- execution/src/casino/super_mode.rs: uses `f32` probabilities in consensus-critical RNG paths; likely deterministic but still float-based. Consider replacing with integer-threshold sampling to eliminate any cross-platform float variance risk.
-- gateway/src/codec/instructions.ts: legacy payload builders duplicate newer protocol encoders and are now unused internally; consider deprecating/removing or delegating to protocol encoders to reduce drift.
-- packages/protocol/src/schema/mobile.ts: some bet schemas still accept arbitrary strings (roulette/craps/sic bo); consider tightening to enums based on `@nullspace/constants` so invalid bet types are rejected at validation time instead of at encode-time.
-- evm/scripts/*: mixed CJS/ESM scripts still require interop; consider standardizing module format and adding typed config validation (zod) to reduce runtime env parsing drift.
+- gateway live-table: global table rounds never opened during local load/soak attempts (roundId stayed 0, bets never sent); needs root-cause and validation on staging/testnet.
 
 ## Resolved
+- gateway/src/session/manager.ts, gateway/src/handlers/base.ts: add UpdatesClient error listeners to avoid unhandled error crashes when updates WS returns 429 under load.
+- scripts/load-test-global-table.mjs: wait for session_ready before joining + add counters for error messages and bets sent.
+- docker/observability/docker-compose.yml, docker/observability/prometheus.yml: Prometheus now boots locally without unsupported config flags.
 - evm/scripts/*: duplicated env parsing and bidder key helpers now live in `evm/src/utils` and are shared across scripts.
+- evm/scripts/*: standardized on CJS and added typed env validation via `parseEnv` to avoid silent config drift.
+- packages/protocol/src/encode.ts: removed the placeholder `encodeGameStart` from the public API to prevent endian drift vs Rust.
+- evm/src/abis/*.js: internal ABIs now sourced from Hardhat artifacts with ERC20 artifact fallback; external ABIs are explicitly minimal surface.
+- execution/src/casino/super_mode.rs: RNG now uses integer-threshold sampling to avoid float determinism risk.
+- gateway/src/codec/instructions.ts: legacy payload builders removed; gateway handlers and tests now use protocol encoders.
+- packages/protocol/src/schema/mobile.ts: tightened bet schemas to enums from `@nullspace/constants` so invalid bet types are rejected during validation.

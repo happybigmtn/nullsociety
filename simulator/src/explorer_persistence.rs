@@ -581,7 +581,7 @@ fn persistence_worker(
             if let Some(latest_height) = blocks.iter().map(|block| block.progress.height).max() {
                 let min_height =
                     latest_height.saturating_sub(max_blocks.saturating_sub(1) as u64);
-                if last_min_height.map_or(true, |prev| min_height > prev) {
+                if last_min_height.is_none_or(|prev| min_height > prev) {
                     let prune_result = match &mut backend {
                         PersistenceBackend::Sqlite(conn) => {
                             prune_to_min_height_sqlite(conn, min_height)

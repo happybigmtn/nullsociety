@@ -1,56 +1,23 @@
 import { spawn } from 'child_process';
 import { test, describe, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { WebSocket } from 'ws';
 import fetch from 'node-fetch';
-import fs from 'fs/promises';
 import { WasmWrapper } from '../../src/api/wasm.js';
+import { installLocalStorageMock } from './helpers/storage.js';
+import { loadWasmBindings, SIMULATOR_BINARY_PATH } from './helpers/wasm.js';
 
 // Setup globals for browser-like APIs used by the client code.
 global.fetch = fetch;
 global.WebSocket = WebSocket;
 
-// Mock localStorage for Node.js environment
-global.localStorage = {
-  storage: {},
-  getItem(key) {
-    return this.storage[key] || null;
-  },
-  setItem(key, value) {
-    this.storage[key] = value;
-  },
-  removeItem(key) {
-    delete this.storage[key];
-  },
-  clear() {
-    this.storage = {};
-  },
-  get length() {
-    return Object.keys(this.storage).length;
-  },
-  key(index) {
-    return Object.keys(this.storage)[index];
-  }
-};
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+installLocalStorageMock();
 
 const SIMULATOR_PORT = 8089;
 const SIMULATOR_URL = `http://localhost:${SIMULATOR_PORT}`;
 
 let wasmWrapper;
 let simulatorProcess;
-
-async function loadWasmForNode() {
-  const wasmPath = path.join(__dirname, '../../wasm/pkg/nullspace_wasm_bg.wasm');
-  const wasmBuffer = await fs.readFile(wasmPath);
-  const wasmJs = await import('../../wasm/pkg/nullspace_wasm.js');
-  await wasmJs.default(wasmBuffer);
-  return wasmJs;
-}
 
 async function waitForSimulatorReady(port, maxAttempts = 40) {
   for (let i = 0; i < maxAttempts; i++) {
@@ -71,11 +38,10 @@ async function startSimulator() {
   const identityBytes = wasmWrapper.getIdentity(0n);
   const identityHex = wasmWrapper.bytesToHex(identityBytes);
 
-  const simulatorPath = path.join(__dirname, '../../../target/release/nullspace-simulator');
   const simulatorArgs = ['-p', SIMULATOR_PORT.toString(), '-i', identityHex];
 
-  simulatorProcess = spawn(simulatorPath, simulatorArgs, {
-    cwd: path.join(__dirname, '../../'),
+  simulatorProcess = spawn(SIMULATOR_BINARY_PATH, simulatorArgs, {
+    cwd: process.cwd(),
     stdio: 'pipe',
     env: {
       ...process.env,
@@ -103,7 +69,7 @@ async function stopSimulator() {
 }
 
 before(async () => {
-  const wasmJs = await loadWasmForNode();
+  const wasmJs = await loadWasmBindings();
   wasmWrapper = new WasmWrapper();
   wasmWrapper.wasm = wasmJs;
   wasmWrapper.identityBytes = wasmJs.get_identity(0n);

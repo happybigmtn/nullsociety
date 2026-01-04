@@ -39,8 +39,8 @@ secrets available.
   - `OPS_ALLOWED_ORIGINS=https://staging.example.com`
   - `OPS_REQUIRE_ALLOWED_ORIGINS=1`
   - `OPS_REQUIRE_ADMIN_TOKEN=1`
-- Live-table integration (if enabled):
-  - `GATEWAY_LIVE_TABLE_CRAPS_URL=ws://<LIVE_TABLE_HOST>:9123/ws`
+- Global table coordinator (on-chain):
+  - `GATEWAY_LIVE_TABLE_CRAPS=1`
   - `GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE=/etc/nullspace/casino-admin-key.hex`
   - Set `GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV=1` only if you must use env keys in production.
 - Enforce vault-only browser keys:
@@ -86,7 +86,7 @@ Notes:
 3) Start gateway pointing at simulator.
 4) Start Auth service with Convex + Stripe configured.
 5) Start website with vault-only defaults and correct Auth URL.
-6) (Optional) Start live-table service for craps.
+6) Enable the global craps table in the gateway (`GATEWAY_LIVE_TABLE_CRAPS=1`).
 7) (Optional) Start ops service for analytics.
 
 Reference: `docs/testnet-runbook.md`.
@@ -102,8 +102,6 @@ Reference: `docs/testnet-runbook.md`.
   - `GET http://<AUTH_HOST>:4000/metrics/prometheus` (send `x-metrics-token: <METRICS_AUTH_TOKEN>`)
 - Optional:
   - `GET http://<OPS_HOST>:9020/healthz`
-  - `GET http://<LIVE_TABLE_HOST>:9123/healthz`
-  - Live-table WS connect: `ws://<LIVE_TABLE_HOST>:9123/ws`
 - Metrics scrape sanity: simulator + nodes visible in Prometheus.
 - Faucet flow: register, claim, verify balance changes.
 - One full game flow each for:
@@ -133,6 +131,12 @@ Reference: `docs/testnet-runbook.md`.
   ```bash
   NUM_BOTS=300 DURATION_SECONDS=300 RATE_PER_SEC=3.0 \
     ./scripts/run-bots.sh configs/testnet http://<INDEXER_HOST>:8080
+  ```
+- Global table fanout (5-10 min):
+  ```bash
+  URL=ws://<GATEWAY_HOST>:9010 ORIGIN=https://gateway.example.com \
+    TOTAL=5000 RAMP_PER_SEC=500 DURATION=300 \
+    node scripts/load-test-global-table.mjs
   ```
 
 ## 7) Recovery drills

@@ -212,7 +212,7 @@ impl<
         seed_listeners_outstanding.set(0);
         seed_waiting_views.set(0);
         let seed_verifier: bls12381_threshold::Scheme<PublicKey, MinSig> =
-            bls12381_threshold::Scheme::certificate_verifier(self.config.identity.clone());
+            bls12381_threshold::Scheme::certificate_verifier(self.config.identity);
 
         // Process messages
         loop {

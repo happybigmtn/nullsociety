@@ -81,16 +81,11 @@ const STATE_LEN_WITH_RULES: usize = 33;
 const PROGRESSIVE_BET_UNIT: u64 = 1;
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum DealerQualifier {
+    #[default]
     QHigh = 0,
     Q64 = 1,
-}
-
-impl Default for DealerQualifier {
-    fn default() -> Self {
-        DealerQualifier::QHigh
-    }
 }
 
 impl TryFrom<u8> for DealerQualifier {
@@ -105,17 +100,9 @@ impl TryFrom<u8> for DealerQualifier {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct ThreeCardRules {
     dealer_qualifier: DealerQualifier,
-}
-
-impl Default for ThreeCardRules {
-    fn default() -> Self {
-        Self {
-            dealer_qualifier: DealerQualifier::default(),
-        }
-    }
 }
 
 impl ThreeCardRules {
@@ -594,6 +581,7 @@ fn is_mini_royal(cards: &[u8; 3]) -> bool {
 }
 
 /// Generate JSON logs for Three Card Poker game completion
+#[allow(clippy::too_many_arguments)]
 fn generate_three_card_logs(
     state: &TcState,
     session: &GameSession,

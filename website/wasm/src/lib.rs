@@ -1,6 +1,4 @@
 use commonware_codec::{Encode, ReadExt};
-#[cfg(feature = "testing")]
-use commonware_codec::Encode as _;
 use commonware_consensus::simplex::scheme::bls12381_threshold;
 use commonware_consensus::Viewable;
 #[cfg(feature = "testing")]
@@ -1386,7 +1384,7 @@ fn decode_seed_internal(seed: Seed, identity: &Identity) -> Result<JsValue, JsVa
     // Verify the seed signature
     let verifier =
         bls12381_threshold::Scheme::<ed25519::PublicKey, MinSig>::certificate_verifier(
-            identity.clone(),
+            *identity,
         );
     if !seed.verify(&verifier, NAMESPACE) {
         return Err(JsValue::from_str("invalid seed"));
@@ -1453,6 +1451,7 @@ fn serialize_global_table_round(
         "made_points_mask": round.made_points_mask,
         "epoch_point_established": round.epoch_point_established,
         "field_paytable": round.field_paytable,
+        "rng_commit": hex(&round.rng_commit),
         "roll_seed": hex(&round.roll_seed),
         "totals": round
             .totals
@@ -2227,7 +2226,7 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                 "id": id,
                 "player": hex(&player.encode()),
                 "amount": amount,
-                "destination": hex(&destination),
+                "destination": hex(destination),
                 "requested_ts": requested_ts,
                 "available_ts": available_ts,
                 "player_balances": {
@@ -2262,7 +2261,7 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                 "id": id,
                 "admin": hex(&admin.encode()),
                 "amount": amount,
-                "source": hex(&source),
+                "source": hex(source),
                 "fulfilled_ts": fulfilled_ts,
                 "bridge": {
                     "daily_day": bridge.daily_day,
@@ -2286,7 +2285,7 @@ fn decode_event(event: &Event) -> Result<serde_json::Value, JsValue> {
                 "admin": hex(&admin.encode()),
                 "recipient": hex(&recipient.encode()),
                 "amount": amount,
-                "source": hex(&source),
+                "source": hex(source),
                 "player_balances": {
                     "chips": player_balances.chips,
                     "vusdt_balance": player_balances.vusdt_balance,

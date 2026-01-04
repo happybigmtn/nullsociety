@@ -95,7 +95,7 @@ Mapped action items: Item 1 [x], Item 2 [x], Item 3 [x]
 
 - 1) **Gateway origins must be locked down** - `GATEWAY_ALLOWED_ORIGINS` is required in production. - Missing this risks cross-origin abuse.
 - 2) **Metrics auth tokens are required** - `METRICS_AUTH_TOKEN` must be set for simulator, validators, and auth.
-- 3) **Live-table admin keys should be file-based** - Env keys are blocked in production unless explicitly allowed. ---
+- 3) **Global table admin keys should be file-based** - Env keys are blocked in production unless explicitly allowed. ---
 
 ## E15-testing-strategy
 Mapped action items: Item 36 [x]
@@ -318,29 +318,19 @@ Mapped action items: Item 19 [x]
 ## L41-gateway-craps-handler
 Mapped action items: Item 33 [x]
 
-- 1) **No explicit bet limits here** - Bet limits are enforced later in the execution layer or live-table service. - If those layers are misconfigured, the gateway will not block large bets.
+- 1) **No explicit bet limits here** - Bet limits are enforced later in the execution layer or global table coordinator. - If those layers are misconfigured, the gateway will not block large bets.
 - 2) **Session counter is local** - `gameSessionCounter` increments in memory. If the gateway restarts, counters reset. - This is usually fine because the session ID also uses the public key. ---
 
-## L42-live-craps-table
-Mapped action items: Item 31 [x]
-
-- 1) **Timeouts are short by default** - `GATEWAY_LIVE_TABLE_TIMEOUT_MS` defaults to 5000 ms. - Slow networks or overloaded services may cause false timeouts.
-- 2) **Reconnect cadence defaults to 1500 ms** - `GATEWAY_LIVE_TABLE_RECONNECT_MS` controls retry frequency. - Too aggressive can hammer the service; too slow hurts UX.
-- 3) **Live-table can be disabled** - `GATEWAY_LIVE_TABLE_CRAPS` or `GATEWAY_LIVE_TABLE_CRAPS_ONCHAIN` must be set. - If disabled, all live-table requests return errors. ---
-
-## L43-live-table-service
-Mapped action items: Item 31 [x], Item 32 [x]
-
-- 1) **Timing defaults** - Betting: 18s, Lock: 2s, Payout: 2s, Cooldown: 8s. - These are in `LIVE_TABLE_*` env vars and control UX and throughput.
-- 2) **Broadcast buffer is 1024** - `broadcast::channel::<OutboundEvent>(1024)` limits queued events. - If clients are slow, messages may drop.
-- 3) **Bot settings are defaults** - `LIVE_TABLE_BOT_COUNT` defaults to 0 in production. - Bot counts and bet sizes can distort economics if misconfigured. ---
-
 ## L44-onchain-craps-table
-Mapped action items: Item 31 [x], Item 3 [x]
+Mapped action items: Item 31 [x], Item 32 [x], Item 3 [x]
 
-- 1) **Bet and timing limits are env-configured** - `GATEWAY_LIVE_TABLE_MIN_BET`, `MAX_BET`, `MAX_BETS_PER_ROUND`. - Timing windows: `BETTING_MS`, `LOCK_MS`, `PAYOUT_MS`, `COOLDOWN_MS`. - Misconfiguration will break UX or economics.
-- 2) **Admin key handling in prod** - Production requires a key file unless `GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV=1`. - This is important for security.
-- 3) **Retry throttling** - `GATEWAY_LIVE_TABLE_ADMIN_RETRY_MS` limits how often admin actions are retried. - Too low can spam the chain; too high can stall rounds. ---
+- 1) **Fanout throttling is configurable** - `GATEWAY_LIVE_TABLE_BROADCAST_MS` and `GATEWAY_LIVE_TABLE_BROADCAST_BATCH` govern update cadence and batch sizes. - Too low wastes bandwidth; too high makes countdowns feel laggy.
+- 2) **Global table can be disabled** - `GATEWAY_LIVE_TABLE_CRAPS` controls the table; in production it should be enabled. - If disabled, clients will receive `LIVE_TABLE_DISABLED`.
+- 3) **Global presence aggregation is opt-in** - `GATEWAY_INSTANCE_ID` identifies gateways and `GATEWAY_LIVE_TABLE_PRESENCE_UPDATE_MS` controls the cadence. - Required for accurate global player counts.
+- 4) **Bot configuration is explicit** - `GATEWAY_LIVE_TABLE_BOT_*` defaults to zero in production. - Require explicit opt-in for bot traffic.
+- 5) **Bet and timing limits are env-configured** - `GATEWAY_LIVE_TABLE_MIN_BET`, `MAX_BET`, `MAX_BETS_PER_ROUND`. - Timing windows: `BETTING_MS`, `LOCK_MS`, `PAYOUT_MS`, `COOLDOWN_MS`. - Misconfiguration will break UX or economics.
+- 6) **Admin key handling in prod** - Production requires a key file unless `GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV=1`. - This is important for security.
+- 7) **Retry throttling** - `GATEWAY_LIVE_TABLE_ADMIN_RETRY_MS` limits how often admin actions are retried. - Too low can spam the chain; too high can stall rounds. ---
 
 ## L45-global-table-handlers
 Mapped action items: Item 13 [x], Item 14 [x]
@@ -353,8 +343,8 @@ Mapped action items: Item 13 [x], Item 14 [x]
 Mapped action items: Item 33 [x]
 
 - 1) **Normal mode relies on atomic batch payloads** - If clients do not use the atomic batch, latency and UX degrade.
-- 2) **Live-table mode has more moving parts** - Requires admin key, global table config, and round orchestration. - Misconfiguration can stall the table for all players.
-- 3) **Bet limits enforced in different layers** - Normal mode relies on execution-layer checks. - Live-table mode enforces additional global table limits. ---
+- 2) **Global table mode has more moving parts** - Requires admin key, global table config, and round orchestration. - Misconfiguration can stall the table for all players.
+- 3) **Bet limits enforced in different layers** - Normal mode relies on execution-layer checks. - Global table mode enforces additional global table limits. ---
 
 ## L47-simulator-http-api
 Mapped action items: Item 1 [x], Item 9 [x], Item 11 [x]

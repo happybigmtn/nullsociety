@@ -9,6 +9,14 @@ import { ethers } from "ethers";
 import { ConvexHttpClient } from "convex/browser";
 import { createRequire } from "module";
 import { syncFreerollLimit } from "./casinoAdmin.js";
+import {
+  buildAiPrompt,
+  buildAuthMessage,
+  buildEvmLinkMessage,
+  isHex,
+  normalizeHex,
+  parseChainId,
+} from "./utils.js";
 
 // Avoid pulling Convex source files into the auth build output.
 const require = createRequire(import.meta.url);
@@ -34,18 +42,7 @@ const CHALLENGE_TTL_MAX_MS = Number(process.env.AUTH_CHALLENGE_TTL_MAX_MS ?? "90
 const challengeTtlMaxMs =
   Number.isFinite(CHALLENGE_TTL_MAX_MS) && CHALLENGE_TTL_MAX_MS > 0 ? CHALLENGE_TTL_MAX_MS : 900000;
 const effectiveChallengeTtlMs = Math.min(challengeTtlMs, challengeTtlMaxMs);
-const AUTH_CHALLENGE_PREFIX = "nullspace-auth:";
-const EVM_LINK_PREFIX = "nullspace-evm-link";
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
-
-const normalizeHex = (value: string): string =>
-  value.trim().toLowerCase().replace(/^0x/, "");
-
-const isHex = (value: string, length?: number): boolean => {
-  if (!/^[0-9a-f]+$/.test(value)) return false;
-  if (length !== undefined && value.length !== length) return false;
-  return true;
-};
 
 const normalizeEvmAddress = (value: string): string | null => {
   try {
@@ -55,52 +52,6 @@ const normalizeEvmAddress = (value: string): string | null => {
   }
 };
 
-const parseChainId = (value: unknown): number | null => {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return null;
-  return parsed;
-};
-
-const buildAuthMessage = (challengeHex: string): Buffer => {
-  return Buffer.concat([
-    Buffer.from(AUTH_CHALLENGE_PREFIX, "utf8"),
-    Buffer.from(challengeHex, "hex"),
-  ]);
-};
-
-const buildEvmLinkMessage = (params: {
-  origin: string;
-  address: string;
-  chainId: number;
-  userId: string;
-  challenge: string;
-}): string => {
-  const { origin, address, chainId, userId, challenge } = params;
-  return [
-    EVM_LINK_PREFIX,
-    `origin:${origin}`,
-    `address:${address}`,
-    `chainId:${chainId}`,
-    `userId:${userId}`,
-    `nonce:${challenge}`,
-  ].join("\n");
-};
-
-const buildAiPrompt = (payload: {
-  gameType: string;
-  playerCards: unknown[];
-  dealerUpCard: unknown | null;
-  history: unknown[];
-}): string => {
-  const { gameType, playerCards, dealerUpCard, history } = payload;
-  return [
-    "You are a casino strategy assistant. Reply with one short sentence.",
-    `Game: ${gameType}`,
-    `Player cards: ${JSON.stringify(playerCards)}`,
-    `Dealer up card: ${JSON.stringify(dealerUpCard)}`,
-    `History: ${JSON.stringify(history)}`,
-  ].join("\n");
-};
 
 const verifySignature = (
   publicKeyHex: string,

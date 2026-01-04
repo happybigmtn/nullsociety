@@ -142,7 +142,6 @@ export async function initializeBiometricType(): Promise<BiometricType> {
     cachedBiometricType = 'FACE_ID';
   } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
     // Check platform for Touch ID vs generic fingerprint
-    const Platform = require('react-native').Platform;
     cachedBiometricType = Platform.OS === 'ios' ? 'TOUCH_ID' : 'FINGERPRINT';
   } else {
     cachedBiometricType = 'NONE';

@@ -604,7 +604,6 @@ fn parse_three_card_state(blob: &[u8]) -> Option<TcState> {
 // --- Ultimate Hold'em parsing ---
 #[derive(Clone)]
 struct UthStateParsed {
-    stage: u8,
     player: [u8; 2],
     community: [u8; 5],
 }
@@ -616,7 +615,7 @@ fn parse_uth_state(blob: &[u8]) -> Option<UthStateParsed> {
     if version != STATE_VERSION {
         return None;
     }
-    let stage = cur.read_u8()?;
+    let _stage = cur.read_u8()?;
     let player = cur.read_bytes(2)?.try_into().ok()?;
     let community = cur.read_bytes(5)?.try_into().ok()?;
     // skip dealer
@@ -628,21 +627,20 @@ fn parse_uth_state(blob: &[u8]) -> Option<UthStateParsed> {
     let _trips = cur.read_u64_be()?;
     let _six = cur.read_u64_be()?;
     let _prog = cur.read_u64_be()?;
-    Some(UthStateParsed { stage, player, community })
+    Some(UthStateParsed { player, community })
 }
 
 // --- Video Poker parsing ---
 #[derive(Clone)]
 struct VpState {
-    stage: u8,
     cards: [u8; 5],
 }
 
 fn parse_video_poker_state(blob: &[u8]) -> Option<VpState> {
     let mut cur = Cursor::new(blob);
-    let stage = cur.read_u8()?;
+    let _stage = cur.read_u8()?;
     let cards: [u8; 5] = cur.read_bytes(5)?.try_into().ok()?;
-    Some(VpState { stage, cards })
+    Some(VpState { cards })
 }
 
 // --- HiLo parsing ---
@@ -1405,7 +1403,7 @@ fn main() {
     }
 
     // Craps
-    let mut pass_stats = sim_craps_simple(0u8, 0u8, BASE_BET, TRIALS, &seed, &player);
+    let pass_stats = sim_craps_simple(0u8, 0u8, BASE_BET, TRIALS, &seed, &player);
     results.push(ResultRow {
         game: "Craps".to_string(),
         bet: "PASS".to_string(),
@@ -1415,7 +1413,7 @@ fn main() {
         edge: pass_stats.house_edge(),
         stderr: pass_stats.stderr(),
     });
-    let mut dont_pass_stats = sim_craps_simple(1u8, 0u8, BASE_BET, TRIALS, &seed, &player);
+    let dont_pass_stats = sim_craps_simple(1u8, 0u8, BASE_BET, TRIALS, &seed, &player);
     results.push(ResultRow {
         game: "Craps".to_string(),
         bet: "DONT_PASS".to_string(),

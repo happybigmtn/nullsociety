@@ -2,35 +2,10 @@ import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { NonceManager } from '../../src/api/nonceManager.js';
 import { WasmWrapper } from '../../src/api/wasm.js';
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { installLocalStorageMock } from './helpers/storage.js';
+import { loadWasmBindings } from './helpers/wasm.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Mock localStorage for Node.js environment
-global.localStorage = {
-  storage: {},
-  getItem(key) {
-    return this.storage[key] || null;
-  },
-  setItem(key, value) {
-    this.storage[key] = value;
-  },
-  removeItem(key) {
-    delete this.storage[key];
-  },
-  clear() {
-    this.storage = {};
-  },
-  get length() {
-    return Object.keys(this.storage).length;
-  },
-  key(index) {
-    return Object.keys(this.storage)[index];
-  }
-};
+installLocalStorageMock();
 
 // Mock client
 class MockClient {
@@ -57,30 +32,13 @@ class MockClient {
 }
 
 // Load WASM module
-let wasmModule;
 let wasmWrapper;
+await loadWasmBindings();
 
-async function loadWasmModule() {
-  // Read WASM file directly
-  const wasmPath = path.join(__dirname, '../../wasm/pkg/nullspace_wasm_bg.wasm');
-  const wasmBuffer = await fs.readFile(wasmPath);
-
-  // Import the JS bindings
-  const wasmJs = await import('../../wasm/pkg/nullspace_wasm.js');
-
-  // Initialize with the WASM buffer
-  await wasmJs.default(wasmBuffer);
-
-  return wasmJs;
-}
-
-describe('NonceManager Tests', async () => {
+describe('NonceManager Tests', () => {
   let nonceManager;
   let mockClient;
   let keypair;
-  
-  // Load WASM once before all tests
-  wasmModule = await loadWasmModule();
   
   beforeEach(async () => {
     // Clear localStorage before each test

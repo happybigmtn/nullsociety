@@ -1390,7 +1390,7 @@ impl Notarized {
     }
 
     pub fn verify(&self, namespace: &[u8], identity: &<MinSig as Variant>::Public) -> bool {
-        let scheme = ThresholdScheme::certificate_verifier(identity.clone());
+        let scheme = ThresholdScheme::certificate_verifier(*identity);
         let mut rng = rand::thread_rng();
         self.proof.verify(&mut rng, &scheme, namespace)
     }
@@ -1439,7 +1439,7 @@ impl Finalized {
     }
 
     pub fn verify(&self, namespace: &[u8], identity: &<MinSig as Variant>::Public) -> bool {
-        let scheme = ThresholdScheme::certificate_verifier(identity.clone());
+        let scheme = ThresholdScheme::certificate_verifier(*identity);
         let mut rng = rand::thread_rng();
         self.proof.verify(&mut rng, &scheme, namespace)
     }

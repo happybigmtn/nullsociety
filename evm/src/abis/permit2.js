@@ -1,3 +1,4 @@
+// External ABI (minimal surface for scripts). Update if upstream contract changes.
 const permit2Abi = [
   {
     type: 'function',

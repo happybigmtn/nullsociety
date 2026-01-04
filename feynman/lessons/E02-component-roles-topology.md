@@ -66,6 +66,19 @@ The bastion host is the only SSH entry point. This creates a single chokepoint f
 
 ---
 
+## 2.1) Why a /16 with a /24 subnet?
+
+The runbook's network plan uses a large private address space (`10.0.0.0/16`) and a smaller subnet (`10.0.1.0/24`) for the current deployment. This is a common pattern:
+
+- The /16 gives you room to grow without renumbering.
+- The /24 provides a clean, manageable subnet for the current environment.
+
+If you later add separate clusters (for example, staging and testnet), you can allocate different /24s inside the same /16. This keeps routing simple and avoids IP overlap.
+
+This design also supports future segmentation. You could create separate subnets for validators, databases, and public services if you need tighter isolation. Starting with a large private block gives you that flexibility.
+
+---
+
 ## 3) Firewall rules: public vs private ingress
 
 The runbook divides firewall rules into public ingress and private ingress:
@@ -83,12 +96,21 @@ These ports are the only public exposure. Everything else stays private.
 - 9010/tcp: gateway WebSocket (behind LB).
 - 4000/tcp: auth service.
 - 9020/tcp: ops service (optional).
-- 9123/tcp: live-table WS (optional).
 - 9001-9004/tcp: validator P2P (between validators only).
 - 9100-9104/tcp: metrics (Prometheus only).
 - 5432/tcp: Postgres (simulator/indexer only).
 
 This list doubles as a responsibility map. If a service does not need a port, it should not have one. That is the simplest and strongest security rule.
+
+---
+
+## 3.3) Port ownership and blast radius
+
+Think of each port as a capability. If a service can accept traffic on a port, it can be targeted. That is why the runbook is explicit: each port should be reachable only by the services that need it.
+
+For example, Postgres (5432) should only be reachable from the simulator/indexer. If a gateway can reach Postgres, a gateway compromise becomes a database compromise. Similarly, validator P2P ports (9001-9004) should only be reachable by other validators, not by gateways or public clients.
+
+This is the principle of least privilege applied to networking. It reduces blast radius and is a key part of operating safely in production.
 
 ---
 
@@ -104,7 +126,7 @@ The runbook recommends a baseline layout for about 5k concurrent players. The ex
 - Postgres: `ns-db-1` (CPX41 + dedicated volume).
 - Observability: `ns-obs-1` (optional).
 - Ops/analytics: `ns-ops-1` (optional).
-- Live table: `ns-live-1` (optional).
+- Global table coordinator: runs inside the gateway (no separate host).
 
 This layout is a **role map** more than a sizing guide. The key idea is that each role can scale independently:
 
@@ -113,6 +135,18 @@ This layout is a **role map** more than a sizing guide. The key idea is that eac
 - Simulator scales with read load.
 
 The runbook also calls out NAT-heavy mobile traffic: you may need to increase connection limits (`MAX_CONNECTIONS_PER_IP` and `RATE_LIMIT_WS_CONNECTIONS_PER_IP`) to avoid false throttling.
+
+---
+
+## 4.1) Sizing as a function of load
+
+The exact sizes (CPX31, CPX41, CPX51) are not magical. They are proxies for CPU, memory, and network bandwidth. The sizing logic is roughly:
+
+- Gateways are connection-heavy and need enough memory for many sockets.
+- Validators are compute-heavy because they run consensus and execution.
+- Simulator/indexer is read-heavy and benefits from memory for caching.
+
+If you see gateway CPU pegged while validators are idle, you scale gateways. If validators are saturated, you add validators or increase their size. This is why role separation matters: it makes scaling decisions obvious.
 
 ---
 
@@ -164,6 +198,16 @@ These are data stores. They should live on the private network with persistent v
 
 Observability is optional but recommended. Without it, you are flying blind in production.
 
+### 5.7 Ops / analytics service
+
+The runbook includes an optional ops service (`ns-ops-1`). This service aggregates analytics and provides admin endpoints for operational workflows. It is not part of the consensus path, but it is critical for visibility and debugging.
+
+Because it exposes admin endpoints, it must be protected by strict auth (`OPS_ADMIN_TOKEN`) and origin allowlists. Treat it like a privileged internal tool, not a public API. This is another example of role separation: analytics should not live inside gateways or validators.
+
+### 5.8 Global table coordinator (gateway)
+
+There is no separate live-table service. The on-chain global table is coordinated inside the gateway, which handles round timing, submits on-chain instructions, and fans out updates to clients. That means scaling the global table is primarily a gateway scaling problem: add more gateways to increase fan-out capacity.
+
 ---
 
 ## 6) Load balancers: public access without public servers
@@ -185,6 +229,16 @@ Important settings:
 
 ---
 
+## 6.1) Why separate LBs matter
+
+WebSocket traffic behaves differently from standard HTTP. It keeps connections open, uses different timeout expectations, and is sensitive to idle timeouts. If you mix WebSockets and short-lived HTTP in the same load balancer with default settings, you can accidentally drop sockets or throttle connections.
+
+That is why the runbook recommends separate LBs: one tuned for WebSockets, one for HTTP APIs, and another for the website/auth layer. Each can be tuned with appropriate timeouts, health checks, and TLS policies.
+
+This separation also improves blast radius. A misconfiguration in the gateway LB does not break the website LB, and vice versa.
+
+---
+
 ## 7) Base server setup and build strategy
 
 The runbook offers two paths:
@@ -200,6 +254,20 @@ The runbook offers two paths:
 - Use GHCR images and systemd units in `ops/systemd/docker/`.
 
 Both paths are valid. Docker reduces tooling complexity but introduces container orchestration concerns. Source builds give you more direct control but require more system dependencies.
+
+---
+
+## 7.3) Directory layout conventions
+
+The runbook suggests three standard directories:
+
+- `/opt/nullspace` for the repo checkout and binaries.
+- `/etc/nullspace` for environment files.
+- `/var/lib/nullspace` for persistent runtime data (for example, gateway nonces and logs).
+
+This separation is not cosmetic. It makes backups and permissions easier. You can lock down `/etc/nullspace` as root-owned configuration, while allowing services to write to `/var/lib/nullspace` without giving them access to configs. It also keeps deploy artifacts (`/opt/nullspace`) separate from data (`/var/lib/nullspace`).
+
+These conventions make it easier to reason about upgrades and rollbacks: you can redeploy `/opt/nullspace` without wiping state in `/var/lib/nullspace`.
 
 ---
 
@@ -224,6 +292,14 @@ This generates `nodeN.yaml` and `peers.yaml`, which must be distributed to valid
 
 ---
 
+## 8.1) Why peers ordering matters
+
+Validator configs are part of the consensus identity. If two validators disagree on the peer set or its ordering, they can fail to agree on the network view. The runbook enforces sorted, unique `peers.yaml` entries to avoid subtle mismatches.
+
+This might feel like a small operational detail, but it is not. Consensus systems are sensitive to small divergences in configuration. By making the ordering rule explicit, the runbook prevents a whole class of misconfigurations that would be hard to debug later.
+
+---
+
 ## 9) Systemd supervision
 
 The runbook recommends systemd for supervision and describes both binary-based and docker-based units. It provides a standard sequence:
@@ -233,6 +309,14 @@ The runbook recommends systemd for supervision and describes both binary-based a
 - `systemctl start ...`
 
 This matters because it turns a pile of processes into a managed fleet. Systemd handles restarts, logs, and ordering. It is not glamorous, but it is essential for production uptime.
+
+---
+
+## 9.1) Docker units vs native units
+
+The runbook offers a docker-based alternative with units in `ops/systemd/docker/`. This is useful when you want consistent builds and easier upgrades. You can pin `IMAGE_REGISTRY` and `IMAGE_TAG` in `/etc/nullspace/docker.env` and roll forward or back by changing a tag.
+
+Native units (running binaries directly) are simpler to reason about and often easier to debug in early environments. Docker units add a layer of indirection but can make deployments more reproducible. The choice depends on your operational maturity. The architecture supports both.
 
 ---
 
@@ -253,10 +337,18 @@ The deployment sequence ends with validation:
 - Use the preflight config checker:
 
 ```
-node scripts/preflight-management.mjs   gateway /etc/nullspace/gateway.env   simulator /etc/nullspace/simulator.env   node /etc/nullspace/node.env   auth /etc/nullspace/auth.env   ops /etc/nullspace/ops.env   live-table /etc/nullspace/live-table.env
+node scripts/preflight-management.mjs   gateway /etc/nullspace/gateway.env   simulator /etc/nullspace/simulator.env   node /etc/nullspace/node.env   auth /etc/nullspace/auth.env   ops /etc/nullspace/ops.env
 ```
 
 This last step is important: it validates configuration before you open the network to users. Many failures in production are misconfigurations, not code bugs.
+
+---
+
+## 11.1) Validation as a discipline
+
+The runbook does not treat validation as optional. It separates smoke checks (fast, minimal) from full readiness checks (comprehensive). This is a healthy operational pattern: you get quick feedback early, and you still have a thorough gate before exposing the system.
+
+In practice, this means you should script validation and run it for every environment. Manual checks are error-prone; scripts are repeatable. The preflight tool (`scripts/preflight-management.mjs`) is the foundation for that repeatability.
 
 ---
 
@@ -274,6 +366,14 @@ By keeping these roles separate, you can scale the right part of the system with
 
 ---
 
+## 12.1) NAT-heavy traffic and rate limits
+
+Mobile networks often place many users behind a small number of NAT IPs. If you set strict per-IP connection or rate limits, you can accidentally block legitimate users. The runbook explicitly warns about this and suggests raising `MAX_CONNECTIONS_PER_IP` and `RATE_LIMIT_WS_CONNECTIONS_PER_IP` for mobile-heavy environments.
+
+This is a classic example of real-world constraints shaping configuration. A perfect theoretical limit can be harmful in practice if it assumes one user per IP. Good capacity planning must account for the realities of mobile carrier NAT.
+
+---
+
 ## 13) Security posture and operational hygiene
 
 The deployment plan assumes a disciplined security posture:
@@ -287,9 +387,43 @@ These are not optional in production. They are the minimum cost of operating a b
 
 ---
 
+## 13.1) Bastion host and access control
+
+The runbook implicitly promotes a bastion model: only the bastion has a public IP and SSH is restricted to trusted IPs. This keeps administrative access narrow and observable. All other hosts are reached via the private network, which reduces exposure and makes lateral movement harder for attackers.
+
+In practice, this means:
+
+- Use SSH agent forwarding sparingly and audit it.
+
+- Rotate bastion access keys regularly.
+
+- Treat bastion logs as security-critical.
+
+The bastion is the single door into the private network. Securing it is not optional.
+
+---
+
+## 13.2) Rolling upgrades and change safety
+
+Because roles are separated, you can perform rolling upgrades. Gateways can be upgraded without touching validators. Simulators can be redeployed without stopping consensus. This is the operational advantage of topology: if you maintain isolation, you can reduce downtime.
+
+In practice, you should:
+
+- Upgrade gateways one at a time behind the LB.
+- Keep validators on separate hosts so a single failure does not drop quorum.
+- Validate simulator health before exposing new gateways to traffic.
+
+These habits are not just operational niceties. They are how you keep a real-time system online during change.
+
+Another practical tip: keep the website and auth services behind separate LBs or routes so you can deploy UI updates without risking auth downtime. UI changes are frequent; auth changes are sensitive. Separation lets you iterate quickly on UI while protecting critical authentication paths. It also makes staged rollouts easier because you can canary the UI independently of auth. That reduces coordination overhead and limits the blast radius of a UI-only rollback. It also improves incident response speed.
+
+---
+
 ## 14) Feynman recap
 
 The system is a set of specialized machines. Gateways are the front door. Validators are the judges. The simulator is the read-only window. Auth handles identity. Databases are locked in the back room. A private network keeps the back room safe. Load balancers let you expose services without exposing servers.
+
+If you forget everything else, remember this: the public surface is thin, and the private core is where authority lives.
 
 ---
 

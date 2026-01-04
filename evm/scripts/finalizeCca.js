@@ -5,6 +5,12 @@ const { erc20Abi } = require('../src/abis/erc20');
 const { recoveryPoolAbi } = require('../src/abis/recoveryPool');
 const { RECOVERY_POOL_TARGET } = require('../src/config/phase2');
 const { loadDeployments } = require('../src/utils/deployments.cjs');
+const { parseEnv } = require('../src/utils/env.cjs');
+
+const envConfig = parseEnv({
+  RUN_MIGRATE: { type: 'boolean', default: false },
+  FUND_RECOVERY: { type: 'boolean', default: false },
+});
 
 async function mineTo(target) {
   const provider = ethers.provider;
@@ -41,7 +47,7 @@ async function main() {
   await (await auction.checkpoint()).wait();
   await (await auction.sweepCurrency()).wait();
 
-  if (process.env.RUN_MIGRATE === '1') {
+  if (envConfig.RUN_MIGRATE) {
     const migrationBlock = deployments.blocks.migration;
     const now = await provider.getBlockNumber();
     if (now < migrationBlock && (network.name === 'anvil' || network.name === 'hardhat')) {
@@ -50,7 +56,7 @@ async function main() {
     await (await lbp.migrate()).wait();
   }
 
-  if (process.env.FUND_RECOVERY === '1') {
+  if (envConfig.FUND_RECOVERY) {
     const sweepBlock = deployments.blocks.sweep;
     const now = await provider.getBlockNumber();
     if (now < sweepBlock && (network.name === 'anvil' || network.name === 'hardhat')) {

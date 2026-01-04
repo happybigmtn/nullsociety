@@ -5,13 +5,12 @@ import {
   encodeCasinoStartGame,
   encodeCasinoGameMove,
   encodeCasinoPlayerAction,
-  buildBlackjackPayload,
-  buildHiLoPayload,
   GameType,
   PlayerAction,
   InstructionTag,
   SubmissionTag,
 } from '../../src/codec/index.js';
+import { encodeGameActionPayload, encodeGameMovePayload } from '@nullspace/protocol';
 import {
   buildTransaction,
   wrapSubmission,
@@ -135,22 +134,22 @@ describe('Instruction Encoders', () => {
   });
 });
 
-describe('Game Payload Builders', () => {
-  describe('buildBlackjackPayload', () => {
+describe('Protocol Payload Builders', () => {
+  describe('encodeGameMovePayload (blackjack)', () => {
     it('encodes all moves', () => {
-      expect(buildBlackjackPayload('hit')).toEqual(new Uint8Array([0]));
-      expect(buildBlackjackPayload('stand')).toEqual(new Uint8Array([1]));
-      expect(buildBlackjackPayload('double')).toEqual(new Uint8Array([2]));
-      expect(buildBlackjackPayload('split')).toEqual(new Uint8Array([3]));
+      expect(encodeGameMovePayload({ game: 'blackjack', move: 'hit' })).toEqual(new Uint8Array([0]));
+      expect(encodeGameMovePayload({ game: 'blackjack', move: 'stand' })).toEqual(new Uint8Array([1]));
+      expect(encodeGameMovePayload({ game: 'blackjack', move: 'double' })).toEqual(new Uint8Array([2]));
+      expect(encodeGameMovePayload({ game: 'blackjack', move: 'split' })).toEqual(new Uint8Array([3]));
     });
   });
 
-  describe('buildHiLoPayload', () => {
+  describe('encodeGameActionPayload (hilo)', () => {
     it('encodes all guesses', () => {
-      expect(buildHiLoPayload('higher')).toEqual(new Uint8Array([0]));
-      expect(buildHiLoPayload('lower')).toEqual(new Uint8Array([1]));
+      expect(encodeGameActionPayload({ game: 'hilo', action: 'higher' })).toEqual(new Uint8Array([0]));
+      expect(encodeGameActionPayload({ game: 'hilo', action: 'lower' })).toEqual(new Uint8Array([1]));
       // Same = 3 in Rust (2 is unused/reserved)
-      expect(buildHiLoPayload('same')).toEqual(new Uint8Array([3]));
+      expect(encodeGameActionPayload({ game: 'hilo', action: 'same' })).toEqual(new Uint8Array([3]));
     });
   });
 });

@@ -403,6 +403,214 @@ What this code does:
 
 ---
 
+## Extended deep dive: admin sync as a secure transaction pipeline
+
+The `casinoAdmin.ts` module is essentially a miniature transaction pipeline embedded inside the auth service. It pulls together secrets, builds transactions in WASM, manages nonces, and submits them to the chain. Each of those steps has its own failure modes and security requirements.
+
+---
+
+### 5) Secret loading as a trust boundary
+
+The admin key is the highest‑privilege secret in the system. The resolution order (URL → file → env) encodes a trust hierarchy:
+
+- **Secret URL**: typically a secret manager (Vault, AWS Secrets Manager). Best practice.
+- **File**: local secrets on disk with strict permissions. Acceptable for servers.
+- **Env**: convenient but risky; disabled in production unless explicitly allowed.
+
+This is a good default posture: security first, convenience second. It reduces the risk of leaking admin keys through process listings or logs.
+
+---
+
+### 6) Secret decoding and validation
+
+The admin key is expected to be 32 bytes (64 hex chars). The identity is expected to be 96 bytes (192 hex chars). These are hard requirements because:
+
+- the signer needs exactly 32 bytes for Ed25519 keys,
+- the chain identity has a fixed serialized size.
+
+Failing fast on incorrect length prevents subtle runtime errors later in the pipeline. It also helps operators catch misconfiguration early.
+
+---
+
+### 7) WASM initialization and caching
+
+WASM is expensive to load. The module uses a `wasmPromise` cache so that multiple concurrent requests don’t load it multiple times. This avoids redundant work and prevents race conditions where multiple calls attempt to initialize the same WASM module.
+
+If WASM fails to load, the function returns `null` and admin sync is disabled. This is a safe failure mode: it prevents partial or invalid transactions from being constructed.
+
+---
+
+### 8) Admin state composition
+
+`initAdminState` produces an `AdminState` containing:
+
+- WASM module
+- signer (admin private key)
+- admin public key bytes
+- identity bytes
+- base URL for the node
+
+This state is cached and reused. It is the equivalent of a fully initialized transaction client. By constructing it once, the system avoids repeated decoding and ensures all subsequent operations share the same configuration.
+
+---
+
+### 9) Nonce coordination strategy
+
+Admin transactions must be sequential. The module uses **two layers** of nonce coordination:
+
+1) **Convex nonce store** (`admin_nonces` table) when available.
+2) **Local `nextNonce` cache** as a fallback.
+
+The Convex store is preferred because it coordinates across concurrent requests and even across multiple auth service instances. The local cache is only safe within a single process and can drift after restarts. This is why Convex is considered “important but optional.”
+
+---
+
+### 10) Nonce reservation in detail
+
+`reserveNonce` does the following:
+
+- If Convex store is available, ask it for the next nonce (using fallback chain nonce if needed).
+- If Convex store fails, fall back to local state: read on‑chain nonce once, then increment in memory for each call.
+
+This design ensures that in the steady state you have global coordination, but in degraded state you still make progress. The tradeoff is consistency vs availability. This is a common pattern in distributed systems.
+
+---
+
+### 11) Resetting nonce state after failures
+
+If transaction submission fails, the module calls `resetNonceStore` to reconcile both local state and Convex store with the on‑chain nonce. This is critical because one failed submission can throw the nonce sequence out of sync.
+
+The reset procedure is conservative: it trusts the chain as the source of truth and resets the store to match it. This is the right approach in systems where the chain is canonical.
+
+---
+
+### 12) Admin queue: serializing privileged actions
+
+`enqueueAdmin` creates a promise chain so that admin operations execute sequentially. This avoids concurrent nonce reservations in the same process. Even with a Convex store, sequencing is still useful because:
+
+- It reduces pressure on the nonce store.
+- It prevents overlapping submission attempts that could confuse logs.
+- It keeps the admin pipeline deterministic.
+
+This queue is effectively a lightweight mutex around admin actions.
+
+---
+
+### 13) State queries and key hashing
+
+The module queries chain state via `/state/<hash>` endpoints. It uses WASM helpers to:
+
+- encode the key (account key or casino player key),
+- hash the key for the API,
+- decode the lookup response.
+
+This ensures the auth service uses the exact same encoding logic as the Rust node. It avoids subtle bugs caused by inconsistent hashing or key serialization.
+
+---
+
+### 14) Building the admin transaction
+
+When syncing freeroll limits, the module builds a transaction with:
+
+```
+Transaction.casino_set_tournament_limit(signer, nonce, playerKeyBytes, desiredLimit)
+```
+
+This is the key action. It produces a fully signed transaction ready for submission. Because it uses WASM, it leverages the canonical signing and encoding logic from Rust. This is safer than re‑implementing in JS.
+
+---
+
+### 15) Submission pipeline
+
+`submitTransaction` wraps the raw transaction bytes using `wrap_transaction_submission` and posts them to `/submit`. This is the same submission format used by the gateway. By using the same submission wrapper, the auth service avoids a protocol mismatch.
+
+If the submission fails, the error bubbles up and triggers a nonce reset. This keeps the pipeline consistent.
+
+---
+
+### 16) Entitlement → limit mapping
+
+The module maps entitlements to a numeric daily limit:
+
+- Free limit = `FREEROLL_DAILY_LIMIT_FREE`
+- Member limit = `FREEROLL_DAILY_LIMIT_MEMBER`
+
+It checks whether the user has an active entitlement in one of the allowed tiers. If so, it uses the member limit; otherwise, it uses the free limit.
+
+This is the policy translation step. It’s intentionally simple, but it is the place where business decisions are encoded.
+
+---
+
+### 17) Avoiding redundant on‑chain updates
+
+Before submitting a transaction, the module fetches the player’s current `tournament_daily_limit`. If it already matches the desired limit, it returns `already_set` and does nothing.
+
+This avoids unnecessary on‑chain transactions and reduces nonce consumption. It is an important optimization because admin transactions are scarce resources.
+
+---
+
+### 18) Audit logging
+
+The module logs audit events for limit updates, including:
+
+- player public key
+- current limit
+- desired limit
+- admin public key
+
+These logs are essential for compliance and debugging. They allow you to trace why a user’s limit changed and which admin key performed the change.
+
+---
+
+### 19) Failure scenarios and resilience
+
+Common failure modes include:
+
+- Missing admin key → admin sync disabled.
+- Missing identity hex → cannot decode state or build submissions.
+- Convex store down → fallback to local nonce cache.
+- Submit failure → reset nonce store, propagate error.
+
+The code is designed to fail safely: it does not attempt partial updates if key or identity is missing. It also logs warnings to aid diagnosis.
+
+---
+
+### 20) Security implications
+
+Because this module can submit admin transactions, it is a high‑risk component. You should:
+
+- restrict access to the auth service,
+- protect the admin key and service token,
+- monitor submission logs for unusual activity,
+- rotate keys if compromise is suspected.
+
+These are operational requirements, not just code concerns.
+
+---
+
+### 21) Feynman analogy: a notary office
+
+Think of this module as a notary office:
+
+- It verifies your eligibility (entitlements).
+- It stamps an official document (admin transaction).
+- It records the act in a ledger (audit logs).
+- It makes sure the stamp number (nonce) is never reused.
+
+If the notary’s book gets out of sync, they reconcile with the official registry (the chain).
+
+---
+
+### 22) Exercises for mastery
+
+1) Trace the full flow from entitlements to on‑chain limit update.
+2) Explain what happens if the Convex nonce store is down.
+3) Describe how the module avoids double submissions for the same limit.
+4) Propose a hardening step to protect the admin key further.
+
+If you can answer these, you understand the admin sync pipeline deeply.
+
+
 ## Key takeaways
 - Admin keys are loaded securely and validated before use.
 - WASM handles transaction construction and signing.

@@ -6,90 +6,34 @@
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { WebSocket } from 'ws';
+import {
+  INTEGRATION_ENABLED,
+  createConnection,
+  sendAndReceive,
+  waitForMessage,
+} from '../helpers/ws.js';
 
-const GATEWAY_PORT = process.env.TEST_GATEWAY_PORT || '9010';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
-
-// Skip integration tests unless explicitly enabled
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
 
 vi.setConfig({ testTimeout: 35000 });
 
-/**
- * Helper to send JSON message and wait for response
- */
-async function sendAndReceive(
+const sendAndReceiveWithTimeout = (
   ws: WebSocket,
   msg: Record<string, unknown>,
   timeout = 35000
-): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(`Timeout waiting for response to ${msg.type}`));
-    }, timeout);
+) => sendAndReceive(ws, msg, timeout);
 
-    ws.once('message', (data) => {
-      clearTimeout(timer);
-      try {
-        resolve(JSON.parse(data.toString()));
-      } catch (err) {
-        reject(err);
-      }
-    });
-
-    ws.send(JSON.stringify(msg));
-  });
-}
-
-/**
- * Helper to wait for specific message type
- */
-async function waitForMessage(
+const waitForMessageWithTimeout = (
   ws: WebSocket,
   type: string,
   timeout = 15000
-): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(`Timeout waiting for message type: ${type}`));
-    }, timeout);
-
-    const handler = (data: Buffer) => {
-      try {
-        const msg = JSON.parse(data.toString());
-        if (msg.type === type) {
-          clearTimeout(timer);
-          ws.off('message', handler);
-          resolve(msg);
-        }
-      } catch {
-        // Ignore parse errors
-      }
-    };
-
-    ws.on('message', handler);
-  });
-}
+) => waitForMessage(ws, type, timeout);
 
 /**
  * Helper to connect to gateway
  */
 async function connectToGateway(): Promise<WebSocket> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://localhost:${GATEWAY_PORT}`);
-
-    ws.on('open', () => {
-      resolve(ws);
-    });
-
-    ws.on('error', (err) => {
-      reject(err);
-    });
-
-    setTimeout(() => {
-      reject(new Error('Connection timeout'));
-    }, 10000);
-  });
+  return createConnection();
 }
 
 describe.skipIf(!INTEGRATION_ENABLED)('Gateway Integration Tests', () => {
@@ -118,7 +62,7 @@ describe.skipIf(!INTEGRATION_ENABLED)('Gateway Integration Tests', () => {
   it('should connect and receive session_ready', async () => {
     ws = await connectToGateway();
 
-    const msg = await waitForMessage(ws, 'session_ready');
+    const msg = await waitForMessageWithTimeout(ws, 'session_ready');
 
     expect(msg.type).toBe('session_ready');
     expect(msg.sessionId).toBeDefined();
@@ -128,7 +72,7 @@ describe.skipIf(!INTEGRATION_ENABLED)('Gateway Integration Tests', () => {
   });
 
   it('should respond to ping', async () => {
-    const response = await sendAndReceive(ws, { type: 'ping' });
+    const response = await sendAndReceiveWithTimeout(ws, { type: 'ping' });
 
     expect(response.type).toBe('pong');
     expect(response.timestamp).toBeDefined();
@@ -144,7 +88,7 @@ describe.skipIf(!INTEGRATION_ENABLED)('Gateway Integration Tests', () => {
 
     do {
       await new Promise((r) => setTimeout(r, 100)); // Wait 100ms between attempts
-      response = await sendAndReceive(ws, { type: 'get_balance' });
+      response = await sendAndReceiveWithTimeout(ws, { type: 'get_balance' });
       attempts++;
     } while (
       (!response.registered || !response.hasBalance) &&
@@ -158,7 +102,7 @@ describe.skipIf(!INTEGRATION_ENABLED)('Gateway Integration Tests', () => {
   });
 
   it('should start a blackjack game', async () => {
-    const response = await sendAndReceive(ws, {
+    const response = await sendAndReceiveWithTimeout(ws, {
       type: 'blackjack_deal',
       amount: 100,
     });
@@ -170,7 +114,7 @@ describe.skipIf(!INTEGRATION_ENABLED)('Gateway Integration Tests', () => {
 
   it('should make a blackjack move', async () => {
     // Note: This requires an active game from previous test
-    const response = await sendAndReceive(ws, {
+    const response = await sendAndReceiveWithTimeout(ws, {
       type: 'blackjack_stand',
     });
 
@@ -179,7 +123,7 @@ describe.skipIf(!INTEGRATION_ENABLED)('Gateway Integration Tests', () => {
   });
 
   it('should reject invalid message type', async () => {
-    const response = await sendAndReceive(ws, {
+    const response = await sendAndReceiveWithTimeout(ws, {
       type: 'invalid_message_type',
     });
 
@@ -188,7 +132,7 @@ describe.skipIf(!INTEGRATION_ENABLED)('Gateway Integration Tests', () => {
   });
 
   it('should reject invalid bet amount', async () => {
-    const response = await sendAndReceive(ws, {
+    const response = await sendAndReceiveWithTimeout(ws, {
       type: 'ultimate_tx_deal',
       ante: 100,
       blind: 100,

@@ -56,8 +56,6 @@ mod payouts {
     pub const SIX_LINE: u64 = 5;
 }
 
-/// Maximum number of bets per session.
-
 /// State header length: bet_count(1) + zero_rule(1) + phase(1) + totalWagered(8) + pendingReturn(8).
 const STATE_HEADER_V2_LEN: usize = 19;
 const BET_BYTES: usize = 10;

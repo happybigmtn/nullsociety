@@ -1,3 +1,4 @@
+// External ABI (minimal surface for scripts). Update if upstream contract changes.
 const virtualLbpFactoryAbi = [
   {
     type: 'function',

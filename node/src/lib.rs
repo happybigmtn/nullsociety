@@ -772,7 +772,7 @@ impl Config {
                 value: hex(self.polynomial.as_ref()),
                 source,
             })?;
-        let identity = sharing.public().clone();
+        let identity = *sharing.public();
 
         let log_level =
             Level::from_str(&self.log_level).map_err(|_| ConfigError::InvalidLogLevel {

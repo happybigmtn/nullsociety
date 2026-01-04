@@ -1,5 +1,6 @@
 import { logDebug } from '../utils/logger.js';
 import { CASINO_MAX_NAME_LENGTH, CASINO_MAX_PAYLOAD_LENGTH } from '@nullspace/constants/limits';
+import { getUnlockedVault } from '../security/vaultRuntime';
 /**
  * Manages transaction nonces and pending transactions for a Casino account.
  * Handles automatic nonce synchronization, transaction resubmission, and cleanup.
@@ -17,6 +18,49 @@ export class NonceManager {
     // Configuration constants
     this.TX_STORAGE_PREFIX = 'casino_tx_';
     this.RESUBMIT_INTERVAL_MS = 10000; // Try to resubmit transactions every 10 seconds
+  }
+
+  withSigningKey(createTxFn) {
+    const isProd = typeof import.meta !== 'undefined' && import.meta.env?.PROD === true;
+
+    if (this.wasm?.keypair) {
+      const tx = createTxFn();
+      if (isProd) {
+        try {
+          this.wasm.clearKeypair?.();
+        } catch {
+          // ignore
+        }
+      }
+      return tx;
+    }
+
+    const vault = (() => {
+      try {
+        return getUnlockedVault();
+      } catch {
+        return null;
+      }
+    })();
+    if (!vault?.nullspaceEd25519PrivateKey) {
+      throw new Error('vault-locked');
+    }
+
+    const keyBytes = new Uint8Array(vault.nullspaceEd25519PrivateKey);
+    try {
+      this.wasm.createKeypair(keyBytes);
+      const tx = createTxFn();
+      if (isProd) {
+        try {
+          this.wasm.clearKeypair?.();
+        } catch {
+          // ignore
+        }
+      }
+      return tx;
+    } finally {
+      keyBytes.fill(0);
+    }
   }
 
   /**
@@ -389,7 +433,7 @@ export class NonceManager {
       try {
         logDebug('[NonceManager] submit', { txType, nonce, publicKey: this.publicKeyHex });
         // Create the transaction with the nonce
-        const txData = createTxFn(nonce);
+        const txData = this.withSigningKey(() => createTxFn(nonce));
 
         // Compute a short hash of the tx data for display
         const txHash = this.computeTxHash(txData);

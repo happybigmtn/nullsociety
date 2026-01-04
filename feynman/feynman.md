@@ -1,13 +1,13 @@
 # Feynman Curriculum (1 Week) - Nullspace End-to-End
 
-Goal: Use the "Common Path -> feature flows" to build a rigorous, file-by-file understanding of the system. Each bullet from the original feynman.md is now a standalone lesson. Live-table craps is the deep dive use case, then we compare it to the normal craps mode.
+Goal: Use the "Common Path -> feature flows" to build a rigorous, file-by-file understanding of the system. Each bullet from the original feynman.md is now a standalone lesson. Global-table craps is the deep dive use case, then we compare it to the normal craps mode.
 
 How to use this curriculum:
 - One lesson per bullet (exhaustive but not line-by-line). Each lesson has key excerpts, concepts, and mental models.
 - Do lessons in order. Later lessons assume earlier ones.
 - Supplemental concept lessons are inserted where they best support the flow.
 
-Deep dive use case: Live-table craps (off-chain service) vs normal craps (on-chain session). We will compare behavior, failure modes, and latency tradeoffs.
+Deep dive use case: Global-table craps (on-chain, single shared table) vs normal craps (session-based). We will compare behavior, failure modes, and latency tradeoffs.
 
 Note on execution: This curriculum assumes validator-first execution. There is no standalone dev-executor binary; execution happens inside validator nodes alongside consensus.
 
@@ -40,7 +40,7 @@ Day 6 (Stripe/Convex entitlements)
 - L34-L40
 - Concept Lab F: Payments + idempotency + webhooks
 
-Day 7 (Live-table craps deep dive + comparison)
+Day 7 (Global-table craps deep dive + comparison)
 - L41-L46
 - Concept Lab G: Observability + production readiness
 
@@ -128,13 +128,11 @@ Optional extensions (woven into the flow where they fit best)
 - L39 Auth admin sync (wasm + /submit): `feynman/lessons/L39-auth-casino-admin.md`
 - L40 Admin nonce store (integration): `feynman/lessons/L40-convex-admin-nonce-integration.md`
 
-### Live-table Craps (Off-chain service + On-chain global table)
-- L41 Gateway craps handler (live vs normal routing): `feynman/lessons/L41-gateway-craps-handler.md`
-- L42 LiveCrapsTable (off-chain gateway client): `feynman/lessons/L42-live-craps-table.md`
-- L43 Live-table service engine (off-chain): `feynman/lessons/L43-live-table-service.md`
+### Global Table Craps (On-chain)
+- L41 Gateway craps handler (global vs normal routing): `feynman/lessons/L41-gateway-craps-handler.md`
 - L44 OnchainCrapsTable (global table orchestration): `feynman/lessons/L44-onchain-craps-table.md`
 - L45 Global table handlers (on-chain): `feynman/lessons/L45-global-table-handlers.md`
-- L46 Compare live-table vs normal craps: `feynman/lessons/L46-live-vs-normal-craps.md`
+- L46 Compare global table vs normal craps: `feynman/lessons/L46-live-vs-normal-craps.md`
 - E06 Execution engine internals (game logic): `feynman/lessons/E06-execution-engine.md`
 - E07 RNG + fairness model: `feynman/lessons/E07-rng-fairness.md`
 

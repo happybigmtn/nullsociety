@@ -1,18 +1,4 @@
-const distributionContractAbi = [
-  {
-    type: 'function',
-    name: 'onTokensReceived',
-    inputs: [],
-    outputs: [],
-    stateMutability: 'nonpayable'
-  },
-  {
-    type: 'function',
-    name: 'auction',
-    inputs: [],
-    outputs: [{ name: 'auction', type: 'address' }],
-    stateMutability: 'view'
-  }
-];
+const distributionContractAbi =
+  require('../../artifacts/contracts/BogoDistributor.sol/BogoDistributor.json').abi;
 
 module.exports = { distributionContractAbi };

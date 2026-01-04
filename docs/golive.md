@@ -10,7 +10,7 @@ This roadmap covers deployment, data, scalability, UI/UX usability, security, an
   protocol, persists nonces in `GATEWAY_DATA_DIR`, and uses configurable session
   rate limits and event wait timeouts (`GATEWAY_SESSION_RATE_LIMIT_*`,
   `GATEWAY_EVENT_TIMEOUT_MS`).
-- Live Table: `services/live-table` WebSocket service for live craps rounds (optional).
+- Global table: on-chain round coordination lives in the gateway; no off-chain live-table service.
 - Ops: `services/ops` analytics + league/referral service (optional).
 - Frontend: `website` (Vite + React + WASM) consuming simulator APIs and WebSockets.
 - Mobile: `mobile` (Expo/native) consuming the gateway WebSocket API.
@@ -29,7 +29,7 @@ This roadmap covers deployment, data, scalability, UI/UX usability, security, an
 
 ### 1) Infrastructure & Deployment
 - Build real deployment topology: validators, indexer/explorer, API gateway, and frontend host/CDN.
-- Containerize **all** deployable services (node, simulator/indexer, gateway, website build, auth, ops, live-table).
+- Containerize **all** deployable services (node, simulator/indexer, gateway, website build, auth, ops).
 - CI builds GHCR images via `.github/workflows/build-images.yml`; configure `VITE_*` vars/secrets and promote tags per environment.
 - Deploy the Auth.js v5 service (see `services/auth`) alongside Convex and Stripe webhooks.
 - Deploy a self-hosted Convex backend with persistent storage, backups, and staging/prod isolation.

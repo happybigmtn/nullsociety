@@ -50,10 +50,6 @@ jobs:
             dockerfile: ./services/ops/Dockerfile
             context: .
             image: nullspace-ops
-          - id: live-table
-            dockerfile: ./services/live-table/Dockerfile
-            context: .
-            image: nullspace-live-table
 
     steps:
       - name: Checkout

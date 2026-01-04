@@ -1016,6 +1016,7 @@ fn default_global_table_round(
         made_points_mask: 0,
         epoch_point_established: false,
         field_paytable: 0,
+        rng_commit: Vec::new(),
         roll_seed: Vec::new(),
         totals: Vec::new(),
     }

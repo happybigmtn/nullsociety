@@ -1,6 +1,15 @@
 import { ConvexHttpClient } from "convex/browser";
 import { createRequire } from "module";
 import { pathToFileURL } from "url";
+import {
+  bytesToHex,
+  extractSecretValue,
+  getMemberTiers,
+  hasActiveEntitlement,
+  hexToBytes,
+  normalizeHex,
+  parseLimit,
+} from "./utils.js";
 
 // Avoid pulling Convex source files into the auth build output.
 const require = createRequire(import.meta.url);
@@ -47,11 +56,6 @@ type NonceStore = {
   adminPublicKeyHex: string;
 };
 
-const ACTIVE_STATUSES = new Set(["active", "trialing"]);
-
-const normalizeHex = (value: string): string =>
-  value.trim().toLowerCase().replace(/^0x/, "");
-
 const readSecretFile = async (filePath: string, label: string): Promise<string | null> => {
   try {
     const fs = await import("fs/promises");
@@ -66,35 +70,6 @@ const readSecretFile = async (filePath: string, label: string): Promise<string |
     console.warn(`[auth] Failed to read ${label} file: ${filePath}`, error);
     return null;
   }
-};
-
-const extractSecretValue = (payload: string): string | null => {
-  const trimmed = payload.trim();
-  if (!trimmed) return null;
-  if (trimmed.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(trimmed) as Record<string, any>;
-      const candidates = [
-        parsed.CASINO_ADMIN_PRIVATE_KEY_HEX,
-        parsed.adminKeyHex,
-        parsed.admin_key_hex,
-        parsed.key,
-        parsed.value,
-        parsed.secret,
-        parsed?.data?.key,
-        parsed?.data?.value,
-        parsed?.data?.secret,
-        parsed?.data?.data?.key,
-        parsed?.data?.data?.value,
-        parsed?.data?.data?.secret,
-      ];
-      const found = candidates.find((candidate) => typeof candidate === "string" && candidate.trim().length > 0);
-      return found ? String(found).trim() : null;
-    } catch {
-      return null;
-    }
-  }
-  return trimmed;
 };
 
 const readSecretUrl = async (url: string, label: string): Promise<string | null> => {
@@ -152,41 +127,6 @@ const resolveAdminKeyHex = async (): Promise<string> => {
   return "";
 };
 
-const parseLimit = (value: string | undefined, fallback: number): number => {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return Math.min(255, Math.floor(parsed));
-};
-
-const getMemberTiers = (): string[] => {
-  const raw = process.env.FREEROLL_MEMBER_TIERS ?? "";
-  return raw
-    .split(",")
-    .map((tier) => tier.trim())
-    .filter(Boolean);
-};
-
-const hasActiveEntitlement = (entitlements: Entitlement[], tiers: string[]): boolean => {
-  return entitlements.some((entitlement) => {
-    if (!ACTIVE_STATUSES.has(entitlement.status ?? "")) return false;
-    if (tiers.length === 0) return true;
-    return tiers.includes(entitlement.tier ?? "");
-  });
-};
-
-const hexToBytes = (hex: string): Uint8Array => {
-  const normalized = normalizeHex(hex);
-  const bytes = new Uint8Array(normalized.length / 2);
-  for (let i = 0; i < normalized.length; i += 2) {
-    bytes[i / 2] = parseInt(normalized.slice(i, i + 2), 16);
-  }
-  return bytes;
-};
-
-const bytesToHex = (bytes: Uint8Array): string =>
-  Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
 
 let wasmPromise: Promise<WasmModule | null> | null = null;
 let adminQueue: Promise<unknown> = Promise.resolve();
@@ -385,7 +325,7 @@ export const syncFreerollLimit = async (
 
   const freeLimit = parseLimit(process.env.FREEROLL_DAILY_LIMIT_FREE, 1);
   const memberLimit = parseLimit(process.env.FREEROLL_DAILY_LIMIT_MEMBER, 10);
-  const tiers = getMemberTiers();
+  const tiers = getMemberTiers(process.env.FREEROLL_MEMBER_TIERS ?? "");
   const desiredLimit = hasActiveEntitlement(entitlements, tiers)
     ? memberLimit
     : freeLimit;

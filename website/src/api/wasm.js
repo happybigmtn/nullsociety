@@ -1,8 +1,14 @@
 // Wrapper for WASM functionality
 let wasmModule = null;
+const GLOBAL_WASM_BINDINGS_KEY = '__NULLSPACE_WASM_BINDINGS__';
 
 export async function initWasm() {
   if (!wasmModule) {
+    const globalBindings = globalThis?.[GLOBAL_WASM_BINDINGS_KEY];
+    if (globalBindings) {
+      wasmModule = globalBindings;
+      return wasmModule;
+    }
     wasmModule = await import('../../wasm/pkg/nullspace_wasm.js');
     await wasmModule.default();
   }
@@ -15,6 +21,10 @@ export class WasmWrapper {
     this.keypair = null;
     this.identityHex = identityHex;
     this.identityBytes = null;
+  }
+
+  isProd() {
+    return typeof import.meta !== 'undefined' && import.meta.env?.PROD === true;
   }
 
   async init() {
@@ -35,10 +45,20 @@ export class WasmWrapper {
       }
       this.keypair = this.wasm.Signer.from_bytes(privateKeyBytes);
     } else {
+      if (this.isProd()) {
+        throw new Error('legacy-keys-disabled');
+      }
       // Let WASM generate a new key using the browser's crypto API
       this.keypair = new this.wasm.Signer();
     }
     return this.keypair;
+  }
+
+  clearKeypair() {
+    if (this.keypair && typeof this.keypair.free === 'function') {
+      this.keypair.free();
+    }
+    this.keypair = null;
   }
 
   // Get public key as hex string

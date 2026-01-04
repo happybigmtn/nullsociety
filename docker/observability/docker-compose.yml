@@ -5,7 +5,6 @@ services:
     image: prom/prometheus:v2.51.2
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--config.expand-env"
     environment:
       METRICS_AUTH_TOKEN: ${METRICS_AUTH_TOKEN:-}
       SIMULATOR_METRICS_TARGET: ${SIMULATOR_METRICS_TARGET:-host.docker.internal:8080}

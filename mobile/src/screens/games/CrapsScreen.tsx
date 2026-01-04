@@ -43,7 +43,7 @@ interface CrapsState {
 }
 
 type ConfirmationStatus = 'pending' | 'confirmed' | 'failed';
-type ConfirmationSource = 'onchain' | 'live-table';
+type ConfirmationSource = 'onchain';
 
 interface ConfirmationState {
   status: ConfirmationStatus;
@@ -70,17 +70,6 @@ const ESSENTIAL_BETS: CrapsBetType[] = ['PASS', 'DONT_PASS'];
 const YES_NO_TARGETS = [4, 5, 6, 8, 9, 10];
 const NEXT_TARGETS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const HARDWAY_TARGETS = [4, 6, 8, 10];
-const liveTableOnchain = (() => {
-  const raw = process.env.EXPO_PUBLIC_LIVE_TABLE_CRAPS_ONCHAIN;
-  if (!raw) return false;
-  return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
-})();
-const liveTableEnabled = (() => {
-  const raw = process.env.EXPO_PUBLIC_LIVE_TABLE_CRAPS;
-  if (raw && ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase())) return true;
-  return liveTableOnchain;
-})();
-
 type LiveTablePhase = 'betting' | 'locked' | 'rolling' | 'payout' | 'cooldown';
 
 export function CrapsScreen() {
@@ -94,7 +83,7 @@ export function CrapsScreen() {
     dice: null,
     point: null,
     phase: 'comeout',
-    message: 'Come out roll - Place your bets',
+    message: 'Joining global table...',
     winAmount: 0,
     lastResult: null,
   });
@@ -102,10 +91,11 @@ export function CrapsScreen() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [confirmation, setConfirmation] = useState<ConfirmationState | null>(null);
-  const [liveTable, setLiveTable] = useState<{ phase: LiveTablePhase; timeRemainingMs: number; roundId: number }>({
+  const [liveTable, setLiveTable] = useState<{ phase: LiveTablePhase; timeRemainingMs: number; roundId: number; playerCount: number }>({
     phase: 'betting',
     timeRemainingMs: 0,
     roundId: 0,
+    playerCount: 0,
   });
   const liveTableRef = useRef(liveTable);
 
@@ -116,7 +106,7 @@ export function CrapsScreen() {
   }, [liveTable]);
 
   useEffect(() => {
-    if (!liveTableEnabled || isDisconnected) return;
+    if (isDisconnected) return;
     send({ type: 'craps_live_join' });
     return () => {
       send({ type: 'craps_live_leave' });
@@ -183,20 +173,12 @@ export function CrapsScreen() {
       const status = typeof payload.status === 'string'
         ? payload.status as ConfirmationStatus
         : 'pending';
-      const source = typeof payload.source === 'string'
-        ? payload.source as ConfirmationSource
-        : liveTableOnchain ? 'onchain' : 'live-table';
+      const source: ConfirmationSource = 'onchain';
       const defaultLabel = status === 'confirmed'
-        ? source === 'onchain'
-          ? 'On-chain confirmed'
-          : 'Live table confirmed (off-chain)'
+        ? 'On-chain confirmed'
         : status === 'failed'
-          ? source === 'onchain'
-            ? 'On-chain failed'
-            : 'Live table failed'
-          : source === 'onchain'
-            ? 'On-chain pending'
-            : 'Live table pending (off-chain)';
+          ? 'On-chain failed'
+          : 'On-chain pending';
 
       setConfirmation({
         status,
@@ -215,13 +197,16 @@ export function CrapsScreen() {
         ? payload.timeRemainingMs
         : liveTableRef.current.timeRemainingMs;
       const roundId = typeof payload.roundId === 'number' ? payload.roundId : liveTableRef.current.roundId;
+      const playerCount = typeof payload.playerCount === 'number'
+        ? payload.playerCount
+        : liveTableRef.current.playerCount;
       const seconds = Math.max(0, Math.ceil(timeRemainingMs / 1000));
       const liveMessage = phase === 'betting'
-        ? `Roll in ${seconds}s - Place your bets`
+        ? `Global roll in ${seconds}s - Place your bets`
         : phase === 'locked'
           ? 'Bets locked'
           : phase === 'rolling'
-            ? 'Rolling...'
+            ? 'Global roll in progress...'
             : phase === 'payout'
               ? 'Paying out...'
               : 'Next round soon';
@@ -254,7 +239,7 @@ export function CrapsScreen() {
             .filter((bet) => bet.amount > 0)
         : null;
 
-      setLiveTable({ phase, timeRemainingMs, roundId });
+      setLiveTable({ phase, timeRemainingMs, roundId, playerCount });
       setState((prev) => ({
         ...prev,
         dice,
@@ -266,14 +251,6 @@ export function CrapsScreen() {
         bets: nextBets ?? prev.bets,
         tableTotals: nextTotals ?? prev.tableTotals,
       }));
-      setConfirmation((prev) => {
-        if (!prev || prev.source !== 'live-table' || prev.status !== 'pending') return prev;
-        return {
-          status: 'confirmed',
-          source: 'live-table',
-          label: 'Live table confirmed (off-chain)',
-        };
-      });
       return;
     }
 
@@ -310,14 +287,6 @@ export function CrapsScreen() {
         message: typeof payload.message === 'string' ? payload.message : won ? 'Winner!' : 'No win',
         bets: nextBets ?? prev.bets,
       }));
-      setConfirmation((prev) => {
-        if (!prev || prev.source !== 'live-table' || prev.status !== 'pending') return prev;
-        return {
-          status: 'confirmed',
-          source: 'live-table',
-          label: 'Live table confirmed (off-chain)',
-        };
-      });
       return;
     }
 
@@ -383,11 +352,10 @@ export function CrapsScreen() {
     if (lastMessage.type === 'error') {
       setConfirmation((prev) => {
         if (!prev || prev.status !== 'pending') return prev;
-        const label = prev.source === 'onchain' ? 'On-chain failed' : 'Live table failed';
         return {
           status: 'failed',
           source: prev.source,
-          label,
+          label: 'On-chain failed',
         };
       });
     }
@@ -418,7 +386,7 @@ export function CrapsScreen() {
   }));
 
   const addBet = useCallback((type: CrapsBetType, target?: number) => {
-    if (liveTableEnabled && liveTable.phase !== 'betting') {
+    if (liveTable.phase !== 'betting') {
       setState((prev) => ({ ...prev, message: 'BETTING CLOSED' }));
       return;
     }
@@ -458,57 +426,24 @@ export function CrapsScreen() {
 
   const handleRoll = useCallback(async () => {
     if (state.bets.length === 0) return;
-    if (liveTableEnabled) {
-      if (liveTable.phase !== 'betting') {
-        setState((prev) => ({ ...prev, message: 'BETTING CLOSED' }));
-        return;
-      }
-      setConfirmation({
-        status: 'pending',
-        source: liveTableOnchain ? 'onchain' : 'live-table',
-        label: liveTableOnchain ? 'On-chain pending' : 'Live table pending (off-chain)',
-      });
-      send({
-        type: 'craps_live_bet',
-        bets: state.bets,
-      });
-      setState((prev) => ({
-        ...prev,
-        message: 'BETS PLACED',
-      }));
+    if (liveTable.phase !== 'betting') {
+      setState((prev) => ({ ...prev, message: 'BETTING CLOSED' }));
       return;
     }
-    await haptics.diceRoll();
-
     setConfirmation({
       status: 'pending',
       source: 'onchain',
       label: 'On-chain pending',
     });
     send({
-      type: 'craps_roll',
+      type: 'craps_live_bet',
       bets: state.bets,
     });
-
     setState((prev) => ({
       ...prev,
-      phase: 'rolling',
-      message: 'Rolling...',
+      message: 'BETS PLACED',
     }));
   }, [state.bets, send, liveTable.phase]);
-
-  const handleNewGame = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      bets: [],
-      dice: null,
-      point: null,
-      phase: 'comeout',
-      message: 'Come out roll - Place your bets',
-      winAmount: 0,
-      lastResult: null,
-    }));
-  }, []);
 
   const handleChipPlace = useCallback((value: ChipValue) => {
     addBet('PASS');
@@ -516,7 +451,6 @@ export function CrapsScreen() {
 
   const totalBet = useMemo(() => state.bets.reduce((sum, b) => sum + b.amount, 0), [state.bets]);
   const sortedTotals = useMemo(() => {
-    if (!liveTableEnabled) return [];
     const totals = [...state.tableTotals];
     totals.sort((a, b) => b.amount - a.amount);
     return totals;
@@ -541,8 +475,7 @@ export function CrapsScreen() {
   // Keyboard controls
   const keyboardHandlers = useMemo(() => ({
     [KEY_ACTIONS.SPACE]: () => {
-      if (state.phase !== 'result' && state.phase !== 'rolling' && state.bets.length > 0 && !isDisconnected) handleRoll();
-      else if (state.phase === 'result') handleNewGame();
+      if (state.phase !== 'rolling' && state.bets.length > 0 && !isDisconnected) handleRoll();
     },
     [KEY_ACTIONS.ESCAPE]: () => handleClearBets(),
     [KEY_ACTIONS.ONE]: () => state.phase !== 'rolling' && setSelectedChip(1 as ChipValue),
@@ -550,7 +483,7 @@ export function CrapsScreen() {
     [KEY_ACTIONS.THREE]: () => state.phase !== 'rolling' && setSelectedChip(25 as ChipValue),
     [KEY_ACTIONS.FOUR]: () => state.phase !== 'rolling' && setSelectedChip(100 as ChipValue),
     [KEY_ACTIONS.FIVE]: () => state.phase !== 'rolling' && setSelectedChip(500 as ChipValue),
-  }), [state.phase, state.bets.length, isDisconnected, handleRoll, handleNewGame, handleClearBets]);
+  }), [state.phase, state.bets.length, isDisconnected, handleRoll, handleClearBets]);
 
   useGameKeyboard(keyboardHandlers);
 
@@ -567,7 +500,7 @@ export function CrapsScreen() {
   return (
     <>
       <GameLayout
-        title="Craps"
+        title="Craps — Global Table"
         balance={balance}
         onHelpPress={() => setShowTutorial(true)}
         connectionStatus={connectionStatusProps}
@@ -616,6 +549,17 @@ export function CrapsScreen() {
         <Text style={styles.total}>{state.dice[0] + state.dice[1]}</Text>
       )}
 
+      {/* Global Table Meta */}
+      <View style={styles.globalTableMeta}>
+        <Text style={styles.globalTableLabel}>GLOBAL TABLE</Text>
+        <Text style={styles.globalTableCount}>
+          {liveTable.playerCount > 0 ? `${liveTable.playerCount} PLAYERS` : 'PLAYERS JOINING...'}
+        </Text>
+        <Text style={styles.globalTableRound}>
+          {liveTable.roundId > 0 ? `ROUND ${liveTable.roundId}` : 'ROUND —'} • {liveTable.phase.toUpperCase()}
+        </Text>
+      </View>
+
       {/* Message */}
       <Text
         style={[
@@ -644,8 +588,8 @@ export function CrapsScreen() {
         <Text style={styles.winAmount}>+${state.winAmount}</Text>
       )}
 
-      {/* Live Table Heat */}
-      {liveTableEnabled && liveTotals.length > 0 && (
+      {/* Global Table Heat */}
+      {liveTotals.length > 0 && (
         <View style={styles.heatContainer}>
           <Text style={styles.heatTitle}>TABLE HEAT</Text>
           {liveTotals.map((bet) => {
@@ -701,36 +645,13 @@ export function CrapsScreen() {
 
       {/* Actions */}
       <View style={styles.actions}>
-        {liveTableEnabled ? (
-          <PrimaryButton
-            label={liveTable.phase === 'betting' ? 'PLACE BETS' : 'BETTING CLOSED'}
-            onPress={handleRoll}
-            disabled={state.bets.length === 0 || liveTable.phase !== 'betting' || isDisconnected}
-            variant="primary"
-            size="large"
-          />
-        ) : (
-          <>
-            {state.phase !== 'result' && (
-              <PrimaryButton
-                label="ROLL"
-                onPress={handleRoll}
-                disabled={state.bets.length === 0 || state.phase === 'rolling' || isDisconnected}
-                variant="primary"
-                size="large"
-              />
-            )}
-
-            {state.phase === 'result' && (
-              <PrimaryButton
-                label="NEW GAME"
-                onPress={handleNewGame}
-                variant="primary"
-                size="large"
-              />
-            )}
-          </>
-        )}
+        <PrimaryButton
+          label={liveTable.phase === 'betting' ? 'PLACE BETS' : 'BETTING CLOSED'}
+          onPress={handleRoll}
+          disabled={state.bets.length === 0 || liveTable.phase !== 'betting' || isDisconnected}
+          variant="primary"
+          size="large"
+        />
       </View>
 
       {/* Chip Selector */}
@@ -758,12 +679,10 @@ export function CrapsScreen() {
             </View>
 
             <ScrollView>
-              {liveTableEnabled && (
-                <Text style={styles.liveTableNote}>
-                  Live table mode: bets resolve on the shared roll
-                </Text>
-              )}
-              {liveTableEnabled && sortedTotals.length > 0 && (
+              <Text style={styles.liveTableNote}>
+                Global table: every player shares the same roll
+              </Text>
+              {sortedTotals.length > 0 && (
                 <>
                   <Text style={styles.sectionTitle}>Table Heat</Text>
                   {sortedTotals.map((bet) => {
@@ -984,6 +903,25 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.displayMedium,
     textAlign: 'center',
     marginBottom: SPACING.sm,
+  },
+  globalTableMeta: {
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+  },
+  globalTableLabel: {
+    color: COLORS.gold,
+    ...TYPOGRAPHY.label,
+    letterSpacing: 2,
+  },
+  globalTableCount: {
+    color: COLORS.textPrimary,
+    ...TYPOGRAPHY.bodySmall,
+    marginTop: 2,
+  },
+  globalTableRound: {
+    color: COLORS.textMuted,
+    ...TYPOGRAPHY.caption,
+    marginTop: 2,
   },
   message: {
     color: COLORS.textSecondary,

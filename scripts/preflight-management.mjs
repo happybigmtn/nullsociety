@@ -64,6 +64,20 @@ const checkGateway = (env, errors, warnings) => {
   const maxPerIp = parseIntSafe(env.MAX_CONNECTIONS_PER_IP);
   warnIf(maxPerIp !== null && maxPerIp < 50, warnings,
     'MAX_CONNECTIONS_PER_IP looks low for NAT-heavy traffic (<50).');
+
+  const globalTableEnabled = (() => {
+    const raw = String(env.GATEWAY_LIVE_TABLE_CRAPS ?? (isProd(env) ? '1' : '0')).toLowerCase();
+    return ['1', 'true', 'yes', 'on'].includes(raw);
+  })();
+
+  if (isProd(env) && globalTableEnabled) {
+    const adminFile = String(env.GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE ?? env.CASINO_ADMIN_PRIVATE_KEY_FILE ?? '').trim();
+    const allowEnv = ['1', 'true', 'yes'].includes(String(env.GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV ?? '').toLowerCase());
+    const adminEnv = String(env.GATEWAY_LIVE_TABLE_ADMIN_KEY ?? env.CASINO_ADMIN_PRIVATE_KEY_HEX ?? '').trim();
+    if (!adminFile && !(allowEnv && adminEnv)) {
+      errors.push('Missing GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE (or set GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV=1 with an admin key env)');
+    }
+  }
 };
 
 const checkSimulator = (env, errors, warnings) => {
@@ -108,12 +122,6 @@ const checkOps = (env, errors) => {
   }
 };
 
-const checkLiveTable = (env, errors) => {
-  if (isProd(env)) {
-    requireKeys(env, ['LIVE_TABLE_HOST', 'LIVE_TABLE_PORT'], errors);
-  }
-};
-
 const checkWebsite = (env, errors, warnings) => {
   requireKeys(env, ['VITE_IDENTITY', 'VITE_URL', 'VITE_AUTH_URL', 'VITE_AUTH_PROXY_URL'], errors);
   const legacy = String(env.VITE_ALLOW_LEGACY_KEYS ?? '').toLowerCase();
@@ -131,8 +139,6 @@ const checks = {
   node: checkNode,
   auth: checkAuth,
   ops: checkOps,
-  'live-table': checkLiveTable,
-  livetable: checkLiveTable,
   website: checkWebsite,
 };
 

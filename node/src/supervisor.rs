@@ -19,6 +19,9 @@ use std::sync::{
     Arc,
 };
 
+type PeerSetUpdate = (u64, Set<ed25519::PublicKey>, Set<ed25519::PublicKey>);
+type PeerSubscriber = mpsc::UnboundedSender<PeerSetUpdate>;
+
 /// Manages epoch state and subscribers.
 struct EpochManager {
     epoch: Epoch,
@@ -68,7 +71,7 @@ pub struct Supervisor {
     participants_set: Set<ed25519::PublicKey>,
     epoch: AtomicU64,
     epoch_manager: RwLock<EpochManager>,
-    peer_subscribers: RwLock<Vec<mpsc::UnboundedSender<(u64, Set<ed25519::PublicKey>, Set<ed25519::PublicKey>)>>>,
+    peer_subscribers: RwLock<Vec<PeerSubscriber>>,
 }
 
 impl std::fmt::Debug for Supervisor {
@@ -91,12 +94,12 @@ impl Supervisor {
         participants.sort();
         let participants_set = Set::try_from(participants.clone())
             .expect("participants must be unique and sorted");
-        let identity = sharing.public().clone();
+        let identity = *sharing.public();
         let aggregation_sharing = sharing.clone();
         let aggregation_share = share.clone();
         let scheme = bls12381_threshold::Scheme::signer(participants_set.clone(), sharing, share)
             .expect("share index must match participant indices");
-        let certificate_verifier = bls12381_threshold::Scheme::certificate_verifier(identity.clone());
+        let certificate_verifier = bls12381_threshold::Scheme::certificate_verifier(identity);
         let aggregation_scheme =
             aggregation_bls12381_threshold::Scheme::signer(
                 participants_set.clone(),
@@ -105,7 +108,7 @@ impl Supervisor {
             )
                 .expect("share index must match participant indices");
         let aggregation_certificate_verifier =
-            aggregation_bls12381_threshold::Scheme::certificate_verifier(identity.clone());
+            aggregation_bls12381_threshold::Scheme::certificate_verifier(identity);
 
         Arc::new(Self {
             identity,
@@ -122,7 +125,7 @@ impl Supervisor {
     }
 
     pub fn identity(&self) -> Identity {
-        self.identity.clone()
+        self.identity
     }
 
     async fn notify_peer_set(&self, epoch: Epoch) {

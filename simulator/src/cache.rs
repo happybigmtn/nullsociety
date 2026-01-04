@@ -43,9 +43,7 @@ impl RedisCache {
                 return None;
             }
         };
-        let Some(conn) = guard.as_mut() else {
-            return None;
-        };
+        let conn = guard.as_mut()?;
         let full_key = self.key(key);
         match conn.get(full_key).await {
             Ok(value) => Some(value),

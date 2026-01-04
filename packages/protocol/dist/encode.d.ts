@@ -6,7 +6,6 @@
  */
 import { CrapsBetType } from '@nullspace/constants';
 import { type BaccaratBetName, type CrapsBetName, type RouletteBetName, type SicBoBetName } from '@nullspace/constants';
-import type { GameType } from '@nullspace/types';
 /** Valid blackjack move actions - exported for type-safe fixture typing */
 export type BlackjackMoveAction = 'hit' | 'stand' | 'double' | 'split' | 'deal' | 'surrender';
 /**
@@ -79,13 +78,6 @@ export declare function encodeCrapsMove(move: 'roll'): Uint8Array;
 export declare function encodeCrapsMove(move: 'clear_bets'): Uint8Array;
 export declare function encodeCrapsMove(move: 'add_odds', amount: bigint): Uint8Array;
 export declare function encodeCrapsMove(move: 'place_bet', options: CrapsPlaceBetOptions): Uint8Array;
-/** Side bet structure */
-export interface SideBet {
-    type: number;
-    amount: bigint;
-}
-/** Encode a generic game start with bet amount */
-export declare function encodeGameStart(gameType: GameType, betAmount: bigint, sideBets?: SideBet[]): Uint8Array;
 export interface BaccaratAtomicBetInput {
     type: BaccaratBetName | number;
     amount: bigint;

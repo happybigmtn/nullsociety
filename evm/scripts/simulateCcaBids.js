@@ -5,7 +5,7 @@ const { ccaAbi } = require('../src/abis/cca');
 const { erc20Abi } = require('../src/abis/erc20');
 const { permit2Abi } = require('../src/abis/permit2');
 const { DEFAULT_ADDRESSES } = require('../src/config/addresses');
-const { envString, envNumber, envBigInt } = require('../src/utils/env.cjs');
+const { parseEnv } = require('../src/utils/env.cjs');
 const { loadDeployments } = require('../src/utils/deployments.cjs');
 const { loadPrivateKeysFromFile, deriveKeysFromMnemonic } = require('../src/utils/bidders.cjs');
 
@@ -26,6 +26,21 @@ async function ensurePermit2Allowance(currency, permit2, owner, spender, amount,
   }
 }
 
+function validateAddress(value) {
+  if (!value) return 'must be a valid address';
+  try {
+    ethers.getAddress(value);
+    return null;
+  } catch {
+    return 'must be a valid address';
+  }
+}
+
+function optionalAddress(value) {
+  if (!value) return null;
+  return validateAddress(value);
+}
+
 async function main() {
   const deployments = loadDeployments();
   const [deployer] = await ethers.getSigners();
@@ -34,8 +49,36 @@ async function main() {
     throw new Error(`Unsupported network: ${network.name}`);
   }
 
-  const auctionAddress = envString('AUCTION_ADDRESS', deployments.auction);
-  const currencyAddress = envString('AUCTION_CURRENCY', deployments.currency);
+  const envConfig = parseEnv({
+    AUCTION_ADDRESS: {
+      type: 'string',
+      default: deployments.auction || '',
+      validate: optionalAddress,
+    },
+    AUCTION_CURRENCY: {
+      type: 'string',
+      default: deployments.currency || '',
+      validate: optionalAddress,
+    },
+    NUM_BIDDERS: { type: 'number', default: 10, integer: true, min: 1 },
+    BIDDER_PRIVATE_KEYS: { type: 'string', default: '' },
+    BIDDER_KEYS_FILE: { type: 'string', default: '' },
+    BIDDER_MNEMONIC: { type: 'string', default: '' },
+    PERMIT2_ADDRESS: {
+      type: 'string',
+      default: addresses.permit2 || '',
+      validate: optionalAddress,
+    },
+    MIN_BID_AMOUNT: { type: 'bigint', default: 2_500_000n, min: 0n },
+    MAX_BID_AMOUNT: { type: 'bigint', default: 15_000_000n, min: 0n },
+    PRICE_MULTIPLIER_BPS: { type: 'number', default: 12000, integer: true, min: 0 },
+    PRICE_JITTER_BPS: { type: 'number', default: 5000, integer: true, min: 0 },
+    PERMIT2_EXPIRATION_DAYS: { type: 'number', default: 30, integer: true, min: 0 },
+    MIN_BIDDER_ETH: { type: 'bigint', default: 0n, min: 0n },
+  });
+
+  const auctionAddress = envConfig.AUCTION_ADDRESS;
+  const currencyAddress = envConfig.AUCTION_CURRENCY;
   if (!auctionAddress) {
     throw new Error('AUCTION_ADDRESS not set and no deployment found');
   }
@@ -57,10 +100,10 @@ async function main() {
     }
   }
 
-  const numBidders = envNumber('NUM_BIDDERS', 10);
-  const privateKeys = envString('BIDDER_PRIVATE_KEYS');
-  const keysFile = envString('BIDDER_KEYS_FILE');
-  const mnemonic = envString('BIDDER_MNEMONIC');
+  const numBidders = envConfig.NUM_BIDDERS;
+  const privateKeys = envConfig.BIDDER_PRIVATE_KEYS;
+  const keysFile = envConfig.BIDDER_KEYS_FILE;
+  const mnemonic = envConfig.BIDDER_MNEMONIC;
   const derivedKeys = mnemonic ? deriveKeysFromMnemonic(mnemonic, numBidders) : [];
   const fileKeys = keysFile ? loadPrivateKeysFromFile(keysFile) : [];
   const rawKeys = fileKeys.length
@@ -90,14 +133,14 @@ async function main() {
     currencyAddress === ethers.ZeroAddress
       ? null
       : new ethers.Contract(currencyAddress, erc20Abi, deployer);
-  const permit2Address = envString('PERMIT2_ADDRESS', addresses.permit2);
+  const permit2Address = envConfig.PERMIT2_ADDRESS || addresses.permit2;
   const permit2 = new ethers.Contract(permit2Address, permit2Abi, deployer);
 
-  const minBid = envBigInt('MIN_BID_AMOUNT', 2_500_000n);
-  const maxBid = envBigInt('MAX_BID_AMOUNT', 15_000_000n);
-  const priceMultiplierBps = BigInt(envNumber('PRICE_MULTIPLIER_BPS', 12000));
-  const expirationDays = envNumber('PERMIT2_EXPIRATION_DAYS', 30);
-  const minEthBalance = envBigInt('MIN_BIDDER_ETH', 0n);
+  const minBid = envConfig.MIN_BID_AMOUNT;
+  const maxBid = envConfig.MAX_BID_AMOUNT;
+  const priceMultiplierBps = BigInt(envConfig.PRICE_MULTIPLIER_BPS);
+  const expirationDays = envConfig.PERMIT2_EXPIRATION_DAYS;
+  const minEthBalance = envConfig.MIN_BIDDER_ETH;
 
   if (maxBid < minBid) {
     throw new Error('MAX_BID_AMOUNT must be >= MIN_BID_AMOUNT');
@@ -115,7 +158,7 @@ async function main() {
       }
     }
 
-    const jitterBps = BigInt(envNumber('PRICE_JITTER_BPS', 5000));
+    const jitterBps = BigInt(envConfig.PRICE_JITTER_BPS);
     const randBps =
       priceMultiplierBps +
       (jitterBps === 0n ? 0n : BigInt(Math.floor(Math.random() * Number(jitterBps))));

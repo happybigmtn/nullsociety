@@ -36,7 +36,7 @@ use futures::{
 use futures::{future, future::Either};
 use nullspace_execution::{state_transition, Adb, PrepareError, State};
 use nullspace_types::{
-    execution::{Key, Output, Transaction, Value, MAX_BLOCK_TRANSACTIONS},
+    execution::{Key, Output, Value, MAX_BLOCK_TRANSACTIONS},
     genesis_block, genesis_digest, Block, Identity,
 };
 use prometheus_client::metrics::{counter::Counter, histogram::Histogram};
@@ -330,7 +330,7 @@ pub struct Actor<
     mmr_write_buffer: NonZero<usize>,
     log_items_per_section: NonZero<u64>,
     log_write_buffer: NonZero<usize>,
-    locations_items_per_blob: NonZero<u64>,
+    _locations_items_per_blob: NonZero<u64>,
     buffer_pool: PoolRef,
     indexer: I,
     execution_concurrency: usize,
@@ -359,7 +359,7 @@ impl<
         let inbound = Mailbox::new(sender, context.stopped());
 
         // Create supervisors
-        let identity = config.sharing.public().clone();
+        let identity = *config.sharing.public();
         let supervisor = Supervisor::new(config.sharing, config.participants, config.share);
         let view_supervisor = ViewSupervisor::new(supervisor.clone());
         let epoch_supervisor = EpochSupervisor::new(supervisor.clone());
@@ -376,7 +376,7 @@ impl<
                 mmr_write_buffer: config.mmr_write_buffer,
                 log_items_per_section: config.log_items_per_section,
                 log_write_buffer: config.log_write_buffer,
-                locations_items_per_blob: config.locations_items_per_blob,
+            _locations_items_per_blob: config.locations_items_per_blob,
                 buffer_pool: config.buffer_pool,
                 indexer: config.indexer,
                 execution_concurrency: config.execution_concurrency,
@@ -743,7 +743,7 @@ impl<
                         let prune_state = block_on(state_guard.prune(inactivity_floor));
                         let prune_events =
                             block_on(events_guard.prune(Location::from(events_start_op)));
-                        if let Err(err) = prune_state.and_then(|_| prune_events) {
+                        if let Err(err) = prune_state.and(prune_events) {
                             proof_storage_prune_errors.inc();
                             warn!(?err, height, "failed to prune storage");
                         }
@@ -1107,7 +1107,6 @@ impl<
                                 // We must wait for the seed to be available before processing the block,
                                 // otherwise we will not be able to match players or compute attack strength.
                                 let execute_timer = execute_latency.timer();
-                                let tx_count = block.transactions.len();
                                 let (result, sync_result) = {
                                     let mut state_guard = state.lock().await;
                                     let mut events_guard = events.lock().await;
@@ -1146,7 +1145,7 @@ impl<
                                 }
 
                                 // Update metrics
-                                txs_executed.inc_by(tx_count as u64);
+                                txs_executed.inc_by(result.executed_transactions);
 
                                 // Update mempool based on processed transactions
                                 let now = self.context.current();

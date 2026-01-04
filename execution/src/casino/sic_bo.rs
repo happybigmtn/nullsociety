@@ -71,19 +71,12 @@ mod payouts {
     pub const FOUR_NUMBER_EASY_HOP: u64 = 7;
 }
 
-/// Maximum number of bets per session.
-
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum SicBoPaytable {
+    #[default]
     Macau = 0,
     AtlanticCity = 1,
-}
-
-impl Default for SicBoPaytable {
-    fn default() -> Self {
-        SicBoPaytable::Macau
-    }
 }
 
 impl TryFrom<u8> for SicBoPaytable {
@@ -98,17 +91,9 @@ impl TryFrom<u8> for SicBoPaytable {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct SicBoRules {
     paytable: SicBoPaytable,
-}
-
-impl Default for SicBoRules {
-    fn default() -> Self {
-        Self {
-            paytable: SicBoPaytable::default(),
-        }
-    }
 }
 
 impl SicBoRules {

@@ -17,9 +17,8 @@ Notes:
 - `nullspace-node` requires `NODE_CONFIG` plus `NODE_PEERS` or `NODE_HOSTS` in `/etc/nullspace/node.env`.
 - `nullspace-website` reads `VITE_*` config at build time; set GitHub Actions
   `vars`/`secrets` (e.g., `VITE_URL`, `VITE_AUTH_URL`) before building the image.
-- `nullspace-live-table` expects `LIVE_TABLE_HOST` and `LIVE_TABLE_PORT` (defaults are ok).
 - `nullspace-ops` should set `OPS_ALLOWED_ORIGINS` and `OPS_ADMIN_TOKEN` for production.
-- If gateway live-table is enabled, set `GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE` (mounted under `/etc/nullspace`).
+- If the global craps table is enabled, set `GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE` (mounted under `/etc/nullspace`).
 
 Enable a unit after copying into `/etc/systemd/system/`:
 ```bash

@@ -91,27 +91,28 @@ Mempool budgeting (5k concurrent target):
 - account_timeout_ms: 5000 (`GATEWAY_ACCOUNT_TIMEOUT_MS`)
 - submit_max_bytes: 8 MB (`GATEWAY_SUBMIT_MAX_BYTES`)
 
-## Gateway live-table (configurable via env)
-- GATEWAY_LIVE_TABLE_TIMEOUT_MS: 5000
-- GATEWAY_LIVE_TABLE_RECONNECT_MS: 1500
+## Gateway global table (configurable via env)
 - GATEWAY_LIVE_TABLE_TICK_MS: 1000
+- GATEWAY_LIVE_TABLE_BROADCAST_MS: 1000
+- GATEWAY_LIVE_TABLE_BROADCAST_BATCH: 1000
+- GATEWAY_LIVE_TABLE_PRESENCE_UPDATE_MS: 2000
+- GATEWAY_LIVE_TABLE_PRESENCE_TIMEOUT_MS: 2000
+- GATEWAY_INSTANCE_ID: required for stable global counts
+- GATEWAY_LIVE_TABLE_PRESENCE_TOKEN: (optional; match simulator)
 - GATEWAY_LIVE_TABLE_BETTING_MS: 20000
 - GATEWAY_LIVE_TABLE_LOCK_MS: 2000
 - GATEWAY_LIVE_TABLE_PAYOUT_MS: 4000
 - GATEWAY_LIVE_TABLE_COOLDOWN_MS: 4000
 - GATEWAY_LIVE_TABLE_MIN_BET / MAX_BET: 5 / 1000
 - GATEWAY_LIVE_TABLE_MAX_BETS_PER_ROUND: 12
+- GATEWAY_LIVE_TABLE_SETTLE_BATCH: 25
+- GATEWAY_LIVE_TABLE_BOT_COUNT: 0 (production default)
+- GATEWAY_LIVE_TABLE_BOT_BET_MIN / MAX: 5 / 25
+- GATEWAY_LIVE_TABLE_BOT_BETS_MIN / MAX: 1 / 3
+- GATEWAY_LIVE_TABLE_BOT_PARTICIPATION: 1.0
 - GATEWAY_LIVE_TABLE_ADMIN_RETRY_MS: 1500
-
-## Live-table service (configurable via env)
-- LIVE_TABLE_BETTING_MS: 18000
-- LIVE_TABLE_LOCK_MS: 2000
-- LIVE_TABLE_PAYOUT_MS: 2000
-- LIVE_TABLE_COOLDOWN_MS: 8000
-- LIVE_TABLE_TICK_MS: 1000
-- LIVE_TABLE_BOT_COUNT: 0 (production default)
-- LIVE_TABLE_BOT_BET_MIN / MAX: 10 / 200
-- LIVE_TABLE_BOT_BETS_MIN / MAX: 1 / 3
+- GLOBAL_TABLE_PRESENCE_TTL_MS (simulator): 15000
+- GLOBAL_TABLE_PRESENCE_TOKEN (simulator): optional; match gateway token
 
 ### Testnet recommended overrides (initial 5k concurrent target)
 Simulator:
@@ -151,7 +152,7 @@ Notes:
 - Casino limits live in `execution/src/casino/limits.rs` and require a coordinated upgrade to change.
 - Node/simulator limits live in config defaults and can be tuned per deployment.
 - Time-based casino/tournament rules derive from `MS_PER_VIEW` in `execution/src/layer/handlers/casino.rs` (3s per view).
-- Timing defaults (live-table windows, tournament windows) should be tuned after telemetry and load tests.
-  For the 5k target, keep current defaults (live-table windows above, tournament
+- Timing defaults (global table windows, tournament windows) should be tuned after telemetry and load tests.
+  For the 5k target, keep current defaults (global table windows above, tournament
   schedule `TOURNAMENTS_PER_DAY=240`, `TOURNAMENT_DURATION_SECS=300`) unless
   load tests show sustained queueing.

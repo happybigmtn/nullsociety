@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, RwLock};
 
 fn parse_env_usize(var: &str) -> Option<usize> {
@@ -19,6 +20,8 @@ mod explorer;
 pub use explorer::{AccountActivity, ExplorerBlock, ExplorerState, ExplorerTransaction};
 mod explorer_persistence;
 use explorer_persistence::ExplorerPersistence;
+mod summary_persistence;
+use summary_persistence::SummaryPersistence;
 mod metrics;
 #[cfg(feature = "passkeys")]
 mod passkeys;
@@ -56,6 +59,23 @@ pub struct WsMetrics {
 struct WsConnectionTracker {
     total: usize,
     per_ip: HashMap<IpAddr, usize>,
+}
+
+#[derive(Default)]
+struct GlobalTablePresence {
+    gateways: HashMap<String, PresenceEntry>,
+}
+
+#[derive(Clone, Copy)]
+struct PresenceEntry {
+    count: u64,
+    last_seen: Instant,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct GlobalTablePresenceSnapshot {
+    pub total_players: u64,
+    pub gateway_count: usize,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -312,6 +332,7 @@ pub struct Simulator {
     http_metrics: HttpMetrics,
     system_metrics: SystemMetrics,
     ws_connections: Mutex<WsConnectionTracker>,
+    global_table_presence: Mutex<GlobalTablePresence>,
 }
 
 pub enum WsConnectionRejection {
@@ -455,6 +476,40 @@ impl Simulator {
             http_metrics: HttpMetrics::default(),
             system_metrics: SystemMetrics::new(),
             ws_connections: Mutex::new(WsConnectionTracker::default()),
+            global_table_presence: Mutex::new(GlobalTablePresence::default()),
+        }
+    }
+
+    pub fn update_global_table_presence(
+        &self,
+        gateway_id: String,
+        player_count: u64,
+        ttl: Duration,
+    ) -> GlobalTablePresenceSnapshot {
+        let mut presence = self
+            .global_table_presence
+            .lock()
+            .expect("global table presence lock poisoned");
+        let now = Instant::now();
+        presence.gateways.insert(
+            gateway_id,
+            PresenceEntry {
+                count: player_count,
+                last_seen: now,
+            },
+        );
+        presence
+            .gateways
+            .retain(|_, entry| now.duration_since(entry.last_seen) <= ttl);
+
+        let total_players = presence
+            .gateways
+            .values()
+            .map(|entry| entry.count)
+            .sum();
+        GlobalTablePresenceSnapshot {
+            total_players,
+            gateway_count: presence.gateways.len(),
         }
     }
 

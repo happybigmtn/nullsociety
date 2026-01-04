@@ -56,16 +56,11 @@ const STATE_LEN_WITH_RULES: usize = 41;
 const PROGRESSIVE_BET_UNIT: u64 = 1;
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum DealerQualification {
+    #[default]
     None = 0,
     PairPlus = 1,
-}
-
-impl Default for DealerQualification {
-    fn default() -> Self {
-        DealerQualification::None
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

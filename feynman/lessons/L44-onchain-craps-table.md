@@ -21,16 +21,32 @@ Admin instructions must be signed and submitted in order. The gateway uses a non
 
 ## Limits & management callouts (important)
 
-1) **Bet and timing limits are env-configured**
+1) **Global table can be disabled**
+- `GATEWAY_LIVE_TABLE_CRAPS` toggles the table (default on in production).
+- If disabled, clients will receive `LIVE_TABLE_DISABLED`.
+
+2) **Fanout throttling is configurable**
+- `GATEWAY_LIVE_TABLE_BROADCAST_MS` and `GATEWAY_LIVE_TABLE_BROADCAST_BATCH` control update cadence and batch sizes.
+- Too low wastes bandwidth; too high makes countdowns feel laggy.
+
+3) **Global presence aggregation is opt-in**
+- `GATEWAY_INSTANCE_ID` identifies each gateway for global player counts.
+- `GATEWAY_LIVE_TABLE_PRESENCE_UPDATE_MS` controls update cadence to the simulator.
+
+4) **Bet and timing limits are env-configured**
 - `GATEWAY_LIVE_TABLE_MIN_BET`, `MAX_BET`, `MAX_BETS_PER_ROUND`.
 - Timing windows: `BETTING_MS`, `LOCK_MS`, `PAYOUT_MS`, `COOLDOWN_MS`.
 - Misconfiguration will break UX or economics.
 
-2) **Admin key handling in prod**
+5) **Bot configuration is explicit**
+- `GATEWAY_LIVE_TABLE_BOT_*` controls bot count, participation, and bet sizing.
+- Production default is zero; require explicit opt-in.
+
+6) **Admin key handling in prod**
 - Production requires a key file unless `GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV=1`.
 - This is important for security.
 
-3) **Retry throttling**
+7) **Retry throttling**
 - `GATEWAY_LIVE_TABLE_ADMIN_RETRY_MS` limits how often admin actions are retried.
 - Too low can spam the chain; too high can stall rounds.
 
@@ -44,7 +60,7 @@ configure(deps: LiveTableDependencies): void {
   this.deps = deps;
   if (this.enabled) {
     void this.ensureStarted().catch((err) => {
-      console.error('[LiveTable] Failed to start on-chain table:', err);
+      console.error('[GlobalTable] Failed to start on-chain table:', err);
     });
   }
 }
@@ -112,7 +128,7 @@ private buildAdminSigner(): SignerState | null {
     ?? '').trim();
   if (envKeyRaw && !ALLOW_ADMIN_KEY_ENV) {
     throw new Error(
-      'Live-table admin key env vars are disabled in production. Use GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE or set GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV=1.',
+      'Global table admin key env vars are disabled in production. Use GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE or set GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV=1.',
     );
   }
 
@@ -276,14 +292,14 @@ private handleGlobalTableEvent = (event: GlobalTableEvent): void => {
     case 'round_opened': {
       this.applyRoundUpdate(event.round);
       this.botQueue = this.bots.map((bot) => bot.publicKeyHex);
-      this.broadcastState();
+      this.requestBroadcast(true);
       break;
     }
     case 'outcome': {
       this.applyRoundUpdate(event.round);
       this.pendingSettlements = new Set(this.activePlayers);
       this.settleInFlight.clear();
-      this.broadcastState();
+      this.requestBroadcast(true);
       break;
     }
     case 'bet_accepted': {
@@ -307,7 +323,7 @@ private handleGlobalTableEvent = (event: GlobalTableEvent): void => {
         event.balanceSnapshot?.chips,
         event.roundId,
       );
-      this.broadcastState();
+      this.requestBroadcast(true);
       break;
     }
     default:
@@ -374,6 +390,287 @@ What this code does:
 - Attempts a resync and retry if a rejection indicates a nonce mismatch.
 
 ---
+
+## Extended deep dive: the global table as a distributed state machine
+
+The OnchainCrapsTable is a gateway‑side coordinator that drives a *shared* on‑chain game. This is different from normal sessions: instead of one player’s session state, the table maintains a global round state and fans out updates to many players.
+
+This section walks through the major components of the file and explains how they fit together.
+
+---
+
+### 7) Configuration is behavior
+
+The top of `gateway/src/live-table/craps.ts` reads a large set of environment variables into a `CONFIG` object. These values are not cosmetic. They define core game behavior:
+
+- Round timing windows (betting, lock, payout, cooldown).
+- Bet limits and maximum bets per round.
+- Fanout batch sizes and broadcast cadence.
+- Bot behavior and participation rate.
+- Admin retry throttles.
+
+The live table is effectively driven by this config. Misconfiguration can create unfair rounds, spam the chain, or stall the game entirely. This is why the lesson highlights configuration so heavily.
+
+---
+
+### 8) Admin key enforcement and production safety
+
+The global table requires admin instructions (open round, lock, reveal, finalize). Those instructions are signed with an admin key. The code enforces stricter rules in production:
+
+- If `GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV` is false and no key file is provided, it throws on startup.
+- This prevents accidental use of environment variables for admin keys in production.
+
+This is a security boundary. It ensures that production deployment must be configured with a secure key file or explicit override.
+
+---
+
+### 9) LiveTableDependencies: coupling to other services
+
+The table depends on:
+
+- `SubmitClient` for sending transactions.
+- `NonceManager` for per‑key nonce tracking.
+- `UpdatesClient` for on‑chain event streams.
+
+These are injected via `configure()`. This makes the table testable and allows the gateway to wire it up with real network clients.
+
+---
+
+### 10) Session tracking and membership
+
+The table keeps:
+
+- `sessions`: map of sessionId → Session object.
+- `sessionsByKey`: map of publicKeyHex → set of session IDs.
+
+This allows the table to track multiple sessions per public key (e.g., multiple devices). It also supports efficient fanout updates to all sessions for a given player.
+
+The join/leave handlers simply add/remove sessions from these maps. This is the membership layer of the global table.
+
+---
+
+### 11) UpdatesClient and event-driven state
+
+The table subscribes to on‑chain events via `UpdatesClient`. Events are the authoritative source of truth for:
+
+- round state (open, outcome, finalized),
+- bet acceptance,
+- balance updates.
+
+When an event arrives, `handleGlobalTableEvent` updates local state and triggers broadcasts. This means the table is **reactive**: it does not guess outcomes; it waits for on‑chain confirmation.
+
+---
+
+### 12) Round lifecycle
+
+The table drives a round lifecycle with phases:
+
+- betting
+- locked
+- rolling
+- payout
+- cooldown
+
+These phases map to on‑chain global table phases. The table uses a ticker to drive time‑based transitions, but it always reconciles against on‑chain events to remain correct.
+
+Admin actions (open, lock, reveal, finalize) are submitted when the ticker decides they are due. If the chain is behind or events are delayed, the table adapts based on event confirmations.
+
+---
+
+### 13) The “tick” loop
+
+A periodic timer calls `tick()` every `CONFIG.tickMs`. The tick loop:
+
+- advances phases when timers expire,
+- submits admin instructions if needed,
+- handles settlement batching,
+- triggers broadcasts.
+
+The loop is designed to be idempotent: if a tick runs late or multiple ticks overlap, it should not corrupt state. The `tickRunning` flag prevents overlapping ticks.
+
+---
+
+### 14) Betting normalization and encoding
+
+Bets arrive as human‑friendly objects. The table normalizes them into the strict on‑chain format:
+
+- bet type → numeric code (via `encodeCrapsBet`)
+- target → validated numeric target
+- amount → BigInt
+
+Normalization enforces min/max bet limits and bet count limits. It also validates allowed targets (YES/NO, NEXT, HARDWAY). This is a key safety layer before bets are sent on chain.
+
+---
+
+### 15) Global bet aggregation
+
+The table tracks:
+
+- `playerBets`: per-player bet map
+- `totals`: aggregated bet totals
+
+These maps are used to broadcast a table view to all players (current totals, their own bets). The table does *not* trust client state; it rebuilds from on‑chain confirmations.
+
+---
+
+### 16) Pending settlements and batching
+
+After an outcome event, the table sets `pendingSettlements` to all active players. It then settles bets in batches (`CONFIG.settleBatchSize`) by submitting settle instructions for each player’s bet set.
+
+Batching prevents spamming the chain with too many settle transactions at once. It also allows the table to make progress even if some settlements fail temporarily.
+
+---
+
+### 17) Nonce management and retry logic
+
+The table uses `NonceManager.withLock` to serialize nonce usage per signer. If a transaction is rejected with a nonce error, it resyncs from the backend and retries once.
+
+This is the same retry pattern used in other gateway components. It is essential because admin operations and player submissions both require correct nonces.
+
+---
+
+### 18) Bots as liquidity and activity
+
+The table can spawn bots in non‑production environments. Bots:
+
+- generate random keys,
+- register as players,
+- place bets with controlled sizes and frequencies.
+
+Bots provide activity for testing and demos. They are disabled by default in production. The configuration controls how many bots participate and how aggressive they are.
+
+---
+
+### 19) Presence and global player count
+
+The table can publish player presence to a simulator endpoint using `GATEWAY_INSTANCE_ID` and `GATEWAY_LIVE_TABLE_PRESENCE_TOKEN`. This aggregates player counts across gateway instances and enables a global “players online” display.
+
+Presence updates are throttled (`presenceUpdateMs`) to avoid spamming the simulator.
+
+---
+
+### 20) Fanout broadcasting
+
+Broadcasts are throttled and batched. The table queues broadcasts and sends them at most every `broadcastIntervalMs`. This prevents WebSocket floods while still keeping the UI responsive.
+
+The broadcast batching is critical when many players are connected. Without it, each on‑chain event could trigger thousands of immediate updates.
+
+---
+
+### 21) Error handling and availability
+
+If the table fails to start (missing admin key, updates connection failure), it returns `LIVE_TABLE_UNAVAILABLE` to users. This is better than silently failing. It tells the client to fall back to normal play or show a clear error.
+
+---
+
+### 22) Security boundary recap
+
+The global table is a privileged component because it holds the admin key and submits admin instructions. That means:
+
+- It must run in a trusted environment.
+- Its configuration must be protected.
+- Its logs should be monitored for unusual activity.
+
+Treat it as infrastructure, not just a feature.
+
+---
+
+### 23) Feynman analogy: a casino pit boss
+
+The OnchainCrapsTable is like a pit boss in a casino:
+
+- It opens and closes betting rounds.
+- It enforces table limits.
+- It confirms bets and pays out winnings.
+- It updates all players about the current state of the table.
+
+The pit boss doesn’t roll the dice (the chain does), but it coordinates everything around the roll.
+
+---
+
+### 24) Exercises for mastery
+
+1) Describe the sequence of admin instructions in a single round (open → lock → reveal → finalize).
+2) Explain how the table prevents double submissions when admin retries are needed.
+3) Describe how player bet submissions are validated before on‑chain encoding.
+4) Explain why fanout throttling is necessary.
+
+If you can answer these, you understand the global table orchestrator deeply.
+
+
+## Addendum: deeper mechanics and edge cases
+
+### 25) Bet type mapping and UI friendliness
+
+The table maps numeric bet types back to human‑readable strings using `betTypeToView`. This is used for broadcasting state to clients. If a bet type is unknown, it falls back to `BET_<id>`. This ensures the UI can still display something even if new bet types are introduced before the UI is updated.
+
+This is a forward‑compatibility pattern: degrade gracefully instead of crashing.
+
+---
+
+### 26) Phase mapping from on‑chain values
+
+The table converts numeric phases into strings (`betting`, `locked`, `rolling`, `payout`, `cooldown`). This mapping must match the on‑chain enum values. If the on‑chain phase codes change, this mapping must be updated to avoid mis‑labeling phases.
+
+This is a subtle dependency between gateway and execution code. It should be treated like an API contract.
+
+---
+
+### 27) Dice and point handling
+
+The table tracks `point` and `dice` values when present in events. These values are part of the craps game state and are broadcast to clients. The table does not compute them; it only reflects on‑chain outcomes. This preserves fairness: all outcomes come from the chain.
+
+---
+
+### 28) Round ID zero sentinel
+
+`roundId === 0n` is treated as “not ready.” This sentinel prevents bets before the first round is opened. It is an important guard to avoid submitting bets to a non‑existent round.
+
+---
+
+### 29) Admin retry throttling
+
+The `shouldAttempt`/`lastAdminAttempt` logic ensures admin instructions are not spammed. This prevents the gateway from hammering the chain during network failures. The retry delay is configurable via `GATEWAY_LIVE_TABLE_ADMIN_RETRY_MS`.
+
+---
+
+### 30) Boot sequence ordering
+
+The start sequence is deliberate:
+
+1) Build admin signer.
+2) Sync nonce from backend.
+3) Connect updates.
+4) Initialize global table config.
+5) Attempt to open first round.
+6) Spawn bots.
+7) Start ticker.
+
+If you change this order, you risk sending admin instructions before the table is configured or before nonce state is synced. The order is a correctness requirement, not just style.
+
+---
+
+### 31) Final recap
+
+The OnchainCrapsTable is a mini distributed system inside the gateway. It coordinates time, state, admin actions, player submissions, and broadcasting, all while remaining consistent with on‑chain truth.
+
+
+### 32) Tiny epilogue
+
+Global tables feel simple to players, but behind the scenes they are a careful choreography of timing, nonce management, and event‑driven state. Keeping that choreography stable is the core maintenance task for this component.
+
+
+### 33) Final word
+
+Treat the table coordinator like infrastructure: configure, monitor, and test it as rigorously as consensus.
+
+
+### 34) Epilogue
+
+Shared tables are deceptively hard; this file makes them possible.
+
+One operational habit that pays off: bind alerts to every phase transition. If you can page on “betting opened but never locked” or “payout never finalized,” you catch stalls before players notice.
+
 
 ## Key takeaways
 - OnchainCrapsTable orchestrates global rounds through admin instructions.

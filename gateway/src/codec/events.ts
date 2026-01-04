@@ -37,6 +37,12 @@ export const GLOBAL_TABLE_EVENT_TAGS = {
   GLOBAL_TABLE_FINALIZED: 66,
 } as const;
 
+const GLOBAL_TABLE_GAME_TYPE_CRAPS = 3;
+const GLOBAL_TABLE_MAX_TOTALS = 64;
+const GLOBAL_TABLE_MAX_BETS = 64;
+const GLOBAL_TABLE_VALUE_TAG = 30;
+const STATE_OP_UPDATE_CONTEXT = 0xD2;
+
 /**
  * Parsed casino game event
  */
@@ -90,6 +96,8 @@ export interface GlobalTableRound {
   madePointsMask: number;
   epochPointEstablished: boolean;
   fieldPaytable: number;
+  rngCommit: Uint8Array;
+  rollSeed: Uint8Array;
   totals: GlobalTableTotal[];
 }
 
@@ -856,7 +864,7 @@ function decodeFilteredEvents(
   for (let i = 0; i < opsLen; i += 1) {
     reader.readU64BE(); // location
     const context = reader.readU8();
-    if (context === 0x05) {
+    if (context === 0x05 || context === 0x01) {
       const outputKind = reader.readU8();
       if (outputKind === 0x00) {
         const tag = reader.readU8();
@@ -885,7 +893,7 @@ function decodeFilteredEvents(
       } else {
         throw new Error(`Unexpected Output kind ${outputKind} in FilteredEvents`);
       }
-    } else if (context === 0x04) {
+    } else if (context === 0x04 || context === 0x00) {
       const hasValue = reader.readBool();
       if (!hasValue) {
         continue;
@@ -944,7 +952,7 @@ function decodeEvents(
   const opsLen = reader.readVarint();
   for (let i = 0; i < opsLen; i += 1) {
     const context = reader.readU8();
-    if (context === 0x05) {
+    if (context === 0x05 || context === 0x01) {
       const outputKind = reader.readU8();
       if (outputKind === 0x00) {
         const tag = reader.readU8();
@@ -973,7 +981,7 @@ function decodeEvents(
       } else {
         throw new Error(`Unexpected Output kind ${outputKind} in Events`);
       }
-    } else if (context === 0x04) {
+    } else if (context === 0x04 || context === 0x00) {
       const hasValue = reader.readBool();
       if (!hasValue) {
         continue;
@@ -1039,8 +1047,8 @@ function parseGlobalTableRound(reader: BinaryReader): GlobalTableRound {
   const madePointsMask = reader.readU8();
   const epochPointEstablished = reader.readBool();
   const fieldPaytable = reader.readU8();
-  // roll seed (Vec<u8>)
-  reader.readVec();
+  const rngCommit = reader.readVec();
+  const rollSeed = reader.readVec();
   const totalsLen = reader.readVarint();
   const totals: GlobalTableTotal[] = [];
   for (let i = 0; i < totalsLen; i += 1) {
@@ -1058,6 +1066,8 @@ function parseGlobalTableRound(reader: BinaryReader): GlobalTableRound {
     madePointsMask,
     epochPointEstablished,
     fieldPaytable,
+    rngCommit,
+    rollSeed,
     totals,
   };
 }
@@ -1183,7 +1193,7 @@ function parseOutput(reader: BinaryReader): CasinoGameEvent | null {
  * - Update::FilteredEvents(2) - contains (u64 location, Output) pairs
  *
  * FilteredEvents structure:
- * [02][Progress ~120 bytes][Certificate ~100+ bytes][Proof variable][events_proof_ops: Vec<(u64, Output)>]
+ * [02][Progress ~120 bytes][Certificate ~100+ bytes][Proof variable][events_proof_ops: Vec<(u64, EventOp)>]
  *
  * Each element in events_proof_ops:
  * [u64 location][Output discriminant: u8][if Event: tag + data]
@@ -1192,6 +1202,11 @@ function parseOutput(reader: BinaryReader): CasinoGameEvent | null {
  */
 export function extractCasinoEvents(data: Uint8Array): CasinoGameEvent[] {
   const events: CasinoGameEvent[] = [];
+  const isCasinoTag = (tag: number): boolean =>
+    tag === EVENT_TAGS.CASINO_GAME_STARTED
+    || tag === EVENT_TAGS.CASINO_GAME_MOVED
+    || tag === EVENT_TAGS.CASINO_GAME_COMPLETED
+    || tag === EVENT_TAGS.CASINO_ERROR;
 
   if (data.length === 0) {
     return events;
@@ -1226,7 +1241,7 @@ export function extractCasinoEvents(data: Uint8Array): CasinoGameEvent[] {
 
   // The events_proof_ops Vec is at the END of the message after ~700-900 bytes of header
   // Structure: [Vec length: u32][item1][item2]...
-  // Each item: [u64 location][Output discriminant][if Event: tag + event_data]
+  // Each item: [u64 location][op context][Output discriminant][if Event: tag + event_data]
   //
   // We scan BACKWARDS from the end to find the Vec, avoiding false positives in crypto data.
   // The Vec length should be small (1-10 events) and is preceded by the Proof.
@@ -1234,30 +1249,32 @@ export function extractCasinoEvents(data: Uint8Array): CasinoGameEvent[] {
   // Scan the entire message for event markers; proof sizes vary and can push events earlier.
   const scanStart = 0;
 
-  // Debug: find and show the [05 00 tag] pattern location - scan more of the message
+  const appendContexts = new Set([0x01, 0x05]);
+
+  // Debug: find and show the [01/05 00 tag] pattern location - scan more of the message
   const debugStart = Math.max(0, data.length - 400);
   if (data.length > 100) {
     for (let d = debugStart; d < data.length - 3; d++) {
-      if (data[d] === 0x05 && data[d + 1] === 0x00) {
+      if (appendContexts.has(data[d]) && data[d + 1] === 0x00) {
         const tag = data[d + 2];
+        if (!isCasinoTag(tag)) {
+          continue;
+        }
         const ctx = Array.from(data.slice(d, Math.min(d + 20, data.length)))
           .map((x) => x.toString(16).padStart(2, '0'))
           .join(' ');
-        logDebug(`[extractCasinoEvents] Found [05 00 ${tag.toString(16)}] at ${d}: ${ctx}`);
+        logDebug(
+          `[extractCasinoEvents] Found [${data[d].toString(16).padStart(2, '0')} 00 ${tag.toString(16)}] at ${d}: ${ctx}`
+        );
       }
     }
   }
 
-  // Scan backwards for [05][00][tag] pattern (Keyless::Append + Output::Event + tag)
+  // Scan backwards for [01/05][00][tag] pattern (Keyless::Append + Output::Event + tag)
   for (let i = Math.max(0, data.length - 3); i >= scanStart; i--) {
-    if (data[i] === 0x05 && data[i + 1] === 0x00) {
+    if (appendContexts.has(data[i]) && data[i + 1] === 0x00) {
       const eventTag = data[i + 2];
-      if (
-        eventTag === EVENT_TAGS.CASINO_GAME_STARTED ||
-        eventTag === EVENT_TAGS.CASINO_GAME_MOVED ||
-        eventTag === EVENT_TAGS.CASINO_GAME_COMPLETED ||
-        eventTag === EVENT_TAGS.CASINO_ERROR
-      ) {
+      if (isCasinoTag(eventTag)) {
         try {
           // Parse starting from the tag (skip Keyless + Output discriminants)
           const reader = new BinaryReader(data.slice(i + 2));
@@ -1303,52 +1320,44 @@ export function extractGlobalTableEvents(data: Uint8Array): GlobalTableEvent[] {
   if (data[0] === 0x01) {
     try {
       const decoded = decodeEvents(data);
-      if (decoded.global.length > 0) {
-        return decoded.global;
-      }
+      return decoded.global;
     } catch (err) {
       logWarn('[extractGlobalTableEvents] Failed to decode Events:', err);
+      return events;
     }
   }
 
   if (data[0] === 0x02) {
     try {
       const decoded = decodeFilteredEvents(data);
-      if (decoded.global.length > 0) {
-        return decoded.global;
-      }
+      return decoded.global;
     } catch (err) {
       logWarn('[extractGlobalTableEvents] Failed to decode FilteredEvents:', err);
-    }
-  }
-
-  for (let i = Math.max(0, data.length - 3); i >= 0; i--) {
-    if (data[i] === 0x05 && data[i + 1] === 0x00) {
-      const tag = data[i + 2];
-      if (
-        tag === GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_ROUND_OPENED ||
-        tag === GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_BET_ACCEPTED ||
-        tag === GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_BET_REJECTED ||
-        tag === GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_LOCKED ||
-        tag === GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_OUTCOME ||
-        tag === GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_PLAYER_SETTLED ||
-        tag === GLOBAL_TABLE_EVENT_TAGS.GLOBAL_TABLE_FINALIZED
-      ) {
-        try {
-          const reader = new BinaryReader(data.slice(i + 2));
-          const event = parseGlobalTableEvent(reader);
-          if (event && validateGlobalTableEvent(event)) {
-            events.push(event);
-            return events;
-          }
-        } catch {
-          // ignore false positives
-        }
-      }
+      return events;
     }
   }
 
   return events;
+}
+
+export function decodeGlobalTableRoundLookup(data: Uint8Array): GlobalTableRound | null {
+  if (data.length === 0) return null;
+  try {
+    const reader = new BinaryReader(data);
+    skipProgress(reader);
+    skipCertificate(reader);
+    skipProof(reader);
+    reader.readU64BE(); // location
+    const opContext = reader.readU8();
+    if (opContext !== STATE_OP_UPDATE_CONTEXT) return null;
+    reader.readBytes(DIGEST_SIZE); // key
+    const valueTag = reader.readU8();
+    if (valueTag !== GLOBAL_TABLE_VALUE_TAG) return null;
+    const round = parseGlobalTableRound(reader);
+    return validateGlobalTableRound(round) ? round : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1375,12 +1384,31 @@ function validateEvent(event: CasinoGameEvent): boolean {
 }
 
 function validateGlobalTableEvent(event: GlobalTableEvent): boolean {
-  if (event.type === 'round_opened' || event.type === 'outcome') {
-    return event.round.roundId !== 0n;
+  switch (event.type) {
+    case 'round_opened':
+    case 'outcome':
+      return validateGlobalTableRound(event.round);
+    case 'locked':
+    case 'finalized':
+      return event.roundId !== 0n && event.gameType === GLOBAL_TABLE_GAME_TYPE_CRAPS;
+    case 'bet_accepted':
+      return event.roundId !== 0n && event.bets.length <= GLOBAL_TABLE_MAX_BETS;
+    case 'bet_rejected':
+      return event.roundId !== 0n;
+    case 'player_settled':
+      return event.roundId !== 0n && event.myBets.length <= GLOBAL_TABLE_MAX_BETS;
+    default:
+      return false;
   }
-  if ('roundId' in event) {
-    return event.roundId !== 0n;
-  }
+}
+
+function validateGlobalTableRound(round: GlobalTableRound): boolean {
+  if (round.roundId === 0n) return false;
+  if (round.gameType !== GLOBAL_TABLE_GAME_TYPE_CRAPS) return false;
+  if (round.phase < 0 || round.phase > 4) return false;
+  if (round.totals.length > GLOBAL_TABLE_MAX_TOTALS) return false;
+  if (round.rngCommit.length !== 0 && round.rngCommit.length !== 32) return false;
+  if (round.rollSeed.length !== 0 && round.rollSeed.length !== 32) return false;
   return true;
 }
 

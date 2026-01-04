@@ -58,13 +58,18 @@
     "dev": "tsc -p tsconfig.build.json --watch",
     "pretype-check": "pnpm run generate",
     "type-check": "tsc -p tsconfig.test.json --noEmit",
-    "lint": "eslint src --max-warnings 0",
+    "lint": "eslint src --ext .ts --max-warnings 0",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
     "@nullspace/tsconfig": "workspace:*",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^2.1.9",
+    "eslint": "^8.57.1",
     "typescript": "^5.7.0",
     "vitest": "^2.0.0"
   }

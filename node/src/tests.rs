@@ -214,7 +214,7 @@ async fn link_validators(
 
 fn all_online(n: u32, seed: u64, link: Link, required: u64) -> String {
     // Create context
-    let threshold = quorum(n);
+    let _threshold = quorum(n);
     // Cap required to keep deterministic integration tests bounded.
     let required = required.min(2);
     let cfg = deterministic::Config::default().with_seed(seed);
@@ -473,7 +473,7 @@ fn test_1k() {
 fn test_backfill() {
     // Create context
     let n = 5;
-    let threshold = quorum(n);
+    let _threshold = quorum(n);
     let initial_container_required = 10;
     let final_container_required = 20;
     let executor = Runner::timed(Duration::from_secs(120));
@@ -832,7 +832,7 @@ fn test_backfill() {
 fn test_unclean_shutdown() {
     // Create context
     let n = 5;
-    let threshold = quorum(n);
+    let _threshold = quorum(n);
     let required_container = 10;
 
     // Derive threshold
@@ -1063,7 +1063,7 @@ fn test_unclean_shutdown() {
 fn test_execution(seed: u64, link: Link) -> String {
     // Create context
     let n = 5;
-    let threshold = quorum(n);
+    let _threshold = quorum(n);
     let cfg = deterministic::Config::default()
         .with_seed(seed)
         .with_timeout(Some(Duration::from_secs(1200)));

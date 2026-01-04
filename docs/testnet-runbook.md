@@ -94,22 +94,17 @@ VITE_AUTH_URL=https://auth-staging.example.com
 If deploying the website via GHCR images, set the `VITE_*` values as GitHub
 Actions `vars`/`secrets` before building the image.
 
-## 4e) Start live table (optional)
-Run the live-table service if you want live craps:
+## 4e) Enable the global craps table (on-chain)
+The global table runs inside the gateway and uses on-chain confirmations. Enable it by
+setting the gateway envs:
 
-```bash
-LIVE_TABLE_HOST=0.0.0.0 LIVE_TABLE_PORT=9123 \
-RUST_LOG=info \
-./target/release/nullspace-live-table
-```
-
-Then point the gateway at it:
-`GATEWAY_LIVE_TABLE_CRAPS_URL=ws://<LIVE_TABLE_HOST>:9123/ws`.
-For production gateways, provide the admin key via file:
+`GATEWAY_LIVE_TABLE_CRAPS=1`
 `GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE=/etc/nullspace/casino-admin-key.hex`
 (env keys are blocked unless `GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV=1`).
 Bot traffic defaults to disabled in production; set `GATEWAY_LIVE_TABLE_BOT_COUNT`
 explicitly if you want bots.
+For global player counts across gateways, set `GATEWAY_INSTANCE_ID` on each gateway
+and (optionally) `GATEWAY_LIVE_TABLE_PRESENCE_TOKEN` (match simulator `GLOBAL_TABLE_PRESENCE_TOKEN`).
 
 ## 4f) Start ops service (optional)
 Run the ops/analytics service:

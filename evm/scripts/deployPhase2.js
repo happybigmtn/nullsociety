@@ -1,6 +1,6 @@
 const { ethers, network } = require('hardhat');
 const { buildAuctionParameters } = require('../src/auction/params');
-const { envString, envNumber } = require('../src/utils/env.cjs');
+const { parseEnv } = require('../src/utils/env.cjs');
 const { saveDeployments } = require('../src/utils/deployments.cjs');
 const { virtualLbpFactoryAbi } = require('../src/abis/virtualLbpFactory');
 const { distributionContractAbi } = require('../src/abis/distributionContract');
@@ -23,20 +23,46 @@ const {
 const Q96 = 2n ** 96n;
 const ACTION_MSG_SENDER = '0x0000000000000000000000000000000000000001';
 
-function floorPriceQ96(currencyDecimals) {
-  const explicit = envString('AUCTION_FLOOR_PRICE_Q96');
-  if (explicit) {
-    return BigInt(explicit);
+function validateAddress(value) {
+  if (!value) return 'must be a valid address';
+  try {
+    ethers.getAddress(value);
+    return null;
+  } catch {
+    return 'must be a valid address';
   }
-  const floorUnitsRaw = envString('AUCTION_FLOOR_PRICE', '0.05');
-  const floorUnits = ethers.parseUnits(floorUnitsRaw, currencyDecimals);
+}
+
+function optionalAddress(value) {
+  if (!value) return null;
+  return validateAddress(value);
+}
+
+function parseBigIntValue(value, label) {
+  try {
+    return BigInt(value);
+  } catch {
+    throw new Error(`${label} must be a bigint`);
+  }
+}
+
+function floorPriceQ96(currencyDecimals, config) {
+  if (config.AUCTION_FLOOR_PRICE_Q96) {
+    return parseBigIntValue(config.AUCTION_FLOOR_PRICE_Q96, 'AUCTION_FLOOR_PRICE_Q96');
+  }
+  const floorUnitsRaw = config.AUCTION_FLOOR_PRICE;
+  let floorUnits;
+  try {
+    floorUnits = ethers.parseUnits(floorUnitsRaw, currencyDecimals);
+  } catch {
+    throw new Error('AUCTION_FLOOR_PRICE must be a decimal string');
+  }
   return floorUnits * Q96;
 }
 
-function resolveTickSpacing(floorPrice) {
-  const explicit = envString('AUCTION_TICK_SPACING');
-  if (explicit) {
-    const spacing = BigInt(explicit);
+function resolveTickSpacing(floorPrice, config) {
+  if (config.AUCTION_TICK_SPACING) {
+    const spacing = parseBigIntValue(config.AUCTION_TICK_SPACING, 'AUCTION_TICK_SPACING');
     if (spacing < 2n) {
       throw new Error('AUCTION_TICK_SPACING must be >= 2');
     }
@@ -59,20 +85,58 @@ async function main() {
     throw new Error(`Unsupported network: ${network.name}`);
   }
 
-  const virtualLbpFactory = envString('VIRTUAL_LBP_FACTORY', addresses.virtualLbpFactory);
-  const ccaFactory = envString('CCA_FACTORY', addresses.ccaFactory);
+  const envConfig = parseEnv({
+    VIRTUAL_LBP_FACTORY: {
+      type: 'string',
+      default: addresses.virtualLbpFactory || '',
+      validate: validateAddress,
+    },
+    CCA_FACTORY: {
+      type: 'string',
+      default: addresses.ccaFactory || '',
+      validate: validateAddress,
+    },
+    PHASE2_CURRENCY: { type: 'string', default: '', validate: optionalAddress },
+    CURRENCY_DECIMALS: { type: 'number', default: Number(USDT_DECIMALS), integer: true, min: 0 },
+    AUCTION_START_BLOCK_OFFSET: { type: 'number', default: 30, integer: true, min: 0 },
+    AUCTION_DURATION_BLOCKS: { type: 'number', default: 7200, integer: true, min: 1 },
+    AUCTION_CLAIM_BLOCK_OFFSET: { type: 'number', default: 400, integer: true, min: 0 },
+    MIGRATION_BLOCK_OFFSET: { type: 'number', default: 200, integer: true, min: 0 },
+    SWEEP_BLOCK_OFFSET: { type: 'number', default: 400, integer: true, min: 0 },
+    AUCTION_FLOOR_PRICE_Q96: { type: 'string', default: '' },
+    AUCTION_FLOOR_PRICE: { type: 'string', default: '0.05' },
+    AUCTION_TICK_SPACING: { type: 'string', default: '' },
+    AUCTION_REQUIRED_RAISE: { type: 'string', default: '' },
+    POOL_LP_FEE: { type: 'number', default: 3000, integer: true, min: 0 },
+    POOL_TICK_SPACING: { type: 'number', default: 60, integer: true, min: 0 },
+    POOL_POSITION_RECIPIENT: {
+      type: 'string',
+      default: deployer.address,
+      validate: validateAddress,
+    },
+    TREASURY_OPERATOR: { type: 'string', default: deployer.address, validate: validateAddress },
+    GOVERNANCE_ADDRESS: { type: 'string', default: deployer.address, validate: validateAddress },
+    ONE_SIDED_TOKEN: { type: 'boolean', default: false },
+    ONE_SIDED_CURRENCY: { type: 'boolean', default: false },
+    LBP_SALT: { type: 'string', default: '' },
+    TREASURY_ADDRESS: { type: 'string', default: deployer.address, validate: validateAddress },
+    TEAM_ADDRESS: { type: 'string', default: deployer.address, validate: validateAddress },
+  });
+
+  const virtualLbpFactory = envConfig.VIRTUAL_LBP_FACTORY;
+  const ccaFactory = envConfig.CCA_FACTORY;
 
   if (virtualLbpFactory === ethers.ZeroAddress) {
     throw new Error('VIRTUAL_LBP_FACTORY is required for this deployment');
   }
 
-  const currencyDecimals = envNumber('CURRENCY_DECIMALS', Number(USDT_DECIMALS));
+  const currencyDecimals = envConfig.CURRENCY_DECIMALS;
   const currentBlock = await ethers.provider.getBlockNumber();
-  const startOffset = envNumber('AUCTION_START_BLOCK_OFFSET', 30);
-  const durationBlocks = envNumber('AUCTION_DURATION_BLOCKS', 7200);
-  const claimOffset = envNumber('AUCTION_CLAIM_BLOCK_OFFSET', 400);
-  const migrationOffset = envNumber('MIGRATION_BLOCK_OFFSET', 200);
-  const sweepOffset = envNumber('SWEEP_BLOCK_OFFSET', 400);
+  const startOffset = envConfig.AUCTION_START_BLOCK_OFFSET;
+  const durationBlocks = envConfig.AUCTION_DURATION_BLOCKS;
+  const claimOffset = envConfig.AUCTION_CLAIM_BLOCK_OFFSET;
+  const migrationOffset = envConfig.MIGRATION_BLOCK_OFFSET;
+  const sweepOffset = envConfig.SWEEP_BLOCK_OFFSET;
 
   const startBlock = currentBlock + startOffset;
   const endBlock = startBlock + durationBlocks;
@@ -80,11 +144,16 @@ async function main() {
   const migrationBlock = endBlock + migrationOffset;
   const sweepBlock = migrationBlock + sweepOffset;
 
-  const floorPrice = floorPriceQ96(currencyDecimals);
-  const tickSpacing = resolveTickSpacing(floorPrice);
-  const requiredRaise = envString('AUCTION_REQUIRED_RAISE')
-    ? ethers.parseUnits(envString('AUCTION_REQUIRED_RAISE'), currencyDecimals)
-    : 0n;
+  const floorPrice = floorPriceQ96(currencyDecimals, envConfig);
+  const tickSpacing = resolveTickSpacing(floorPrice, envConfig);
+  let requiredRaise = 0n;
+  if (envConfig.AUCTION_REQUIRED_RAISE) {
+    try {
+      requiredRaise = ethers.parseUnits(envConfig.AUCTION_REQUIRED_RAISE, currencyDecimals);
+    } catch {
+      throw new Error('AUCTION_REQUIRED_RAISE must be a decimal string');
+    }
+  }
 
   const steps = (() => {
     const step1 = Math.max(1, Math.floor(durationBlocks * 0.2));
@@ -117,7 +186,7 @@ async function main() {
   const rngToken = await rngTokenFactory.deploy('RNG', 'RNG', TOTAL_SUPPLY, deployer.address);
   await rngToken.waitForDeployment();
 
-  let currencyAddress = envString('PHASE2_CURRENCY');
+  let currencyAddress = envConfig.PHASE2_CURRENCY;
   let mockUsdt = null;
   if (!currencyAddress) {
     mockUsdt = await mockUsdtFactory.deploy(deployer.address, currencyDecimals);
@@ -150,13 +219,13 @@ async function main() {
     [auctionParams]
   );
 
-  const poolLPFee = envNumber('POOL_LP_FEE', 3000);
-  const poolTickSpacing = envNumber('POOL_TICK_SPACING', 60);
-  const positionRecipient = envString('POOL_POSITION_RECIPIENT', deployer.address);
-  const operator = envString('TREASURY_OPERATOR', deployer.address);
-  const governanceAddress = envString('GOVERNANCE_ADDRESS', deployer.address);
-  const createOneSidedTokenPosition = envString('ONE_SIDED_TOKEN', '0') === '1';
-  const createOneSidedCurrencyPosition = envString('ONE_SIDED_CURRENCY', '0') === '1';
+  const poolLPFee = envConfig.POOL_LP_FEE;
+  const poolTickSpacing = envConfig.POOL_TICK_SPACING;
+  const positionRecipient = envConfig.POOL_POSITION_RECIPIENT;
+  const operator = envConfig.TREASURY_OPERATOR;
+  const governanceAddress = envConfig.GOVERNANCE_ADDRESS;
+  const createOneSidedTokenPosition = envConfig.ONE_SIDED_TOKEN;
+  const createOneSidedCurrencyPosition = envConfig.ONE_SIDED_CURRENCY;
 
   const migratorParams = {
     migrationBlock: BigInt(migrationBlock),
@@ -181,7 +250,7 @@ async function main() {
     [governanceAddress, migratorParams, auctionParamsEncoded]
   );
 
-  const saltInput = envString('LBP_SALT');
+  const saltInput = envConfig.LBP_SALT;
   const salt = saltInput
     ? saltInput.length === 66 && saltInput.startsWith('0x')
       ? saltInput
@@ -214,8 +283,8 @@ async function main() {
   const rng = new ethers.Contract(await rngToken.getAddress(), erc20Abi, deployer);
   await (await rng.transfer(expectedDistribution, LBP_TOTAL)).wait();
   await (await rng.transfer(await bridgeLockbox.getAddress(), PLAYER_ALLOCATION)).wait();
-  await (await rng.transfer(envString('TREASURY_ADDRESS', deployer.address), TREASURY_ALLOCATION)).wait();
-  await (await rng.transfer(envString('TEAM_ADDRESS', deployer.address), TEAM_ALLOCATION)).wait();
+  await (await rng.transfer(envConfig.TREASURY_ADDRESS, TREASURY_ALLOCATION)).wait();
+  await (await rng.transfer(envConfig.TEAM_ADDRESS, TEAM_ALLOCATION)).wait();
 
   await (await rng.approve(await bogoDistributor.getAddress(), BONUS_ALLOCATION)).wait();
   await (await bogoDistributor.seed(BONUS_ALLOCATION)).wait();

@@ -1,0 +1,105 @@
+import React from 'react';
+import { Text, TextInput } from 'react-native';
+import { act, create } from 'react-test-renderer';
+import { PrimaryButton } from '../../components/ui';
+import { VaultScreen } from '../VaultScreen';
+import * as vault from '../../services/vault';
+
+jest.mock('../../services/vault', () => ({
+  createPasswordVault: jest.fn(async () => undefined),
+  deleteVault: jest.fn(async () => undefined),
+  exportVaultPrivateKey: jest.fn(async () => 'key'),
+  getVaultStatus: jest.fn(async () => ({ enabled: false, unlocked: false, publicKeyHex: null })),
+  importVaultPrivateKey: jest.fn(async () => undefined),
+  lockVault: jest.fn(),
+  unlockPasswordVault: jest.fn(async () => undefined),
+  VAULT_PASSWORD_MIN_LENGTH: 10,
+}));
+
+describe('VaultScreen', () => {
+  const flushPromises = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('renders vault screen', async () => {
+    const navigation = { goBack: jest.fn() } as any;
+
+    let tree: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      tree = create(<VaultScreen navigation={navigation} />);
+      await flushPromises();
+    });
+    expect(tree.toJSON()).toBeTruthy();
+  });
+
+  it('shows password mismatch error on create', async () => {
+    const navigation = { goBack: jest.fn() } as any;
+    let tree: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      tree = create(<VaultScreen navigation={navigation} />);
+      await flushPromises();
+    });
+
+    const inputs = tree!.root.findAllByType(TextInput);
+    const createInput = inputs.find((node) => node.props.placeholder === 'Create password')!;
+    const confirmInput = inputs.find((node) => node.props.placeholder === 'Confirm password')!;
+
+    act(() => {
+      createInput.props.onChangeText('secret-1');
+      confirmInput.props.onChangeText('secret-2');
+    });
+
+    const createButton = tree!.root
+      .findAllByType(PrimaryButton)
+      .find((node) => node.props.label === 'Create vault')!;
+
+    await act(async () => {
+      await createButton.props.onPress();
+      await flushPromises();
+    });
+
+    expect(vault.createPasswordVault).not.toHaveBeenCalled();
+    const errorNodes = tree!.root.findAll(
+      (node) =>
+        node.type === Text &&
+        typeof node.props.children === 'string' &&
+        node.props.children.includes('Passwords do not match')
+    );
+    expect(errorNodes.length).toBeGreaterThan(0);
+  });
+
+  it('calls unlock when vault is enabled', async () => {
+    (vault.getVaultStatus as jest.Mock).mockResolvedValueOnce({
+      enabled: true,
+      unlocked: false,
+      publicKeyHex: 'abc123',
+    });
+    const navigation = { goBack: jest.fn() } as any;
+    let tree: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      tree = create(<VaultScreen navigation={navigation} />);
+      await flushPromises();
+    });
+
+    const unlockInput = tree!.root
+      .findAllByType(TextInput)
+      .find((node) => node.props.placeholder === 'Vault password')!;
+
+    act(() => {
+      unlockInput.props.onChangeText('hunter2');
+    });
+
+    const unlockButton = tree!.root
+      .findAllByType(PrimaryButton)
+      .find((node) => node.props.label === 'Unlock')!;
+
+    await act(async () => {
+      await unlockButton.props.onPress();
+      await flushPromises();
+    });
+
+    expect(vault.unlockPasswordVault).toHaveBeenCalledWith('hunter2');
+  });
+});

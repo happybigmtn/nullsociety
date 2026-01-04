@@ -167,6 +167,9 @@ export class SessionManager {
 		// This ensures we're subscribed to receive event broadcasts
 		try {
 			const updatesClient = new UpdatesClient(this.backendUrl, this.origin);
+			updatesClient.on("error", (err) => {
+				logWarn(`Updates client error for ${session.playerName}:`, err);
+			});
 			await updatesClient.connectForAccount(session.publicKey);
 			session.updatesClient = updatesClient;
 			logDebug(`Connected to updates stream for ${session.playerName}`);

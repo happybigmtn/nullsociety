@@ -161,15 +161,15 @@ Status legend:
 
 ---
 
-## H) Live-table operations
+## H) Global-table operations
 
-31. **[x] Live-table timing and retry settings must be explicit**
-    - Apply to: L42, L43, L44
-    - Action: document `LIVE_TABLE_*` envs and align between gateway + service.
+31. **[x] Global-table timing, fanout, and presence settings must be explicit**
+    - Apply to: L44
+    - Action: document `GATEWAY_LIVE_TABLE_*` envs (including presence cadence) and keep them gateway-only.
 
-32. **[x] Live-table bot configuration must be explicit**
-    - Apply to: L43
-    - Action: document defaults and require opt-in in production.
+32. **[x] Global-table bot configuration must be explicit**
+    - Apply to: L44
+    - Action: document `GATEWAY_LIVE_TABLE_BOT_*` defaults and require opt-in in production.
 
 33. **[x] Gateway should not silently accept oversized bets**
     - Apply to: L41, L46
@@ -200,7 +200,7 @@ Status legend:
     - Action: document when to add gateway replicas and simulator/indexer replicas behind an LB.
 
 39. **[x] Gameplay timing defaults must be tuned with telemetry**
-   - Apply to: E01, L11, L45, L43
+   - Apply to: E01, L11, L44, L45
    - Action: document where timing constants live, keep defaults for 5k, and adjust after load tests.
 
 ---
@@ -286,9 +286,7 @@ This index maps each lesson callout to its action item(s).
 - L39: Item 3, Item 23, Item 41
 - L40: Item 19
 - L41: Item 33
-- L42: Item 31
-- L43: Item 31, Item 32
-- L44: Item 31, Item 3
+- L44: Item 31, Item 32, Item 3
 - L45: Item 13, Item 14
 - L46: Item 33
 - L47: Item 1, Item 9, Item 11

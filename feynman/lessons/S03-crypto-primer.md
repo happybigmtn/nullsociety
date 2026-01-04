@@ -341,7 +341,7 @@ These are not consensus-critical, but they are user-critical. If the vault fails
 
 ### 10.3 Important security note
 
-The WASM signer is convenient for local development, but it holds the private key in browser memory. That is not a production-grade security model. In production, keys should live in secure storage or be managed by external wallets.
+The WASM signer is convenient for local development, but it holds the private key in browser memory. That is not a production-grade security model. In production, keys should live in secure storage (passkey/password vault) or be managed by external wallets, and legacy browser keys should be disabled.
 
 ---
 

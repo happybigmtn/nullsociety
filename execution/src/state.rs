@@ -17,8 +17,8 @@ use std::collections::HashMap;
 
 pub type Adb<E, T> = AnyDb<E, Digest, Value, Sha256, T>;
 
-async fn adb_insert_inner<'a, E, T>(
-    adb: &'a mut Adb<E, T>,
+async fn adb_insert_inner<E, T>(
+    adb: &mut Adb<E, T>,
     key: Key,
     value: Value,
 ) -> Result<()>
@@ -34,7 +34,7 @@ where
     Ok(())
 }
 
-async fn adb_delete_inner<'a, E, T>(adb: &'a mut Adb<E, T>, key: Key) -> Result<()>
+async fn adb_delete_inner<E, T>(adb: &mut Adb<E, T>, key: Key) -> Result<()>
 where
     E: Spawner + Metrics + Clock + Storage + Send + Sync + 'static,
     T: Translator + Send + Sync + 'static,

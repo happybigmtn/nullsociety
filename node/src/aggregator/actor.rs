@@ -641,7 +641,7 @@ impl<
 
                     // Verify certificate
                     let scheme =
-                        AggregationScheme::certificate_verifier(self.config.identity.clone());
+                        AggregationScheme::certificate_verifier(self.config.identity);
                     let verified = {
                         let mut rng = rand::thread_rng();
                         certificate.verify(&mut rng, &scheme, &self.config.namespace)

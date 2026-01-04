@@ -351,10 +351,7 @@ fn record_event(
                 block_height: height,
             };
             {
-                let events = explorer
-                    .game_events
-                    .entry(player.clone())
-                    .or_insert_with(VecDeque::new);
+                let events = explorer.game_events.entry(player.clone()).or_default();
                 events.push_back(indexed_event);
                 enforce_game_events_retention(max_game_events_per_account, events);
             }
@@ -736,7 +733,7 @@ impl Simulator {
         };
 
         persistence
-            .persist_block(progress.clone(), ops.to_vec(), indexed_at_ms)
+            .persist_block(*progress, ops.to_vec(), indexed_at_ms)
             .await;
     }
 }

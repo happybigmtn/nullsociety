@@ -8,6 +8,12 @@ use super::cards;
 use super::GameRng;
 use nullspace_types::casino::{SuperModeState, SuperMultiplier, SuperType};
 
+const PERCENT_SCALE: u32 = 10_000;
+
+fn roll_percent(rng: &mut GameRng) -> u32 {
+    rng.next_bounded_u32(PERCENT_SCALE)
+}
+
 /// Generate Lightning Baccarat multipliers (3-5 Aura Cards, 2-8x)
 ///
 /// Distribution (RTP-adjusted for ~96.5%):
@@ -17,10 +23,10 @@ use nullspace_types::casino::{SuperModeState, SuperMultiplier, SuperType};
 /// - Max multiplier: 8^5 = 32,768x (capped at 512x for sustainability)
 pub fn generate_baccarat_multipliers(rng: &mut GameRng) -> Vec<SuperMultiplier> {
     // 3-5 cards based on probability (60/30/10)
-    let roll = rng.next_f32();
-    let count = if roll < 0.6 {
+    let roll = roll_percent(rng);
+    let count = if roll < 6_000 {
         3
-    } else if roll < 0.9 {
+    } else if roll < 9_000 {
         4
     } else {
         5
@@ -40,14 +46,14 @@ pub fn generate_baccarat_multipliers(rng: &mut GameRng) -> Vec<SuperMultiplier> 
         };
 
         // Assign multiplier: 45% 2x, 35% 3x, 15% 4x, 4% 5x, 1% 8x (RTP-adjusted)
-        let m_roll = rng.next_f32();
-        let multiplier = if m_roll < 0.45 {
+        let m_roll = roll_percent(rng);
+        let multiplier = if m_roll < 4_500 {
             2
-        } else if m_roll < 0.80 {
+        } else if m_roll < 8_000 {
             3
-        } else if m_roll < 0.95 {
+        } else if m_roll < 9_500 {
             4
-        } else if m_roll < 0.99 {
+        } else if m_roll < 9_900 {
             5
         } else {
             8
@@ -84,14 +90,14 @@ pub fn generate_roulette_multipliers(rng: &mut GameRng) -> Vec<SuperMultiplier> 
         };
 
         // Assign multiplier: 45% 50x, 35% 100x, 15% 150x, 4% 200x, 1% 400x (RTP-adjusted)
-        let roll = rng.next_f32();
-        let multiplier = if roll < 0.45 {
+        let roll = roll_percent(rng);
+        let multiplier = if roll < 4_500 {
             50
-        } else if roll < 0.80 {
+        } else if roll < 8_000 {
             100
-        } else if roll < 0.95 {
+        } else if roll < 9_500 {
             150
-        } else if roll < 0.99 {
+        } else if roll < 9_900 {
             200
         } else {
             400
@@ -127,14 +133,14 @@ pub fn generate_blackjack_multipliers(rng: &mut GameRng) -> Vec<SuperMultiplier>
         };
 
         // Distribution: 50% 2x, 35% 3x, 12% 4x, 2.5% 6x, 0.5% 8x (RTP-adjusted)
-        let roll = rng.next_f32();
-        let multiplier = if roll < 0.50 {
+        let roll = roll_percent(rng);
+        let multiplier = if roll < 5_000 {
             2
-        } else if roll < 0.85 {
+        } else if roll < 8_500 {
             3
-        } else if roll < 0.97 {
+        } else if roll < 9_700 {
             4
-        } else if roll < 0.995 {
+        } else if roll < 9_950 {
             6
         } else {
             8
@@ -168,10 +174,10 @@ pub fn generate_craps_multipliers(rng: &mut GameRng) -> Vec<SuperMultiplier> {
     let mut mults = Vec::with_capacity(3);
     for i in 0..3 {
         let num = opts[indices[i]];
-        let roll = rng.next_f32();
+        let roll = roll_percent(rng);
 
         // Multiplier based on point difficulty (RTP-adjusted)
-        let multiplier = if roll < 0.02 {
+        let multiplier = if roll < 200 {
             15 // Rare 2% (down from 5% @ 25x)
         } else {
             match num {

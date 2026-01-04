@@ -205,6 +205,7 @@ export function getCasinoKeyIdForStorage(): string | null {
   if (publicKeyHex) return publicKeyHex;
   const allowLegacyKeys =
     typeof import.meta !== 'undefined' &&
+    import.meta.env?.PROD !== true &&
     (import.meta.env?.DEV || import.meta.env?.VITE_ALLOW_LEGACY_KEYS === 'true');
   if (!allowLegacyKeys) return null;
   return localStorage.getItem('casino_private_key');
@@ -443,14 +444,13 @@ async function createVaultSecrets(options?: { migrateExistingCasinoKey?: boolean
     bettingPrivateKeyBytes = bytes;
     migrated = true;
   } else {
-    wasm.createKeypair();
-    const pkHex = wasm.getPrivateKeyHex();
-    const bytes = hexToBytes(pkHex);
-    if (!bytes || bytes.length !== 32) throw new Error('failed-to-generate-ed25519');
+    const bytes = randomBytes(32);
+    wasm.createKeypair(bytes);
     bettingPrivateKeyBytes = bytes;
   }
 
   const nullspacePublicKeyHex = wasm.getPublicKeyHex();
+  wasm.clearKeypair?.();
 
   // Generate chat key material (32 bytes). XMTP integration will define exact signer type later.
   const chatEvmPrivateKey = randomBytes(32);

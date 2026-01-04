@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SESSION_NAME="${SESSION_NAME:-live-table}"
+SESSION_NAME="${SESSION_NAME:-global-table}"
 BACKEND_URL="${BACKEND_URL:-http://127.0.0.1:8080}"
 GATEWAY_PORT="${GATEWAY_PORT:-9010}"
 BOT_COUNT="${GATEWAY_LIVE_TABLE_BOT_COUNT:-100}"
@@ -95,7 +95,6 @@ tmux set-environment -t "${SESSION_NAME}" CASINO_ADMIN_PUBLIC_KEY_HEX "${CASINO_
 tmux set-environment -t "${SESSION_NAME}" BACKEND_URL "${BACKEND_URL}"
 tmux set-environment -t "${SESSION_NAME}" GATEWAY_PORT "${GATEWAY_PORT}"
 tmux set-environment -t "${SESSION_NAME}" GATEWAY_LIVE_TABLE_CRAPS "1"
-tmux set-environment -t "${SESSION_NAME}" GATEWAY_LIVE_TABLE_CRAPS_ONCHAIN "1"
 tmux set-environment -t "${SESSION_NAME}" GATEWAY_LIVE_TABLE_BOT_COUNT "${BOT_COUNT}"
 tmux set-environment -t "${SESSION_NAME}" GATEWAY_LIVE_TABLE_BOT_PARTICIPATION "${BOT_PARTICIPATION}"
 tmux set-environment -t "${SESSION_NAME}" GATEWAY_LIVE_TABLE_BOT_BET_MIN "${BOT_BET_MIN}"
@@ -106,9 +105,8 @@ tmux set-environment -t "${SESSION_NAME}" GATEWAY_LIVE_TABLE_BOT_BATCH "${BOT_BA
 tmux set-environment -t "${SESSION_NAME}" RATE_LIMIT_SUBMIT_PER_MIN "10000"
 tmux set-environment -t "${SESSION_NAME}" RATE_LIMIT_SUBMIT_BURST "1000"
 tmux set-environment -t "${SESSION_NAME}" EXPO_PUBLIC_WS_URL "${GATEWAY_WS_URL}"
-tmux set-environment -t "${SESSION_NAME}" EXPO_PUBLIC_LIVE_TABLE_CRAPS "1"
-tmux set-environment -t "${SESSION_NAME}" EXPO_PUBLIC_LIVE_TABLE_CRAPS_ONCHAIN "1"
 tmux set-environment -t "${SESSION_NAME}" ALLOWED_ORIGINS "${ALLOWED_ORIGINS}"
+tmux set-environment -t "${SESSION_NAME}" ALLOW_PRIVATE_IPS "${ALLOW_PRIVATE_IPS:-1}"
 
 if [ -n "${ADMIN_KEY_FILE}" ]; then
   tmux set-environment -t "${SESSION_NAME}" CASINO_ADMIN_PRIVATE_KEY_FILE "${ADMIN_KEY_FILE}"
@@ -116,13 +114,13 @@ elif [ -n "${ADMIN_KEY_HEX}" ]; then
   tmux set-environment -t "${SESSION_NAME}" CASINO_ADMIN_PRIVATE_KEY_HEX "${ADMIN_KEY_HEX}"
 fi
 
-tmux send-keys -t "${SESSION_NAME}:chain.0" 'cd "'"${ROOT_DIR}"'"; ALLOW_HTTP_NO_ORIGIN=1 ALLOW_WS_NO_ORIGIN=1 ALLOWED_HTTP_ORIGINS="'"${ALLOWED_ORIGINS}"'" ALLOWED_WS_ORIGINS="'"${ALLOWED_ORIGINS}"'" CASINO_ADMIN_PUBLIC_KEY_HEX="'"${CASINO_ADMIN_PUBLIC_KEY_HEX}"'" ./scripts/start-local-network.sh configs/local 4 --no-build' C-m
+tmux send-keys -t "${SESSION_NAME}:chain.0" 'cd "'"${ROOT_DIR}"'"; ALLOW_HTTP_NO_ORIGIN=1 ALLOW_WS_NO_ORIGIN=1 ALLOW_PRIVATE_IPS=1 ALLOWED_HTTP_ORIGINS="'"${ALLOWED_ORIGINS}"'" ALLOWED_WS_ORIGINS="'"${ALLOWED_ORIGINS}"'" CASINO_ADMIN_PUBLIC_KEY_HEX="'"${CASINO_ADMIN_PUBLIC_KEY_HEX}"'" ./scripts/start-local-network.sh configs/local 4 --no-build' C-m
 
 tmux new-window -t "${SESSION_NAME}" -n gateway -c "${ROOT_DIR}"
-tmux send-keys -t "${SESSION_NAME}:gateway" 'cd "'"${ROOT_DIR}"'"; BACKEND_URL="'"${BACKEND_URL}"'" GATEWAY_PORT="'"${GATEWAY_PORT}"'" GATEWAY_LIVE_TABLE_CRAPS=1 GATEWAY_LIVE_TABLE_CRAPS_ONCHAIN=1 pnpm -C gateway start' C-m
+tmux send-keys -t "${SESSION_NAME}:gateway" 'cd "'"${ROOT_DIR}"'"; BACKEND_URL="'"${BACKEND_URL}"'" GATEWAY_PORT="'"${GATEWAY_PORT}"'" GATEWAY_LIVE_TABLE_CRAPS=1 pnpm -C gateway start' C-m
 
 tmux new-window -t "${SESSION_NAME}" -n mobile -c "${ROOT_DIR}"
-tmux send-keys -t "${SESSION_NAME}:mobile" 'cd "'"${ROOT_DIR}"'"; EXPO_PUBLIC_WS_URL="'"${GATEWAY_WS_URL}"'" EXPO_PUBLIC_LIVE_TABLE_CRAPS=1 EXPO_PUBLIC_LIVE_TABLE_CRAPS_ONCHAIN=1 pnpm -C mobile start' C-m
+tmux send-keys -t "${SESSION_NAME}:mobile" 'cd "'"${ROOT_DIR}"'"; EXPO_PUBLIC_WS_URL="'"${GATEWAY_WS_URL}"'" pnpm -C mobile start' C-m
 
 if [ "${ATTACH}" = "1" ]; then
   tmux attach -t "${SESSION_NAME}"

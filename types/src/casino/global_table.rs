@@ -5,6 +5,7 @@ use super::{GameSession, GameType};
 
 const MAX_GLOBAL_TABLE_TOTALS: usize = 64;
 const MAX_GLOBAL_TABLE_BETS: usize = 64;
+const MAX_RNG_COMMIT_LEN: usize = 32;
 const MAX_ROLL_SEED_LEN: usize = 32;
 
 #[repr(u8)]
@@ -186,6 +187,8 @@ pub struct GlobalTableRound {
     pub made_points_mask: u8,
     pub epoch_point_established: bool,
     pub field_paytable: u8,
+    /// Commitment to the RNG seed for this round (0 or 32 bytes).
+    pub rng_commit: Vec<u8>,
     /// Seed snapshot used to replay the roll deterministically (0 or 32 bytes).
     pub roll_seed: Vec<u8>,
     pub totals: Vec<GlobalTableTotal>,
@@ -203,6 +206,7 @@ impl Write for GlobalTableRound {
         self.made_points_mask.write(writer);
         self.epoch_point_established.write(writer);
         self.field_paytable.write(writer);
+        self.rng_commit.write(writer);
         self.roll_seed.write(writer);
         self.totals.write(writer);
     }
@@ -222,6 +226,10 @@ impl Read for GlobalTableRound {
         let made_points_mask = u8::read(reader)?;
         let epoch_point_established = bool::read(reader)?;
         let field_paytable = u8::read(reader)?;
+        let rng_commit = Vec::<u8>::read_range(reader, 0..=MAX_RNG_COMMIT_LEN)?;
+        if !(rng_commit.is_empty() || rng_commit.len() == MAX_RNG_COMMIT_LEN) {
+            return Err(Error::Invalid("GlobalTableRound", "invalid rng commit length"));
+        }
         let roll_seed = Vec::<u8>::read_range(reader, 0..=MAX_ROLL_SEED_LEN)?;
         if !(roll_seed.is_empty() || roll_seed.len() == MAX_ROLL_SEED_LEN) {
             return Err(Error::Invalid("GlobalTableRound", "invalid roll seed length"));
@@ -240,6 +248,7 @@ impl Read for GlobalTableRound {
             made_points_mask,
             epoch_point_established,
             field_paytable,
+            rng_commit,
             roll_seed,
             totals,
         })
@@ -258,6 +267,7 @@ impl EncodeSize for GlobalTableRound {
             + self.made_points_mask.encode_size()
             + self.epoch_point_established.encode_size()
             + self.field_paytable.encode_size()
+            + self.rng_commit.encode_size()
             + self.roll_seed.encode_size()
             + self.totals.encode_size()
     }

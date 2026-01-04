@@ -58,7 +58,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub(crate) fn seed_verifier(
     identity: &Identity,
 ) -> bls12381_threshold::Scheme<PublicKey, MinSig> {
-    bls12381_threshold::Scheme::certificate_verifier(identity.clone())
+    bls12381_threshold::Scheme::certificate_verifier(*identity)
 }
 
 pub fn operation_value(

@@ -167,8 +167,16 @@ export class NonceManager {
         const account = await response.json();
         const onChainNonce = BigInt(account.nonce);
 
-        // Set to on-chain nonce (transactions will use this + 1)
-        this.nonces.set(publicKeyHex, onChainNonce);
+        const current = this.nonces.get(publicKeyHex);
+        // Guard against backend resets (e.g., indexer restart) clobbering a known nonce.
+        if (current !== undefined && current > 0n && onChainNonce === 0n) {
+          console.warn(
+            `Backend nonce reset detected for ${publicKeyHex.slice(0, 8)}; keeping local nonce ${current}`
+          );
+        } else {
+          // Set to on-chain nonce (transactions will use this + 1)
+          this.nonces.set(publicKeyHex, onChainNonce);
+        }
         // Clear pending - if tx was accepted, it's confirmed; if not, retry with new nonce
         this.pending.delete(publicKeyHex);
 

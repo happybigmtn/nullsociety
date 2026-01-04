@@ -363,8 +363,8 @@ fn generate_craps_logs(
             "LOSS"
         };
         let type_label = bet_type_str(*bet_type);
-        let label = if type_label.starts_with("HARDWAY_") {
-            format!("HARDWAY {}", &type_label["HARDWAY_".len()..])
+        let label = if let Some(stripped) = type_label.strip_prefix("HARDWAY_") {
+            format!("HARDWAY {}", stripped)
         } else if *target > 0 {
             format!("{} {}", type_label, target)
         } else {
@@ -1622,10 +1622,10 @@ impl CasinoGame for Craps {
                     }
                 }
 
-                if bet_type == BetType::Fire {
-                    if state.bets.iter().any(|b| b.bet_type == BetType::Fire) {
-                        return Err(GameError::InvalidMove);
-                    }
+                if bet_type == BetType::Fire
+                    && state.bets.iter().any(|b| b.bet_type == BetType::Fire)
+                {
+                    return Err(GameError::InvalidMove);
                 }
 
                 // Determine initial status

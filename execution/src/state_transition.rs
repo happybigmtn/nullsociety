@@ -58,6 +58,8 @@ pub struct StateTransitionResult {
     pub events_root: Digest,
     pub events_start_op: u64,
     pub events_end_op: u64,
+    /// Number of transactions successfully executed (nonce validated and applied).
+    pub executed_transactions: u64,
     /// Map of public keys to their next expected nonce after processing
     pub processed_nonces: BTreeMap<PublicKey, u64>,
 }
@@ -115,6 +117,7 @@ where
             events_root: events.root(),
             events_start_op: events_op,
             events_end_op: events_op,
+            executed_transactions: 0,
             processed_nonces: BTreeMap::new(),
         });
     }
@@ -130,6 +133,7 @@ where
 
     // Execute next block, or recover from a partial commit (events committed but state not).
     let mut processed_nonces = BTreeMap::new();
+    let executed_transactions;
     let state_start_op;
     let events_start_op;
     match events_height {
@@ -152,6 +156,10 @@ where
                 let changes = layer.commit();
                 (outputs, nonces, changes)
             };
+            executed_transactions = outputs
+                .iter()
+                .filter(|output| matches!(output, Output::Transaction(_)))
+                .count() as u64;
             processed_nonces.extend(nonces);
 
             // Events must be committed before state, otherwise a crash could wedge on restart.
@@ -219,6 +227,10 @@ where
                 let changes = layer.commit();
                 (outputs, nonces, changes)
             };
+            executed_transactions = outputs
+                .iter()
+                .filter(|output| matches!(output, Output::Transaction(_)))
+                .count() as u64;
             processed_nonces.extend(nonces);
 
             if outputs.len() as u64 != existing_output_count {
@@ -275,6 +287,7 @@ where
         events_root,
         events_start_op,
         events_end_op,
+        executed_transactions,
         processed_nonces,
     })
 }

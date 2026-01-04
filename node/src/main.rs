@@ -128,14 +128,14 @@ async fn metrics_handler(
         }
     }
 
-    Ok(Response::builder()
+    Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain; version=0.0.4")
         .body(Body::from(state.context.encode()))
         .map_err(|err| {
             error!("metrics response build failed: {err}");
             StatusCode::INTERNAL_SERVER_ERROR
-        })?)
+        })
 }
 
 fn spawn_metrics_server(context: tokio::Context, addr: SocketAddr) {
@@ -236,6 +236,13 @@ fn parse_bootstrappers(
         bootstrap_sockets.push((key, *socket));
     }
     Ok(bootstrap_sockets)
+}
+
+fn allow_private_ips() -> bool {
+    matches!(
+        std::env::var("ALLOW_PRIVATE_IPS").as_deref(),
+        Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
+    )
 }
 
 fn load_peers(
@@ -403,7 +410,7 @@ fn main_result() -> Result<()> {
             let peers_u32 = peers.len() as u32;
 
             let config = config.validate_with_signer(signer, peers_u32)?;
-            let identity = config.identity.clone();
+            let identity = config.identity;
             info!(
                 ?config.public_key,
                 ?identity,
@@ -420,14 +427,26 @@ fn main_result() -> Result<()> {
                 .collect();
             let max_message_size = u32::try_from(config.max_message_size)
                 .context("max_message_size exceeds u32")?;
-            let mut p2p_cfg = authenticated::Config::recommended(
-                config.signer.clone(),
-                &p2p_namespace,
-                SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), config.port),
-                SocketAddr::new(ip, config.port),
-                bootstrappers,
-                max_message_size,
-            );
+            let allow_private = allow_private_ips();
+            let mut p2p_cfg = if allow_private {
+                authenticated::Config::local(
+                    config.signer.clone(),
+                    &p2p_namespace,
+                    SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), config.port),
+                    SocketAddr::new(ip, config.port),
+                    bootstrappers,
+                    max_message_size,
+                )
+            } else {
+                authenticated::Config::recommended(
+                    config.signer.clone(),
+                    &p2p_namespace,
+                    SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), config.port),
+                    SocketAddr::new(ip, config.port),
+                    bootstrappers,
+                    max_message_size,
+                )
+            };
             p2p_cfg.mailbox_size = config.mailbox_size;
 
             // Start p2p

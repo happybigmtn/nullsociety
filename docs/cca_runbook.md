@@ -36,7 +36,7 @@ installed and Hardhat is configured with the target testnet.
 
 ## Bid Simulation (Testnet Dry Run)
 1) Generate bidder keys (optional):
-   - `node scripts/generateBidders.mjs --out bidders.json`
+   - `node scripts/generateBidders.js --out bidders.json`
 
 2) Simulate bids:
    - `BIDDER_KEYS_FILE=./bidders.json npx hardhat run scripts/simulateCcaBids.js --network <network>`

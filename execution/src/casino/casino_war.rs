@@ -49,16 +49,11 @@ fn format_card_label(card: u8) -> String {
 }
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum TieBetPayout {
+    #[default]
     TenToOne = 0,
     ElevenToOne = 1,
-}
-
-impl Default for TieBetPayout {
-    fn default() -> Self {
-        TieBetPayout::TenToOne
-    }
 }
 
 impl TryFrom<u8> for TieBetPayout {

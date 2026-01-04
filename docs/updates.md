@@ -3301,7 +3301,7 @@ The following findings were determined to be **NOT actual issues**:
 **Severity**: Low
 **Location**: Project root
 **Status**: ✅ RESOLVED
-**Description**: Containerization added for simulator, node, gateway, auth, ops, live-table, and website.
+**Description**: Containerization added for simulator, node, gateway, auth, ops, and website.
 **Action**: Implemented Dockerfiles + GHCR build workflow; see `.github/workflows/build-images.yml`.
 
 ---
@@ -3375,7 +3375,7 @@ These are improvement opportunities, not issues requiring immediate action:
 3. **V-3**: Continue reducing useTerminalGame.ts size
    - ✅ Roulette and SicBo hooks extracted, following Baccarat/Craps pattern
 4. **V-5**: Add Dockerfile for production
-   - ✅ Added Dockerfiles for simulator, node, gateway, auth, ops, live-table, website
+   - ✅ Added Dockerfiles for simulator, node, gateway, auth, ops, website
    - ✅ CI builds GHCR images via `.github/workflows/build-images.yml`
    - ✅ `.dockerignore` tuned for efficient builds
 5. **V-7**: Generate shared game state TS bindings (ts-rs)

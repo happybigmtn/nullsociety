@@ -438,6 +438,9 @@ export abstract class GameHandler {
 
     try {
       const updatesClient = new UpdatesClient(backendUrl, origin);
+      updatesClient.on('error', (err) => {
+        logWarn('Session updates client error:', err);
+      });
       await updatesClient.connectForSession(sessionId);
       session.sessionUpdatesClient = updatesClient;
       session.sessionUpdatesSessionId = sessionId;

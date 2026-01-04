@@ -115,7 +115,7 @@ There are tests (in the generated `instruction_kind_tests` module) that ensure d
 
 The `Signer` struct in `lib.rs` is a WASM-exported wrapper that stores an Ed25519 private key and public key.
 
-Important security note (from the code): this is for development and testing. The private key lives in WASM memory, which is not secure enough for production custody.
+Important security note (from the code): this is for development and testing. The private key lives in WASM memory, which is not secure enough for production custody. In production, require vault-backed keys or external wallet signing and disable legacy browser keys.
 
 ### 6.2 Key methods
 

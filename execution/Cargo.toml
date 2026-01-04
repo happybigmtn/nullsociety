@@ -29,3 +29,6 @@ anyhow = { workspace = true }
 [features]
 parallel = ["rayon"]
 mocks = []
+
+[dev-dependencies]
+serde_json = { workspace = true }

@@ -23,7 +23,6 @@ Private network ingress (service-to-service):
 - 9010/tcp: gateway WS (behind LB).
 - 4000/tcp: auth service.
 - 9020/tcp: ops service (optional).
-- 9123/tcp: live-table WS (optional; private network only).
 - 9001-9004/tcp: validator P2P (between validators only).
 - 9100-9104/tcp: metrics (Prometheus only).
 - 5432/tcp: Postgres (simulator/indexer only).
@@ -40,7 +39,6 @@ Suggested layout (Ashburn):
 - `ns-db-1` (Postgres): CPX41 (8 vCPU, 16 GB) + dedicated volume.
 - `ns-obs-1` (Prometheus/Grafana/Loki): CPX31 (optional, recommended).
 - `ns-ops-1` (Ops/analytics): CPX21 (optional).
-- `ns-live-1` (Live Table): CPX21 (optional; required for live craps).
 
 Notes:
 - Scale gateways horizontally; each node has its own `MAX_TOTAL_SESSIONS`.
@@ -66,16 +64,17 @@ Use env templates from `configs/staging/` or `configs/production/`:
 - `configs/staging/simulator.env.example`
 - `configs/staging/gateway.env.example`
 - `configs/staging/ops.env.example`
-- `configs/staging/live-table.env.example`
 - `services/auth/.env.example`
 - `website/.env.staging.example`
 Optional:
-- `/etc/nullspace/live-table.env` with `LIVE_TABLE_HOST`/`LIVE_TABLE_PORT`
 - `/etc/nullspace/ops.env` with `OPS_*` settings
-- Gateway live-table integration: set `GATEWAY_LIVE_TABLE_CRAPS_URL` and `GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE`
-  (env keys are blocked in production unless `GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV=1`)
-  - Live-table timing is controlled by `LIVE_TABLE_BETTING_MS`, `LIVE_TABLE_LOCK_MS`,
-    `LIVE_TABLE_PAYOUT_MS`, and `LIVE_TABLE_COOLDOWN_MS` (tune after load tests).
+- Global table configuration: set `GATEWAY_LIVE_TABLE_CRAPS=1` and `GATEWAY_LIVE_TABLE_ADMIN_KEY_FILE`
+  (env keys are blocked in production unless `GATEWAY_LIVE_TABLE_ALLOW_ADMIN_ENV=1`).
+  - Timing is controlled by `GATEWAY_LIVE_TABLE_BETTING_MS`, `GATEWAY_LIVE_TABLE_LOCK_MS`,
+    `GATEWAY_LIVE_TABLE_PAYOUT_MS`, and `GATEWAY_LIVE_TABLE_COOLDOWN_MS` (tune after load tests).
+  - Global presence aggregation: set `GATEWAY_INSTANCE_ID` on each gateway and (optionally)
+    `GATEWAY_LIVE_TABLE_PRESENCE_TOKEN` (must match `GLOBAL_TABLE_PRESENCE_TOKEN` on the simulator).
+  - Simulator presence TTL: `GLOBAL_TABLE_PRESENCE_TTL_MS` (defaults to 15000).
 
 Production-required envs (set in your env files):
 - `GATEWAY_ORIGIN` (public gateway origin, e.g. `https://gateway.example.com`)
@@ -119,10 +118,6 @@ sudo systemctl enable nullspace-simulator nullspace-node nullspace-auth \
 sudo systemctl start nullspace-simulator nullspace-node nullspace-auth \
   nullspace-gateway nullspace-website nullspace-ops
 
-# Optional: live-table service (craps)
-sudo systemctl enable nullspace-live-table
-sudo systemctl start nullspace-live-table
-
 # Optional: public economy snapshot generator
 sudo systemctl enable nullspace-economy-snapshot.timer
 sudo systemctl start nullspace-economy-snapshot.timer
@@ -147,6 +142,5 @@ node scripts/preflight-management.mjs \
   simulator /etc/nullspace/simulator.env \
   node /etc/nullspace/node.env \
   auth /etc/nullspace/auth.env \
-  ops /etc/nullspace/ops.env \
-  live-table /etc/nullspace/live-table.env
+  ops /etc/nullspace/ops.env
 ```

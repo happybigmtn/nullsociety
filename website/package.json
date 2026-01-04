@@ -9,7 +9,7 @@
     "preview": "npm run build && vite preview",
     "convex:dev": "convex dev",
     "build:wasm": "cd wasm && wasm-pack build --target web --out-dir pkg",
-    "build:wasm-test": "cd wasm && wasm-pack build --target web --out-dir pkg -- --features testing",
+    "build:wasm-test": "cd wasm && wasm-pack build --target web --out-dir pkg-test -- --features testing",
     "copy:data": "mkdir -p public && cp ../economy_log.json public/ || echo 'No economy log found, skipping copy'",
     "clean:dist": "rm -rf dist",
     "clean:wasm": "rm -rf wasm/pkg",
@@ -17,8 +17,10 @@
     "pretest": "cd .. && cargo build --release --bin nullspace-simulator",
     "pretest:integration": "cd .. && cargo build --release --bin nullspace-simulator",
     "test": "npm run test:unit && npm run test:integration",
-    "test:integration": "npm run build:wasm-test && node --test tests/integration/*.test.js",
+    "test:integration": "npm run build:wasm-test && node --import tsx --test tests/integration/*.test.js",
     "test:unit": "vitest run",
+    "test:unit:coverage": "vitest run --coverage",
+    "test:coverage": "npm run test:unit:coverage",
     "test:unit:watch": "vitest",
     "smoke": "node scripts/smoke-playwright.mjs",
     "e2e:auth": "node scripts/e2e-auth-billing.mjs",
@@ -60,6 +62,7 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "4.0.16",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^26.1.0",
     "node-fetch": "^3.3.2",

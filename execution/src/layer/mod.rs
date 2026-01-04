@@ -12,6 +12,7 @@ use nullspace_types::{
     Seed,
 };
 use std::collections::BTreeMap;
+use tracing::debug;
 
 use crate::casino::cards as card_utils;
 use crate::state::{load_account, validate_and_increment_nonce, PrepareError, State, Status};
@@ -630,7 +631,15 @@ impl<'a, S: State> Layer<'a, S> {
         for tx in transactions {
             match self.prepare(&tx).await {
                 Ok(()) => {}
-                Err(PrepareError::NonceMismatch { .. }) => continue,
+                Err(PrepareError::NonceMismatch { expected, got }) => {
+                    debug!(
+                        public = ?tx.public,
+                        expected,
+                        got,
+                        "nonce mismatch; dropping transaction"
+                    );
+                    continue;
+                }
                 Err(PrepareError::State(err)) => {
                     return Err(err).context("state error during prepare");
                 }

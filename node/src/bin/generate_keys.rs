@@ -79,7 +79,7 @@ fn run() -> Result<()> {
 
     // Generate BLS threshold sharing and shares
     let (sharing, shares) = dkg::deal_anonymous::<MinSig>(&mut rng, Default::default(), NZU32!(n));
-    let identity = sharing.public().clone();
+    let identity = *sharing.public();
 
     let polynomial_hex = hex(&sharing.encode());
     let identity_hex = hex(&identity.encode());
@@ -117,7 +117,7 @@ fn run() -> Result<()> {
         println!(
             "  Node {} (key {}...) -> participant index {}",
             original_idx,
-            &hex(&node_data[original_idx as usize].2.encode())[..8],
+            &hex(&node_data[original_idx].2.encode())[..8],
             sorted_idx
         );
     }

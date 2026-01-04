@@ -473,6 +473,165 @@ What this code does:
 
 ---
 
+## Extended deep dive: reliability and event delivery semantics
+
+The updates pipeline is not just "decode bytes." It is a carefully designed reliability path. The following sections explain the subtle choices that keep the updates stream robust in practice.
+
+### 12) Connection limits and guard lifetimes
+
+The simulator uses a connection guard to enforce global and per-IP limits. When the handler acquires a guard, it holds it for the lifetime of the connection. When the connection closes and the guard is dropped, capacity is released.
+
+This pattern is deliberate:
+
+- It makes limits deterministic: connection count is not tied to arbitrary timers.
+- It prevents leaks: the guard is released when the connection is dropped.
+
+If you ever see "connection limit reached" while there are no active connections, check that guards are being released correctly. That is often a signal of a stuck task or a connection that did not close cleanly.
+
+### 13) Backpressure: why the outbound queue exists
+
+Each WebSocket connection has an outbound queue with a fixed capacity. That queue decouples "incoming updates" from "socket send rate."
+
+Why it matters:
+
+- Without a queue, a slow client would block the entire update stream.
+- With a queue, the simulator can keep producing updates while the client catches up (up to a limit).
+
+Once the queue is full, the simulator records metrics and closes the connection. That is a hard choice, but it protects the system as a whole. One slow client should not cause memory growth for everyone.
+
+### 14) UpdatesClient reconnection strategy
+
+On the gateway side, the `UpdatesClient` implements a reconnection loop with exponential backoff:
+
+- start at 1 second,
+- double until a maximum (30 seconds),
+- reset on successful connection.
+
+This is a standard resilience pattern. It avoids hammering the backend during outages while still attempting to reconnect quickly.
+
+The client also exposes `disconnect()` which disables reconnection. That is important for shutdown logic: you do not want a shutdown sequence to spawn new connections.
+
+### 15) Pending events map and race avoidance
+
+When an event is received, the client stores it in `pendingEvents` before emitting it. This avoids a common race:
+
+1) A handler calls `waitForEvent`.
+2) An event arrives just before the handler is registered.
+3) Without buffering, the event is lost and the handler waits forever.
+
+By storing events first, the code ensures that a waiting handler can always "catch up" if the event arrived slightly early.
+
+This is a small but critical reliability detail.
+
+### 16) Session vs account filters and UI semantics
+
+The update stream supports:
+
+- Account filters (all events for a public key).
+- Session filters (events for a single session ID).
+
+Why the distinction?
+
+Because a player might have multiple game sessions over time. Account filters are useful for "everything this player does." Session filters are useful for a single game instance.
+
+The gateway uses this distinction to implement behaviors like:
+
+- wait for "started" on a session,
+- wait for "moved" on the same session,
+- ignore events from old sessions.
+
+### 17) Event tags as a wire-level contract
+
+`EVENT_TAGS` and `GLOBAL_TABLE_EVENT_TAGS` are the wire-level contract for events. These tags must match the Rust definitions exactly.
+
+If the tags change, the gateway will silently misinterpret events. That can lead to bizarre UI behavior, such as a "completed" event being decoded as an "error" event.
+
+Therefore, treat event tags like protocol constants. Changing them requires a coordinated update across all clients.
+
+### 18) Decoding strategy: strict first, then fallback
+
+The decoder attempts strict parsing first (FilteredEvents with proofs). If that fails, it falls back to scanning for recognizable event signatures.
+
+This is a pragmatic tradeoff:
+
+- Strict parsing ensures correctness when the proof layout is valid.
+- Fallback scanning provides resilience when headers are malformed or truncated.
+
+The fallback is deliberately conservative: it only recognizes a small set of event tags and returns the first valid event. That avoids false positives but still salvages critical updates.
+
+### 19) Mempool updates are a parallel stream
+
+The simulator exposes both updates and mempool WebSockets. The updates stream carries game events; the mempool stream carries pending transactions.
+
+These are separate for a reason:
+
+- Mempool events are high volume and not always relevant to clients.
+- Update events are the authoritative game outputs.
+
+By splitting streams, clients can subscribe only to what they need.
+
+### 20) Feynman analogy: radio station + mailbox
+
+Think of the updates stream as a radio station:
+
+- It broadcasts events continuously.
+- Listeners tune in with filters (account/session).
+- If your radio is too slow, you miss broadcasts.
+
+The mempool stream is like a mailbox:
+
+- It shows what is coming soon.
+- It is not guaranteed to be final.
+
+This analogy helps you explain why update filters and backpressure are necessary.
+
+---
+
+### 21) Event ordering and idempotency
+
+The updates stream does not guarantee that every client receives every event. It guarantees "best effort" delivery with backpressure protection. That has two implications:
+
+1) Clients should be tolerant of missed updates. For example, a UI can always fetch current state via HTTP if it suspects missed events.
+2) Event handlers should be idempotent. If you receive the same "moved" event twice, applying it twice should not break the UI.
+
+The gateway helps with this by scoping events to session IDs and storing pending events, but the client still must assume that updates are eventually consistent, not perfectly reliable.
+
+### 22) Global table events as shared state
+
+Global table events (round opened, bet accepted/rejected, outcome, player settled) are shared across all players. They are not tied to a single session ID.
+
+This is why the event decoder splits casino events from global table events and emits them separately. The UI that renders global tables can subscribe to all events, while a player-specific UI can focus on session events.
+
+The separation avoids mixing per-player and shared state, which would create confusing UX and unnecessary data processing.
+
+### 23) Operational tuning knobs
+
+Three knobs dominate WS reliability:
+
+- `WS_SEND_TIMEOUT_MS`: how long the server waits for a send before closing.
+- `ws_outbound_capacity`: how much backlog a client can accumulate.
+- `ws_max_message_bytes`: the maximum frame size accepted by the server.
+
+If your clients are mobile or on flaky networks, you may need to increase timeout and capacity. If you are running in a constrained environment, you may want to lower them to cap memory usage.
+
+These values are not one-size-fits-all. They should be tuned based on real traffic and client behavior.
+
+---
+
+### 24) Suggested tests for the updates pipeline
+
+To keep this subsystem reliable, add a few targeted tests:
+
+- Encode an UpdatesFilter in TypeScript and decode it in Rust, then reverse it. The bytes should round-trip.
+- Inject a malformed event buffer and verify that `BinaryReader` rejects it without panicking.
+- Simulate a slow client to confirm that the outbound queue fills and the connection is closed as expected.
+
+These tests are small, but they catch the most common regressions: format drift, unsafe decoding, and broken backpressure.
+
+If you run only one test, prioritize the filter round-trip check. Seriously.
+
+---
+
 ## Key takeaways
 - Updates are filtered at the simulator and decoded at the gateway.
 - Origin checks and WS limits prevent abuse.

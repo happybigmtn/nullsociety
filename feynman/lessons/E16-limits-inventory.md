@@ -2,177 +2,410 @@
 
 Focus files: `docs/limits.md`, `execution/src/casino/limits.rs`
 
-Goal: explain how limits are categorized, which ones are consensus-critical, and how to tune them safely before testnet. For every excerpt, you will see **why it matters** and a **plain description of what the code does**.
+Goal: explain how limits are categorized, which ones are consensus-critical, and how to tune them safely before testnet. For every excerpt, you will see why it matters and a plain description of what the code does. This lesson is a deep, textbook-style walkthrough that turns the limits inventory into an operational playbook.
 
 ---
 
-## Concepts from scratch (expanded)
+## 0) Feynman summary (big picture)
 
-### 1) What a "limit" is
-A limit is a hard cap or default that protects the system from overload or abuse (too many requests, too much memory, too many pending transactions).
-
-### 2) Consensus-critical vs configurable
-Consensus-critical limits define the rules of the network and must match across all nodes. Configurable limits are local knobs that can differ per deployment.
-
-### 3) Rate limits vs capacity limits
-Rate limits control how fast requests arrive (per second/minute). Capacity limits control how much state can be stored (queue sizes, cache sizes).
-
-### 4) Tradeoffs
-Raising a limit increases throughput but also increases risk (memory pressure, DoS blast radius, slower recovery).
-
-### 5) Change management
-Consensus-critical limits require coordinated upgrades; configurable limits require load tests and monitoring.
+A limit is a boundary that prevents a system from breaking itself. In a distributed system, limits are not just performance knobs. Some limits are rules of the network and must be identical across all validators. Others are local settings that can differ per deployment. If you change the wrong limit without coordination, nodes will disagree on which transactions are valid. That is a consensus bug, not a tuning tweak. This chapter teaches you how to tell the difference and how to change limits safely.
 
 ---
 
-## Limits & management callouts (important)
+## 1) What a "limit" really is
 
-1) **Default submit limits are dev-only**
-- `submit_rate_limit_per_minute: 100` is far too low for public traffic.
-- The doc already proposes high testnet overrides; treat those as a starting point, not final.
+A limit is any hard cap or default that protects system resources or protocol correctness. Limits exist because:
 
-2) **Per-IP caps can block NATed users**
-- Defaults like `ws_max_connections_per_ip: 10` can block many users behind a single NAT.
-- The testnet override suggests `500`, which is more realistic but needs DDoS protection elsewhere.
+- Networks are finite.
+- Memory is finite.
+- Attackers can send infinite requests.
+- Distributed systems must bound work per block.
 
-3) **Large message sizes increase DoS risk**
-- `max_message_size: 10 MB` and `ws_max_message_bytes: 4 MB` allow large payloads.
-- Keep upstream proxy/body limits aligned or attackers can force buffering.
+There are three major classes of limits:
 
-4) **Consensus-critical limits require coordinated upgrade**
-- Casino and protocol caps are part of the consensus rules.
-- Changing them without a versioned upgrade can fork the network.
+1) **Capacity limits**: how much data or state is allowed (queue sizes, cache sizes, history lengths).
+2) **Rate limits**: how fast requests or messages can flow (per second, per minute).
+3) **Timeouts and windows**: how long we wait before taking action (timeouts, block windows, betting windows).
 
-5) **High mempool limits require memory budget**
-- `mempool_max_transactions: 100000` can be large in RAM.
-- Confirm memory usage under realistic transaction sizes.
+Limits are the guardrails that keep the chain stable under stress.
 
 ---
 
-## Walkthrough with code excerpts
+## 2) Consensus-critical vs configurable limits
 
-### 1) Node defaults (queues, mempool, storage)
-```rust
-- message_backlog: 128
-- mailbox_size: 1024
-- mempool_max_backlog: 64
-- mempool_max_transactions: 100000
-- max_message_size: 10 MB
-- buffer_pool_page_size: 4096
-- buffer_pool_capacity: 32768
-- freezer_journal_target_size: 1 GiB
-```
+The most important distinction is whether a limit affects consensus.
 
-Why this matters:
-- These values define how much the node can buffer before it applies backpressure or drops work.
+### 2.1 Consensus-critical limits
 
-What this code does:
-- Lists default node-level caps for queues, mempool size, and on-disk buffers.
-- Establishes the baseline memory and disk footprint for a node deployment.
+A consensus-critical limit changes the rules of validity. If one node accepts a transaction and another rejects it, consensus breaks. Examples:
 
----
+- Maximum number of bets allowed in a game transaction.
+- Maximum payload size for a move.
+- Maximum transactions per block.
 
-### 2) Simulator defaults (HTTP + WS + explorer)
-```rust
-- http_rate_limit_per_second: 1000
-- submit_rate_limit_per_minute: 100
-- http_body_limit_bytes: 8 MB
-- ws_max_connections: 20000
-- ws_max_connections_per_ip: 10
-- ws_max_message_bytes: 4 MB
-- explorer_max_blocks: 10000
-- state_max_progress_entries: 10000
-```
+These must be **identical** on every node. Changing them requires a coordinated upgrade.
 
-Why this matters:
-- The simulator is the public edge for submissions and updates, so its limits gate overall traffic.
+### 2.2 Configurable limits
 
-What this code does:
-- Defines default HTTP and WebSocket rate limits, plus explorer pagination caps.
-- Prevents runaway requests and unbounded memory growth.
+A configurable limit is a local resource guardrail. These can differ between nodes without breaking consensus. Examples:
+
+- Message backlog sizes.
+- Queue depths for internal processing.
+- WebSocket connection caps.
+
+Changing these is operational tuning, not protocol change.
+
+### 2.3 Why this distinction matters
+
+If you accidentally change a consensus-critical limit as if it were configurable, you risk a chain split. That is far worse than a performance regression. The limits inventory exists to prevent this confusion.
 
 ---
 
-### 3) Gateway connection + rate limits
-```rust
-- max_connections_per_ip: 5 (MAX_CONNECTIONS_PER_IP)
-- max_total_sessions: 1000 (MAX_TOTAL_SESSIONS)
-- session_rate_limit_points: 10
-- session_rate_limit_window_ms: 3600000
-- session_rate_limit_block_ms: 3600000
-```
+## 3) Walkthrough: `docs/limits.md`
 
-Why this matters:
-- The gateway is the first choke point for sessions and will deny new sessions when limits are hit.
+This document is a catalog of limits grouped by subsystem. It is intentionally simple and flat so operators can audit it quickly.
 
-What this code does:
-- Caps per-IP sessions and overall sessions.
-- Rate-limits session creation so one client cannot exhaust the pool.
+### 3.1 Node limits (configurable via node config)
+
+The node section lists limits used by validators and full nodes. These are not consensus rules; they are performance and safety settings. We can group them by function.
+
+#### 3.1.1 Message queues and backlogs
+
+- `message_backlog`: how many inbound messages can queue up. Generated by `node/src/bin/generate_keys.rs`.
+- `mailbox_size`: mailbox capacity for actor-like components.
+- `deque_size`: size of internal deques used for consensus scheduling.
+- `mempool_max_backlog`: how many inbound mempool items can be queued before processing.
+
+These are classic capacity limits. They prevent unbounded memory usage if a node is flooded.
+
+#### 3.1.2 Mempool and nonce caches
+
+- `mempool_max_transactions`: maximum number of transactions in the mempool.
+- `mempool_stream_buffer_size`: buffer for streaming transactions.
+- `nonce_cache_capacity`: number of recent nonces cached.
+- `nonce_cache_ttl_seconds`: how long a nonce remains cached.
+
+These limits define mempool memory usage and replay protection. The TTL matters because it is the window where duplicate submissions are recognized. Longer TTL reduces replay risk but costs memory.
+
+#### 3.1.3 Pending listener and upload limits
+
+- `max_pending_seed_listeners`: cap on listeners waiting for seed data.
+- `max_uploads_outstanding`: cap on concurrent uploads.
+
+These prevent resource exhaustion in data synchronization paths.
+
+#### 3.1.4 Max message size
+
+- `max_message_size`: 10 MB.
+
+This protects against oversized requests that could otherwise blow memory or processing time. It is configurable but must be consistent with upstream gateway and simulator limits.
+
+#### 3.1.5 Consensus timeouts
+
+- `leader_timeout_ms`: how long to wait for a leader proposal.
+- `notarization_timeout_ms`: how long to wait for notarization.
+- `nullify_retry_ms`: how long before retrying nullification.
+- `fetch_timeout_ms`: how long to wait for fetch responses.
+- `activity_timeout`: idle threshold before reconfig.
+- `skip_timeout`: how long before skipping a missing leader.
+
+These are not consensus rules; they are liveness knobs. Changing them affects performance and behavior under network delays but does not change validity rules.
+
+#### 3.1.6 Fetch and backfill limits
+
+- `fetch_concurrent`: how many concurrent fetches.
+- `max_fetch_count`: how many items per fetch request.
+- `max_fetch_size`: max bytes per fetch.
+
+These caps prevent a single sync or backfill from overwhelming memory or bandwidth.
+
+#### 3.1.7 Storage and freezer settings
+
+These settings control how the node stores blocks and state:
+
+- `buffer_pool_page_size`, `buffer_pool_capacity`: in-memory cache sizing.
+- `prunable_items_per_section`, `immutable_items_per_section`: storage layout.
+- `freezer_table_resize_frequency`, `freezer_table_resize_chunk_size`: growth behavior.
+- `freezer_journal_target_size`, `freezer_journal_compression`: persistence and compression.
+- `mmr_items_per_blob`, `log_items_per_section`, `locations_items_per_blob`, `certificates_items_per_blob`, `cache_items_per_blob`: structure sizes.
+- `replay_buffer_bytes`, `write_buffer_bytes`: buffers used during replay and writes.
+- `max_repair`: cap on repair operations.
+- `prune_interval`: how often pruning occurs.
+- `ancestry_cache_entries`: cache size for ancestry lookups.
+- `proof_queue_size`: queue for proof work.
+
+These are critical for performance and recovery time, but they do not affect consensus correctness. They are safe to tune locally.
+
+#### 3.1.8 Per-channel rate limits
+
+The node config includes rate limits for several message channels:
+
+- pending, recovered, resolver, broadcaster, backfill, aggregation.
+- `fetch_rate_per_peer_per_second` for peer fetches.
+
+These caps protect the node from being overwhelmed by peer traffic. They are local and can be tuned per deployment.
+
+#### 3.1.9 Queueing and backpressure (why these numbers exist)
+
+If you want a mental model, use a simple queueing analogy: each subsystem is a line at a busy counter. If requests arrive faster than they are served, the line grows. Eventually it reaches the maximum allowed length, and new arrivals are rejected. That is exactly what `message_backlog`, `mailbox_size`, and `deque_size` enforce.
+
+The right size depends on two rates:
+
+- arrival rate (requests per second),
+- service rate (how fast the node can process them).
+
+If arrival exceeds service, even by a little, the queue grows without bound. That is why you cannot solve overload by raising limits alone. You must either increase service rate (more CPU, more efficient code) or reduce arrival rate (rate limits).
+
+This is the logic behind the layered limits: per-channel quotas cap arrival, while queue sizes cap worst-case buffering. Together they provide backpressure and prevent a single subsystem from dominating memory.
+
+### 3.2 Mempool budgeting guidance
+
+The doc explicitly calls out a 5k concurrent target and suggests:
+
+- keep `mempool_max_transactions` at 100k initially,
+- reserve 1-2 GiB of RAM for mempool data,
+- drop to 50k if memory pressure appears.
+
+This is a practical capacity planning note. It reminds us that mempool capacity is mostly a memory budget problem, and that you should validate with real transaction sizes, not theoretical ones.
+
+#### 3.2.1 Estimating mempool memory
+
+To estimate memory, multiply:
+
+- average serialized transaction size,
+- average in-memory overhead per transaction (often 2x to 4x),
+- `mempool_max_transactions`.
+
+If the average transaction is 1 KB and overhead is 3x, 100k transactions can consume roughly 300 MB plus index structures. In real systems, overhead can be higher, especially if you store signature data, decoded structures, or multiple indices. That is why the docs reserve 1-2 GiB. It is a conservative buffer for worst-case spikes.
+
+### 3.3 Simulator limits
+
+The simulator is a high-throughput entry point. The limits include:
+
+- HTTP rate limits (`http_rate_limit_per_second`, `http_rate_limit_burst`).
+- Submission rate limits (`submit_rate_limit_per_minute`, `submit_rate_limit_burst`).
+- HTTP body size (`http_body_limit_bytes`).
+- WebSocket limits (`ws_max_connections`, `ws_max_connections_per_ip`, `ws_max_message_bytes`).
+- WebSocket buffers (`ws_outbound_buffer`, `ws_send_timeout_ms`).
+- Broadcast buffers (`updates_broadcast_buffer`, `mempool_broadcast_buffer`).
+- Concurrency (`updates_index_concurrency`).
+- History limits (submission, seed, explorer limits).
+- State limits (`state_max_key_versions`, `state_max_progress_entries`).
+
+These limits are all about protecting the simulator from overload and keeping memory predictable. For example:
+
+- The WebSocket connection caps prevent a single node from being overwhelmed by too many concurrent clients.
+- The broadcast buffers prevent fan-out spikes from exhausting memory.
+- The history limits prevent unbounded in-memory history growth.
+
+### 3.4 Gateway limits
+
+The gateway is another public-facing edge, so it has its own limits:
+
+- `max_connections_per_ip` and `max_total_sessions` protect against connection storms.
+- Session rate limit points and windows define how many session attempts are allowed.
+- Event and submit timeouts bound how long the gateway waits for responses.
+- `submit_max_bytes` sets the upper bound on payload size.
+
+These do not affect consensus. They affect user experience and security.
+
+### 3.5 Gateway global table limits
+
+Global table flows are time-sensitive, so they have precise timing limits:
+
+- `GATEWAY_LIVE_TABLE_TICK_MS`, `BETTING_MS`, `LOCK_MS`, `PAYOUT_MS`, `COOLDOWN_MS` define the round timing.
+- `GATEWAY_LIVE_TABLE_BROADCAST_MS` and `GATEWAY_LIVE_TABLE_BROADCAST_BATCH` control fanout cadence and batch size.
+- `MIN_BET` and `MAX_BET` cap bet sizes.
+- `MAX_BETS_PER_ROUND` limits how many bets a player can place.
+
+These are business rules and UX constraints. They must be chosen carefully because they define the cadence of the shared table.
+
+### 3.7 Testnet recommended overrides
+
+The document includes suggested overrides for a 5k concurrent target. These are aggressive increases to rate limits and connection caps. The key lesson is that limits are not static. You increase them as you scale, but you do it intentionally and with monitoring.
 
 ---
 
-### 4) Testnet recommended overrides
-```rust
-Simulator:
-- RATE_LIMIT_HTTP_PER_SEC=5000
-- RATE_LIMIT_SUBMIT_PER_MIN=120000
-- RATE_LIMIT_WS_CONNECTIONS=30000
-- RATE_LIMIT_WS_CONNECTIONS_PER_IP=500
+## 4) Consensus-critical limits (from docs + code)
 
-Gateway:
-- MAX_CONNECTIONS_PER_IP=200
-- MAX_TOTAL_SESSIONS=20000
-- GATEWAY_SESSION_RATE_LIMIT_POINTS=1000
-```
+The document clearly labels two sections as consensus-critical:
 
-Why this matters:
-- These values dramatically increase throughput but also expand the blast radius of abuse.
+1) **Casino engine limits** (bets per game, payload lengths, state sizes).
+2) **Protocol/API limits** (transactions per block, proof sizes).
 
-What this code does:
-- Provides a concrete baseline for a 5k concurrent target.
-- Documents environment variables needed to tune production traffic limits.
+These limits are part of the protocol. If validators disagree, they will disagree on transaction validity or proof verification.
 
----
+### 4.1 Casino engine limits
 
-### 5) Consensus-critical casino limits
-```rust
-pub const BACCARAT_MAX_BETS: usize = 11;
-pub const CRAPS_MAX_BETS: usize = 20;
-pub const ROULETTE_MAX_BETS: usize = 20;
-pub const SIC_BO_MAX_BETS: usize = 20;
-```
+The casino engine limits include:
 
-Why this matters:
-- These caps are part of the rules for how state transitions are validated.
+- `baccarat_max_bets: 11`
+- `craps_max_bets: 20`
+- `roulette_max_bets: 20`
+- `sic_bo_max_bets: 20`
+- `casino_max_payload_length: 256`
+- `casino_max_name_length: 32`
+- `game_session_state_blob_max_bytes: 1024`
+- `super_mode_fee: 20% of bet`
 
-What this code does:
-- Hard-codes maximum bet counts for each game.
-- Ensures all nodes enforce identical limits.
+The numeric bet limits are defined in `execution/src/casino/limits.rs` (we walk through this file below). The name and payload lengths are defined in `types/src/casino/constants.rs` and referenced by the protocol types. The state blob max appears in `types/src/casino/player.rs` where state is deserialized with an explicit range of 0..=1024 bytes.
 
----
+These are consensus rules because they determine whether a transaction is valid. A move with a payload length larger than 256 bytes is rejected. A registration with a name longer than 32 bytes is rejected. These decisions must be identical across nodes.
 
-### 6) Protocol/API caps (consensus-critical)
-```rust
-- max_block_transactions: 500
-- max_submission_transactions: 128
-- max_state_proof_ops: 3000
-- max_events_proof_ops: 2000
-- max_lookup_proof_nodes: 500
-```
+### 4.2 Protocol/API limits
 
-Why this matters:
-- These caps define the maximum size of blocks and proofs that nodes will accept.
+The protocol/API limits include:
 
-What this code does:
-- Lists protocol-level hard caps that must match across the network.
-- Prevents oversized blocks or proofs from overwhelming validators.
+- `MAX_BLOCK_TRANSACTIONS = 500`
+- `MAX_SUBMISSION_TRANSACTIONS = 128`
+- `MAX_STATE_PROOF_OPS = 3000`
+- `MAX_EVENTS_PROOF_OPS = 2000`
+- `MAX_LOOKUP_PROOF_NODES = 500`
+
+These values are defined in `types/src/execution.rs` and `types/src/api.rs`. They bound how many transactions fit in a block and how large proof structures can be. These are core protocol rules.
+
+Changing any of these requires a coordinated upgrade and usually a protocol version bump.
+
+### 4.3 Payload and state limits as DoS boundaries
+
+The casino limits are not just gameplay rules; they are also denial-of-service boundaries. Consider the payload size: every move message carries a payload that must be decoded, validated, and applied by every validator. If the payload were unbounded, a single transaction could force validators to parse megabytes of data, slowing consensus or even crashing nodes. By setting `casino_max_payload_length` to 256 bytes, we ensure that every move is small and fast to validate.
+
+The name length limit is similar. Player registrations are replicated across all nodes and stored in state. A 32 byte limit prevents a user from filling the state with huge strings, which would increase storage and network costs for every node.
+
+The state blob size cap (1024 bytes) is another safety boundary. The game session state is serialized and stored in the chain state. If that blob were unbounded, a single session could grow into kilobytes or megabytes, which would bloat the state, slow down proofs, and increase synchronization time. The 1024 byte cap keeps state growth predictable and keeps proof sizes within the protocol limits.
+These limits are enforced by the types layer, which reads strings and byte arrays with explicit maximums. That means the limits are baked into deserialization logic, not just business rules. If two nodes used different maxima, they would literally parse different bytes, which is the worst possible consensus failure. That is why these are consensus-critical and must be changed only with explicit coordination.
 
 ---
 
-## Key takeaways
-- Defaults are intentionally conservative; testnet needs explicit overrides.
-- Consensus-critical limits must be changed only through a coordinated upgrade.
-- Rate limits protect entry points; capacity limits protect memory and disk.
+## 5) Deep dive: `execution/src/casino/limits.rs`
 
-## Next lesson
-Return to the main flow at L01 or continue Ops lessons as needed.
+This file is intentionally small:
+
+- It defines constants for max bet counts per game.
+- It is explicitly labeled as consensus-critical.
+
+The file contains:
+
+- `BACCARAT_MAX_BETS: usize = 11`
+- `CRAPS_MAX_BETS: usize = 20`
+- `ROULETTE_MAX_BETS: usize = 20`
+- `SIC_BO_MAX_BETS: usize = 20`
+
+These numbers are not arbitrary. They limit the size of bet arrays in game-specific instructions. If a player tries to place more bets than allowed, the transaction is rejected.
+
+### 5.1 Where these limits are enforced
+
+The limits are used in the casino game handlers:
+
+- **Baccarat**: checks `bet_count > BACCARAT_MAX_BETS` during validation and ensures `state.bets.len()` never exceeds the limit.
+- **Craps**: similar checks for bet counts and bet additions.
+- **Roulette**: checks both incoming bet count and the number of bets stored in state.
+- **Sic Bo**: checks bet counts and enforces max in multiple places.
+
+These checks appear both at input validation time and during state updates. That is deliberate: it prevents any path from exceeding the cap, even if state changes across multiple moves.
+
+### 5.2 Why these limits are consensus-critical
+
+If one validator uses 20 as the max and another uses 25, they will disagree about whether a transaction with 21 bets is valid. That leads to a fork.
+
+Consensus is about agreeing on the ordered log. If nodes disagree on validity, they cannot agree on the log. That is why these limits live in a dedicated file with a clear warning.
+
+---
+
+## 6) Tuning guidelines by category
+
+Limits are only useful if you know how to tune them. This section provides a practical checklist.
+
+### 6.1 Node limits tuning
+
+When tuning node limits, focus on resource constraints:
+
+- **Memory**: increase queue sizes or caches only if you have headroom.
+- **Disk**: freezer and buffer sizes affect disk IO and startup time.
+- **CPU**: higher concurrency or larger batches increase CPU usage.
+
+Start with the defaults and measure. If you see queue overflows or dropped messages, increase the relevant queue size. If you see memory pressure, reduce queue sizes or mempool capacity.
+
+### 6.2 Simulator and gateway limits
+
+These are edge-facing systems. The goal is to protect the core chain from floods:
+
+- Increase rate limits only after load testing.
+- Keep per-IP caps to prevent single-client abuse.
+- Align payload limits across gateway, simulator, and node to avoid inconsistent errors.
+
+### 6.3 Global table timing limits
+
+Timing limits define the UX. Changing them changes gameplay. Adjust them with load testing and UX feedback, and keep client countdowns consistent with gateway timing.
+
+Fanout and presence knobs also live here:
+- `GATEWAY_LIVE_TABLE_BROADCAST_MS` / `GATEWAY_LIVE_TABLE_BROADCAST_BATCH` shape update cadence.
+- `GATEWAY_LIVE_TABLE_PRESENCE_UPDATE_MS` controls how often gateways report global player counts.
+
+### 6.4 Protocol limits (consensus-critical)
+
+Treat these as protocol upgrades. The right process is:
+
+1) Propose the change with justification.
+2) Update the code and types.
+3) Coordinate validator upgrade.
+4) Activate at a known height or version.
+
+Never change these without coordination. The cost of getting it wrong is a chain split.
+
+### 6.5 Common tuning mistakes
+
+Here are mistakes that show up in production if limits are tuned without a system view:
+
+- **Raising gateway connection caps without raising simulator caps**: clients connect, but backend cannot handle the fan-out, causing timeouts.
+- **Increasing mempool_max_transactions without increasing memory**: the node swaps or crashes under load.
+- **Shortening consensus timeouts too aggressively**: nodes declare leaders dead during transient network jitter, reducing liveness.
+- **Increasing HTTP rate limits without increasing max message size**: larger payloads get rejected unexpectedly, causing client retries that amplify load.
+- **Changing consensus-critical limits on only some validators**: this is the fastest path to a fork.
+
+The safe approach is to treat limits as a system, not a series of independent knobs.
+
+---
+
+## 7) Safe change management checklist
+
+When you want to change a limit, follow this process:
+
+1) **Classify**: Is this limit consensus-critical or configurable?
+2) **Measure**: Do you have evidence that the current limit is too low or too high?
+3) **Test**: Run load tests or simulation tests with the new limit.
+4) **Roll out**: If configurable, deploy gradually. If consensus-critical, coordinate a network upgrade.
+5) **Monitor**: Track metrics to confirm the change had the intended effect.
+
+This is how you avoid accidental protocol divergence.
+
+---
+
+## 8) Observability and practical guardrails
+
+Limits should be coupled with metrics. For each limit, decide what you want to monitor:
+
+- Queue sizes and overflow counts.
+- Mempool size and eviction rate.
+- Request rates and throttling counts.
+- WebSocket connection counts.
+- Backfill durations and fetch sizes.
+
+The purpose of a limit is not just to stop the system from crashing; it is also to signal when you are near capacity. That is a product and operations feedback loop.
+
+When you review a limit, always ask: what failure does this prevent, and what alert should fire when we are close to it?
+
+---
+
+## 9) Feynman recap
+
+The limits inventory is not just a list; it is a map of safety boundaries. Configurable limits protect local resources. Consensus-critical limits define protocol rules. If you remember one thing: do not change consensus-critical limits without a coordinated upgrade.
+
+Once you understand these categories, you can tune the system confidently and explain every limit to a reviewer. That is what production readiness looks like.
+
+Treat limits as part of the protocol documentation, not just configuration. If you cannot justify a limit in a sentence, you probably need to revisit it.
+
+Good limits make the system boring, and boring systems are reliable.
+
+That is the highest compliment you can give infrastructure.
+And it scales.

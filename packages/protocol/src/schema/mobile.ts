@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import { GameType } from '@nullspace/types';
+import { CRAPS_BET_TYPES, ROULETTE_BET_NAMES, SICBO_BET_TYPES } from '@nullspace/constants/bet-types';
 
 // Base message schema - all messages must have a type field
 export const BaseMessageSchema = z.object({
@@ -135,6 +136,14 @@ export const BaccaratBetTypeSchema = z.enum([
   'PANDA8',
   'PERFECT_PAIR',
 ]);
+
+const CrapsBetNameSchema = z.enum(
+  Object.keys(CRAPS_BET_TYPES) as [string, ...string[]],
+);
+const RouletteBetNameSchema = z.enum(ROULETTE_BET_NAMES);
+const SicBoBetNameSchema = z.enum(
+  Object.keys(SICBO_BET_TYPES) as [string, ...string[]],
+);
 export const BaccaratOutcomeSchema = z.enum(['PLAYER', 'BANKER', 'TIE']);
 export const BaccaratMessageSchema = BaseMessageSchema.extend({
   type: z.enum(['state_update', 'game_result', 'cards_dealt']),
@@ -158,7 +167,7 @@ export const CrapsMessageSchema = BaseMessageSchema.extend({
   message: z.string().optional(),
 });
 
-// Live-table messages (single global table)
+// Global table messages (single on-chain table)
 export const LiveTableTotalsSchema = z.object({
   type: z.string(),
   amount: z.number(),
@@ -177,6 +186,7 @@ export const LiveTableStateMessageSchema = BaseMessageSchema.extend({
   roundId: z.number().int(),
   phase: LiveTablePhaseSchema,
   timeRemainingMs: z.number().int().nonnegative().optional(),
+  playerCount: z.number().int().nonnegative().optional(),
   point: z.number().nullable().optional(),
   dice: z.tuple([z.number(), z.number()]).optional(),
   tableTotals: z.array(LiveTableTotalsSchema).optional(),
@@ -202,7 +212,7 @@ export const LiveTableConfirmationMessageSchema = BaseMessageSchema.extend({
   type: z.literal('live_table_confirmation'),
   game: z.literal('craps'),
   status: z.enum(['pending', 'confirmed', 'failed']),
-  source: z.enum(['onchain', 'live-table']),
+  source: z.literal('onchain'),
   roundId: z.number().int().optional(),
   message: z.string().optional(),
   balance: z.union([z.number(), z.string()]).optional(),
@@ -359,7 +369,7 @@ export const BlackjackSplitRequestSchema = z.object({
 
 // --- Roulette Outbound ---
 export const RouletteBetSchema = z.object({
-  type: z.union([z.string(), z.number().int().min(0).max(255)]),
+  type: z.union([RouletteBetNameSchema, z.number().int().min(0).max(255)]),
   amount: z.number().positive(),
   target: z.number().int().min(0).max(37).optional(),
   number: z.number().int().min(0).max(37).optional(),
@@ -373,7 +383,7 @@ export const RouletteSpinRequestSchema = z.object({
 
 // --- Craps Outbound ---
 export const CrapsBetSchema = z.object({
-  type: z.string(),
+  type: z.union([CrapsBetNameSchema, z.number().int().min(0).max(255)]),
   amount: z.number().positive(),
   target: z.number().int().min(0).max(12).optional(),
 });
@@ -385,7 +395,7 @@ export const CrapsRollRequestSchema = z.object({
 
 export const CrapsSingleBetRequestSchema = z.object({
   type: z.literal('craps_bet'),
-  betType: z.union([z.string(), z.number().int().min(0)]),
+  betType: z.union([CrapsBetNameSchema, z.number().int().min(0)]),
   amount: z.number().positive(),
   target: z.number().int().min(0).max(12).optional(),
 });
@@ -491,7 +501,7 @@ export const VideoPokerLegacyHoldRequestSchema = z.object({
 
 // --- Sic Bo Outbound ---
 export const SicBoBetSchema = z.object({
-  type: z.union([z.string(), z.number().int().min(0).max(255)]),
+  type: z.union([SicBoBetNameSchema, z.number().int().min(0).max(255)]),
   amount: z.number().positive(),
   target: z.number().int().min(0).max(255).optional(),
   number: z.number().int().min(0).max(255).optional(),

@@ -43,9 +43,10 @@ block: 1 hour (default)
 - These defaults can be too strict for NAT-heavy networks.
 - Adjust `GATEWAY_SESSION_RATE_LIMIT_POINTS/WINDOW/BLOCK` based on traffic patterns.
 
-2) **DEFAULT_INITIAL_BALANCE = 10,000 (not actually applied)**
-- The on‑chain registration grants 1,000 chips; this constant is not used in `initializePlayer`.
-- If you want a different starting balance, change the on‑chain handler, not just this constant.
+2) **CASINO_INITIAL_CHIPS is applied after registration**
+- The on‑chain registration grants initial chips (from `@nullspace/constants/limits`).
+- The session manager marks the balance locally after successful registration.
+- If you want a different starting balance, change the on‑chain handler and the shared limits constant.
 
 3) **Idle session cleanup (default 30 min)**
 - `cleanupIdleSessions` uses a default of 30 minutes. Too short can disconnect slow players; too long can waste resources.
@@ -57,9 +58,8 @@ block: 1 hour (default)
 
 ## Walkthrough with code excerpts
 
-### 1) Default balance and rate limit config
+### 1) Rate limit config
 ```ts
-const DEFAULT_INITIAL_BALANCE = 10000n;  // 10,000 test chips
 const readEnvLimit = (key: string, fallback: number): number => {
   const raw = process.env[key];
   const parsed = raw ? Number(raw) : NaN;
@@ -78,6 +78,7 @@ Why this matters:
 
 What this code does:
 - Defines default limits and reads override values from environment variables.
+- Keeps the rate limiter logic centralized so other code can assume it exists.
 
 ---
 
@@ -189,7 +190,6 @@ async createSession(ws: WebSocket, options: SessionCreateOptions = {}, clientIp:
   }
 
   const playerName = options.playerName ?? `Player_${publicKeyHex.slice(0, 8)}`;
-  const initialBalance = options.initialBalance ?? DEFAULT_INITIAL_BALANCE;
 
   const now = Date.now();
   const session: Session = {
@@ -214,7 +214,7 @@ async createSession(ws: WebSocket, options: SessionCreateOptions = {}, clientIp:
   this.byPublicKey.set(publicKeyHex, session);
 
   try {
-    await this.initializePlayer(session, initialBalance);
+    await this.initializePlayer(session);
   } catch (err) {
     logError(`Failed to initialize player ${playerName}:`, err);
   }
@@ -236,7 +236,7 @@ What this code does:
 
 ### 6) Initialize player (updates first, then register)
 ```ts
-private async initializePlayer(session: Session, _initialBalance: bigint): Promise<void> {
+private async initializePlayer(session: Session): Promise<void> {
   try {
     const updatesClient = new UpdatesClient(this.backendUrl, this.origin);
     await updatesClient.connectForAccount(session.publicKey);
@@ -253,7 +253,7 @@ private async initializePlayer(session: Session, _initialBalance: bigint): Promi
   }
 
   session.hasBalance = true;
-  session.balance = 1000n;
+  session.balance = BigInt(CASINO_INITIAL_CHIPS);
 }
 ```
 
@@ -264,7 +264,7 @@ Why this matters:
 What this code does:
 - Connects to the updates stream.
 - Registers the player on chain.
-- Marks the session as registered with balance.
+- Marks the session as registered and sets the local balance to the initial grant.
 
 ---
 
@@ -562,6 +562,152 @@ Why this matters:
 
 What this code does:
 - Closes and removes sessions that have been idle too long.
+
+---
+
+## Extended deep dive: session state as a protocol boundary
+
+The SessionManager is not just a storage map. It is a state machine that ensures every player transitions through a safe, consistent lifecycle. Below are the concepts that are easy to miss if you only read the code.
+
+### 16) The session object is the in-memory truth
+
+Each `Session` contains:
+
+- the WebSocket,
+- the keypair,
+- registration status,
+- balance cache,
+- active game ID and type,
+- timestamps for activity and faucet usage,
+- optional updates clients.
+
+This is the gateway's working memory. When you respond to a client or build a transaction, you are always using this session as the source of truth.
+
+That is why the SessionManager does *not* store partial objects or references; it stores full `Session` objects. It can answer questions like:
+
+- "Is this player registered?"
+- "Does this player have balance?"
+- "Which game is currently active?"
+
+If this state gets out of sync, the user experience breaks. That is why the session layer is so strict about initialization and cleanup.
+
+### 17) Two maps, two lookup paths
+
+The manager keeps:
+
+- `sessions: Map<WebSocket, Session>`
+- `byPublicKey: Map<string, Session>`
+
+Why two maps?
+
+Because in some code paths you start from the socket (incoming WebSocket message), and in other code paths you start from a public key (updates events or transaction results).
+
+If you only had one map, you would be forced to scan the entire set for each lookup. That would be slow and error-prone.
+
+So the SessionManager uses two indexes. This is a common pattern: one map for the "primary key" (socket) and one for the "foreign key" (public key).
+
+### 18) Initialization is a handshake, not just object creation
+
+`createSession` does three critical things beyond allocation:
+
+1) **Rate limiting**: Prevents a single IP from creating unlimited sessions.
+2) **Key generation**: Creates a new Ed25519 keypair for the session.
+3) **On-chain registration**: Ensures the session can actually submit transactions.
+
+This means `createSession` is not just "new Session"; it is a full handshake. If registration fails, the session still exists, but the client cannot play.
+
+That is a deliberate choice. It allows the gateway to recover and retry without dropping the connection immediately.
+
+### 19) Updates first, then register: the race condition story
+
+The code explicitly connects to the updates stream before submitting the registration transaction.
+
+Why?
+
+Because transactions are confirmed by events over the updates stream. If you submit first and connect second, you can miss the confirmation event. That would leave the gateway thinking the player is unregistered even though the chain accepted the registration.
+
+This is the "race" in distributed systems: the event might arrive before the subscription is active.
+
+So the SessionManager always subscribes first, then submits.
+
+### 20) Nonce locking as a concurrency control mechanism
+
+Both `registerPlayer` and `depositChips` wrap their logic in `nonceManager.withLock(...)`.
+
+This is critical. It prevents two concurrent calls from using the same nonce. Without the lock, two transactions could be built with the same nonce, causing one to be rejected by the backend.
+
+The nonce lock is effectively a per-account mutex. It serializes transaction submission for a given account.
+
+### 21) Retry logic and backend sync
+
+If a transaction is rejected and the error suggests a nonce mismatch, the session manager:
+
+1) syncs the current nonce from the backend, and
+2) retries once.
+
+This is a controlled, minimal retry strategy. It avoids infinite loops while still handling the common case where local nonce state drifted.
+
+It is also a good example of dividing responsibility:
+
+- SubmitClient reports the error.
+- NonceManager interprets it.
+- SessionManager decides whether to retry.
+
+That separation makes the system easier to evolve without creating circular dependencies.
+
+### 22) Faucet requests are a local UX guard
+
+The faucet cooldown is enforced locally at the gateway. This does not replace on-chain rules; it simply protects the backend from trivial spamming and gives users quick feedback.
+
+If the backend rejects the faucet anyway (for example, because the on-chain cooldown is stricter), the gateway will still report failure.
+
+So think of this as a "first line of defense," not the ultimate authority.
+
+### 23) Balance refresh: best-effort, not a guarantee
+
+`refreshBalance` and `startBalanceRefresh` are explicitly best-effort. If the backend is down, they return `null` or log a warning.
+
+This is important. You do not want the entire gateway to crash just because the balance endpoint is temporarily unavailable. A stale balance is better than no gateway at all.
+
+### 24) Start and end game as state transitions
+
+The `startGame` and `endGame` helpers are the bridge between:
+
+- *stateless* requests (incoming WebSocket messages), and
+- *stateful* protocol flows (active game sessions).
+
+When a game starts, `startGame`:
+
+- generates a deterministic session ID,
+- records the game type,
+- updates activity timestamps.
+
+When a game ends, `endGame` clears those fields.
+
+This means you can always ask "is the player in a game?" and get a reliable answer.
+
+### 25) Idle cleanup and resource hygiene
+
+Idle sessions are cleaned up by scanning `sessions` and calling `destroySession`. This does three things:
+
+- disconnects updates streams,
+- stops balance refresh timers,
+- removes references from both maps.
+
+If you omit any of those, you leak resources. The cleanup function is the final safety net to prevent that.
+
+### 26) Feynman analogy: the session as a passport
+
+Imagine a session as a passport issued at the border:
+
+- It has a unique ID (session UUID).
+- It contains identity (public key).
+- It has stamps (registered, balance).
+- It expires if unused for too long.
+
+The SessionManager is the border control office. It issues passports, verifies them, and invalidates them when they expire.
+
+That analogy captures the role of the session manager: it is the gateway's identity authority.
 
 ---
 

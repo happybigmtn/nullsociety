@@ -211,32 +211,6 @@ export function encodeCrapsMove(
   }
 }
 
-/** Side bet structure */
-export interface SideBet {
-  type: number;
-  amount: bigint;
-}
-
-/** Encode a generic game start with bet amount */
-export function encodeGameStart(
-  gameType: GameType,
-  betAmount: bigint,
-  sideBets?: SideBet[]
-): Uint8Array {
-  // Format depends on game - this is a placeholder for actual binary protocol
-  const sideBetData = sideBets ?? [];
-  const buffer = new ArrayBuffer(1 + 8 + 1 + sideBetData.length * 9);
-  const view = new DataView(buffer);
-  view.setUint8(0, gameType);
-  view.setBigUint64(1, betAmount, true);
-  view.setUint8(9, sideBetData.length);
-  sideBetData.forEach((sb, i) => {
-    view.setUint8(10 + i * 9, sb.type);
-    view.setBigUint64(11 + i * 9, sb.amount, true);
-  });
-  return new Uint8Array(buffer);
-}
-
 export interface BaccaratAtomicBetInput {
   type: BaccaratBetName | number;
   amount: bigint;

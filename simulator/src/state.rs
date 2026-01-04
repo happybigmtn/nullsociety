@@ -11,7 +11,7 @@ use commonware_storage::{
     qmdb::{
         any::unordered::{variable, Update as StorageUpdate},
         create_multi_proof, create_proof, create_proof_store_from_digests,
-        digests_required_for_proof,
+        digests_required_for_proof, Error as QmdbError,
         keyless,
     },
 };
@@ -32,6 +32,7 @@ use commonware_storage::mmr::verification::ProofStore;
 #[cfg(feature = "passkeys")]
 use crate::PasskeyStore;
 use crate::metrics::UpdateIndexMetrics;
+use crate::summary_persistence::SummaryPersistence;
 use crate::Simulator;
 
 type AggregationScheme = bls12381_threshold::Scheme<PublicKey, MinSig>;
@@ -95,6 +96,8 @@ pub struct SimulatorConfig {
     pub explorer_persistence_buffer: Option<usize>,
     pub explorer_persistence_batch_size: Option<usize>,
     pub explorer_persistence_backpressure: Option<ExplorerPersistenceBackpressure>,
+    pub summary_persistence_path: Option<PathBuf>,
+    pub summary_persistence_max_blocks: Option<usize>,
     pub state_max_key_versions: Option<usize>,
     pub state_max_progress_entries: Option<usize>,
     pub submission_history_limit: Option<usize>,
@@ -379,29 +382,23 @@ async fn build_filtered_update(
     events: &Events,
     proof_store: &ProofStore<Digest>,
     filtered_ops: Vec<(u64, EventOp)>,
-) -> Option<EncodedUpdate> {
+) -> Result<Option<EncodedUpdate>, QmdbError> {
     if filtered_ops.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     let locations_to_include = filtered_ops
         .iter()
         .map(|(loc, _)| Location::from(*loc))
         .collect::<Vec<_>>();
-    let filtered_proof = match create_multi_proof(proof_store, &locations_to_include).await {
-        Ok(proof) => proof,
-        Err(e) => {
-            tracing::error!("Failed to generate filtered proof: {:?}", e);
-            return None;
-        }
-    };
+    let filtered_proof = create_multi_proof(proof_store, &locations_to_include).await?;
 
-    Some(EncodedUpdate::new(Update::FilteredEvents(FilteredEvents {
+    Ok(Some(EncodedUpdate::new(Update::FilteredEvents(FilteredEvents {
         progress: events.progress,
         certificate: events.certificate.clone(),
         events_proof: filtered_proof,
         events_proof_ops: filtered_ops,
-    })))
+    }))))
 }
 
 pub(crate) async fn index_events(
@@ -413,12 +410,12 @@ pub(crate) async fn index_events(
 ) -> IndexedEvents {
     let accounts_filter = subscriptions.and_then(|snapshot| snapshot.accounts.as_ref());
     let sessions_filter = subscriptions.and_then(|snapshot| snapshot.sessions.as_ref());
-    let include_all_accounts = subscriptions.map_or(true, |snapshot| snapshot.accounts.is_none());
-    let include_all_sessions = subscriptions.map_or(true, |snapshot| snapshot.sessions.is_none());
-    let has_account_subs = include_all_accounts || accounts_filter.map_or(false, |set| !set.is_empty());
-    let has_session_subs = include_all_sessions || sessions_filter.map_or(false, |set| !set.is_empty());
+    let include_all_accounts = subscriptions.is_none_or(|snapshot| snapshot.accounts.is_none());
+    let include_all_sessions = subscriptions.is_none_or(|snapshot| snapshot.sessions.is_none());
+    let has_account_subs = include_all_accounts || accounts_filter.is_some_and(|set| !set.is_empty());
+    let has_session_subs = include_all_sessions || sessions_filter.is_some_and(|set| !set.is_empty());
     let needs_public_ops = has_account_subs;
-    let include_full_update = subscriptions.map_or(true, |snapshot| snapshot.all);
+    let include_full_update = subscriptions.is_none_or(|snapshot| snapshot.all);
 
     let mut public_ops: Vec<(u64, EventOp)> = Vec::new();
     let mut account_ops: HashMap<PublicKey, Vec<(u64, EventOp)>> = HashMap::new();
@@ -840,13 +837,22 @@ pub(crate) async fn index_events(
     let public_update = if needs_public_ops {
         index_metrics.inc_in_flight();
         let start = Instant::now();
-        let update =
-            build_filtered_update(events.as_ref(), proof_store.as_ref(), public_ops.clone()).await;
+        let update = match build_filtered_update(
+            events.as_ref(),
+            proof_store.as_ref(),
+            public_ops.clone(),
+        )
+        .await
+        {
+            Ok(update) => update,
+            Err(err) => {
+                index_metrics.inc_failure();
+                tracing::error!(?err, "Failed to generate public filtered proof");
+                None
+            }
+        };
         index_metrics.dec_in_flight();
         index_metrics.record_proof_latency(start.elapsed());
-        if update.is_none() {
-            index_metrics.inc_failure();
-        }
         update
     } else {
         None
@@ -879,12 +885,22 @@ pub(crate) async fn index_events(
                     merge_ops(public_ops.as_slice(), &ops)
                 };
                 let update =
-                    build_filtered_update(events.as_ref(), proof_store.as_ref(), merged_ops).await;
+                    match build_filtered_update(events.as_ref(), proof_store.as_ref(), merged_ops)
+                        .await
+                    {
+                        Ok(update) => update,
+                        Err(err) => {
+                            index_metrics.inc_failure();
+                            tracing::error!(
+                                ?err,
+                                public_key = ?account,
+                                "Failed to generate account filtered proof"
+                            );
+                            None
+                        }
+                    };
                 index_metrics.dec_in_flight();
                 index_metrics.record_proof_latency(start.elapsed());
-                if update.is_none() {
-                    index_metrics.inc_failure();
-                }
                 drop(permit);
                 update.map(|update| (account, update))
             }));
@@ -919,13 +935,22 @@ pub(crate) async fn index_events(
             tasks.push(tokio::spawn(async move {
                 index_metrics.inc_in_flight();
                 let start = Instant::now();
-                let update =
-                    build_filtered_update(events.as_ref(), proof_store.as_ref(), ops).await;
+                let update = match build_filtered_update(events.as_ref(), proof_store.as_ref(), ops)
+                    .await
+                {
+                    Ok(update) => update,
+                    Err(err) => {
+                        index_metrics.inc_failure();
+                        tracing::error!(
+                            ?err,
+                            session_id,
+                            "Failed to generate session filtered proof"
+                        );
+                        None
+                    }
+                };
                 index_metrics.dec_in_flight();
                 index_metrics.record_proof_latency(start.elapsed());
-                if update.is_none() {
-                    index_metrics.inc_failure();
-                }
                 drop(permit);
                 update.map(|update| (session_id, update))
             }));
@@ -959,6 +984,7 @@ pub(crate) async fn index_events(
     }
 }
 
+#[derive(Default)]
 pub struct State {
     seeds: BTreeMap<u64, Seed>,
 
@@ -976,25 +1002,6 @@ pub struct State {
 
     #[cfg(feature = "passkeys")]
     pub(super) passkeys: PasskeyStore,
-}
-
-impl Default for State {
-    fn default() -> Self {
-        Self {
-            seeds: BTreeMap::new(),
-            nodes: BTreeMap::new(),
-            node_ref_counts: HashMap::new(),
-            keys: HashMap::new(),
-            progress: BTreeMap::new(),
-            progress_nodes: BTreeMap::new(),
-            submitted_events: HashSet::new(),
-            submitted_state: HashSet::new(),
-            submitted_events_order: VecDeque::new(),
-            submitted_state_order: VecDeque::new(),
-            #[cfg(feature = "passkeys")]
-            passkeys: PasskeyStore::default(),
-        }
-    }
 }
 
 impl Simulator {
@@ -1047,7 +1054,6 @@ impl Simulator {
         }
 
         let max_versions = self.config.state_max_key_versions;
-        let start_loc = summary.progress.state_start_op;
         let start_loc = Location::from(summary.progress.state_start_op);
         for (i, value) in summary.state_proof_ops.into_iter().enumerate() {
             // Store in keys

@@ -84,16 +84,11 @@ fn hand_label(hand: Hand) -> &'static str {
 }
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum VideoPokerPaytable {
+    #[default]
     NineSix = 0,
     EightFive = 1,
-}
-
-impl Default for VideoPokerPaytable {
-    fn default() -> Self {
-        VideoPokerPaytable::NineSix
-    }
 }
 
 impl TryFrom<u8> for VideoPokerPaytable {
@@ -108,17 +103,9 @@ impl TryFrom<u8> for VideoPokerPaytable {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct VideoPokerRules {
     paytable: VideoPokerPaytable,
-}
-
-impl Default for VideoPokerRules {
-    fn default() -> Self {
-        Self {
-            paytable: VideoPokerPaytable::default(),
-        }
-    }
 }
 
 impl VideoPokerRules {

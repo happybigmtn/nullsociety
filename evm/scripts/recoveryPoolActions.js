@@ -2,14 +2,23 @@ const { ethers } = require('hardhat');
 const { erc20Abi } = require('../src/abis/erc20');
 const { recoveryPoolAbi } = require('../src/abis/recoveryPool');
 const { loadDeployments } = require('../src/utils/deployments.cjs');
+const { parseEnv } = require('../src/utils/env.cjs');
 
 function parseArgs() {
+  const envConfig = parseEnv({
+    ACTION: { type: 'string', default: '' },
+    AMOUNT: { type: 'string', default: '' },
+    RECIPIENT: { type: 'string', default: '' },
+    AMOUNT_RAW: { type: 'boolean', default: false },
+    CURRENCY_DECIMALS: { type: 'number', integer: true, min: 0 },
+  });
   const args = process.argv.slice(2);
   const parsed = {
-    action: process.env.ACTION,
-    amount: process.env.AMOUNT,
-    recipient: process.env.RECIPIENT,
-    raw: process.env.AMOUNT_RAW === '1'
+    action: envConfig.ACTION || undefined,
+    amount: envConfig.AMOUNT || undefined,
+    recipient: envConfig.RECIPIENT || undefined,
+    raw: envConfig.AMOUNT_RAW,
+    decimals: envConfig.CURRENCY_DECIMALS,
   };
 
   for (let i = 0; i < args.length; i += 1) {
@@ -37,9 +46,9 @@ function parseArgs() {
   return parsed;
 }
 
-async function resolveDecimals(currency) {
-  if (process.env.CURRENCY_DECIMALS) {
-    return Number(process.env.CURRENCY_DECIMALS);
+async function resolveDecimals(currency, explicitDecimals) {
+  if (explicitDecimals !== undefined) {
+    return explicitDecimals;
   }
   try {
     return Number(await currency.decimals());
@@ -63,6 +72,13 @@ async function main() {
   if (!parsed.action) {
     throw new Error('Action required: --action fund|repay|sweep');
   }
+  if (parsed.recipient) {
+    try {
+      ethers.getAddress(parsed.recipient);
+    } catch {
+      throw new Error('Recipient must be a valid address');
+    }
+  }
 
   const deployments = loadDeployments();
   const [signer] = await ethers.getSigners();
@@ -75,7 +91,7 @@ async function main() {
 
   const recoveryPool = new ethers.Contract(deployments.recoveryPool, recoveryPoolAbi, signer);
   const currency = new ethers.Contract(deployments.currency, erc20Abi, signer);
-  const decimals = await resolveDecimals(currency);
+  const decimals = await resolveDecimals(currency, parsed.decimals);
 
   const action = parsed.action.toLowerCase();
   if (action === 'fund') {

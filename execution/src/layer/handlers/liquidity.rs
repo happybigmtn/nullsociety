@@ -200,11 +200,7 @@ fn price_deviation_bps(
     if oracle_scaled == 0 {
         return None;
     }
-    let diff = if amm_scaled > oracle_scaled {
-        amm_scaled - oracle_scaled
-    } else {
-        oracle_scaled - amm_scaled
-    };
+    let diff = amm_scaled.abs_diff(oracle_scaled);
     let deviation = diff
         .checked_mul(BASIS_POINTS_SCALE)?
         .checked_div(oracle_scaled)?;

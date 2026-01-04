@@ -4,31 +4,15 @@
  */
 import WebSocket from 'ws';
 import { describe, it, expect } from 'vitest';
-
-const GATEWAY_PORT = process.env.TEST_GATEWAY_PORT || '9010';
-const GATEWAY_URL = `ws://localhost:${GATEWAY_PORT}`;
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
-const TEST_TIMEOUT_MS = (() => {
-  const raw = process.env.TEST_TIMEOUT_MS;
-  const parsed = raw ? Number(raw) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1_200_000;
-})();
-const RESPONSE_TIMEOUT_MS = (() => {
-  const raw = process.env.TEST_RESPONSE_TIMEOUT_MS;
-  const parsed = raw ? Number(raw) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 60000;
-})();
-const BET_TIMEOUT_MS = (() => {
-  const raw = process.env.TEST_BET_TIMEOUT_MS;
-  const parsed = raw ? Number(raw) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-})();
-const TEST_GAMES = new Set(
-  (process.env.TEST_GAMES ?? '')
-    .split(',')
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean)
-);
+import {
+  BET_TIMEOUT_MS,
+  INTEGRATION_ENABLED,
+  TEST_GAMES,
+  TEST_TIMEOUT_MS,
+  createConnection,
+  sendAndReceive,
+  waitForReady,
+} from '../helpers/ws.js';
 
 interface TestResult {
   game: string;
@@ -39,61 +23,6 @@ interface TestResult {
   error?: string;
 }
 
-function createConnection(): Promise<WebSocket> {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(GATEWAY_URL);
-    ws.on('open', () => resolve(ws));
-    ws.on('error', reject);
-    setTimeout(() => reject(new Error('Connection timeout')), 10000);
-  });
-}
-
-function sendAndReceive(
-  ws: WebSocket,
-  msg: unknown,
-  timeout = RESPONSE_TIMEOUT_MS
-): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Response timeout')), timeout);
-
-    const handler = (data: WebSocket.Data) => {
-      clearTimeout(timer);
-      ws.off('message', handler);
-      try {
-        resolve(JSON.parse(data.toString()));
-      } catch (err) {
-        reject(err);
-      }
-    };
-
-    ws.on('message', handler);
-    ws.send(JSON.stringify(msg));
-  });
-}
-
-async function waitForReady(ws: WebSocket): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('session_ready timeout')), 60000);
-    const handler = (data: WebSocket.Data) => {
-      const msg = JSON.parse(data.toString());
-      if (msg.type === 'session_ready') {
-        clearTimeout(timer);
-        ws.off('message', handler);
-        resolve();
-      }
-    };
-    ws.on('message', handler);
-  });
-
-  for (let i = 0; i < 30; i++) {
-    const balance = await sendAndReceive(ws, { type: 'get_balance' });
-    if (balance.registered && balance.hasBalance) {
-      return;
-    }
-    await new Promise(r => setTimeout(r, 200));
-  }
-  throw new Error('Registration timeout');
-}
 
 async function testBet(
   game: string,

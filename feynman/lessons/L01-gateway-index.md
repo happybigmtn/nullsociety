@@ -684,6 +684,44 @@ What this code does:
 
 ---
 
+### 21) End-to-end flow (one concrete example)
+
+To see how all the pieces work together, trace a single client action. Suppose a player clicks "Start Blackjack":
+
+1) The client sends a JSON message over WebSocket.
+2) The gateway parses JSON and validates it with `OutboundMessageSchema`.
+3) The gateway finds the session and maps the message type to a game type.
+4) The handler for blackjack encodes the instruction bytes.
+5) The handler builds a transaction and wraps it in a submission envelope.
+6) The handler uses `SubmitClient` to send the submission to the backend.
+7) The backend validates and processes the transaction.
+8) The backend emits events over the updates stream.
+9) The gateway's updates client forwards those events back to the WebSocket.
+
+This single flow touches almost every subsystem in the gateway:
+
+- the WebSocket server for connectivity,
+- the session manager for identity and nonce,
+- the codec for binary encoding,
+- the submit client for HTTP submission,
+- and the updates client for real-time results.
+
+Thinking in this end-to-end way helps you debug. If the client sees "nothing happens," you can step through each layer and identify where the flow broke.
+
+---
+
+### 22) Operational pitfalls to watch for
+
+1) **Origin mismatch**: If the gateway allowlist and backend allowlist disagree, all submissions fail even if WebSocket connections succeed.
+2) **Nonce persistence disabled**: If `GATEWAY_NONCE_PERSIST_INTERVAL_MS` is set to 0 in production, restarts will cause nonce drift and rejections.
+3) **Connection limits too low**: A low `MAX_CONNECTIONS_PER_IP` can block legitimate users behind NAT.
+
+These are not coding errors; they are deployment configuration errors. The gateway index file is where those risks are surfaced and validated.
+
+One more reminder: the gateway translates JSON into binary transactions. That translation is a trust boundary. If you ever change the JSON schema, update the handler registry and the codec together, or you will ship a gateway that accepts messages it cannot encode correctly. Treat schema changes like protocol changes.
+
+---
+
 ## Key takeaways
 - The gateway is a **translator and gatekeeper**: it turns JSON into transactions and enforces security/limits.
 - Limits and env validation are **operational safety rails**.

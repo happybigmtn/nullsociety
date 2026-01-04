@@ -31,7 +31,8 @@ Files live in `docker/observability/`.
 cd docker/observability
 docker compose up -d
 ```
-If metrics auth is enabled, export `METRICS_AUTH_TOKEN` before starting the stack.
+If metrics auth is enabled, add the auth header in `docker/observability/prometheus.yml`
+(local stack defaults assume no auth).
 2) Open Grafana: `http://localhost:3001` (admin/admin).
 3) Use the preloaded dashboard: "Nullspace / Nullspace SLO Overview" (includes casino activity, node memory/CPU, and limit reject panels).
 4) Optional: Alertmanager UI is available at `http://localhost:9093` (no-op receiver by default).
@@ -57,6 +58,16 @@ These are initial targets; tighten after load tests and production telemetry.
 - WS send errors: 0 sustained rate; any non-zero sustained rate pages on-call.
 - Explorer persistence drops: 0 sustained rate.
 - Casino errors: 0 sustained rate; investigate any spike.
+
+## Automated SLO Check
+Use the Prometheus API to validate the baseline SLOs after load/soak tests:
+
+```
+node scripts/check-slo.mjs --prom-url http://localhost:9090 --window 5m
+```
+
+The script exits non-zero if any SLO is violated. Use `--allow-missing` only for
+local dev; staging/prod sign-off requires zero missing metrics and zero failures.
 
 ## Alert Thresholds (Initial)
 - `nullspace_simulator_update_index_failures_total` increases over 5m.

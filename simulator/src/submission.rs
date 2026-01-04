@@ -31,7 +31,7 @@ pub async fn apply_submission(
         Submission::Seed(seed) => {
             let verifier =
                 bls12381_threshold::Scheme::<PublicKey, MinSig>::certificate_verifier(
-                    simulator.identity.clone(),
+                    simulator.identity,
                 );
             if !seed.verify(&verifier, NAMESPACE) {
                 tracing::warn!("Seed verification failed (bad identity or corrupted seed)");

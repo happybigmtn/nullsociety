@@ -746,6 +746,8 @@ Syntax notes:
 
 ---
 
+One last operational tip: if updates feel "missing," compare the receiver count to the tracked subscription count. A mismatch usually means a subscriber was created without registering, which this code is designed to prevent.
+
 ## Key takeaways
 - The simulator keeps a bounded in-memory state with proofs, seeds, and progress checkpoints.
 - Mempool transactions are broadcast on a dedicated channel.

@@ -68,19 +68,14 @@ const RULES_LEN: usize = 2;
 const UI_EXTRA_LEN: usize = 3;
 const ROYAL_MATCH_KQ_MULTIPLIER: u64 = 25;
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum BlackjackDecks {
     One = 0,
     Two = 1,
     Four = 2,
     Six = 3,
+    #[default]
     Eight = 4,
-}
-
-impl Default for BlackjackDecks {
-    fn default() -> Self {
-        BlackjackDecks::Eight
-    }
 }
 
 impl BlackjackDecks {
@@ -577,10 +572,11 @@ fn action_mask(state: &BlackjackState) -> u8 {
     mask |= 1 << 0; // hit
     mask |= 1 << 1; // stand
 
-    if hand.cards.len() == 2 && hand.bet_mult == 1 {
-        if !hand.was_split || state.rules.double_after_split {
-            mask |= 1 << 2; // double
-        }
+    if hand.cards.len() == 2
+        && hand.bet_mult == 1
+        && (!hand.was_split || state.rules.double_after_split)
+    {
+        mask |= 1 << 2; // double
     }
 
     if state.hands.len() < MAX_HANDS && hand.cards.len() == 2 {

@@ -10,9 +10,40 @@ coverage:
   status:
     patch:
       default:
-        threshold: 0.25%
+        target: 60%
+        threshold: 5%
         only_pulls: true
     project:
       default:
-        threshold: 0.25%
+        target: 48%
+        threshold: 1%
         only_pulls: true
+      protocol:
+        flags:
+          - protocol
+        target: 35%
+        threshold: 2%
+        only_pulls: true
+      gateway:
+        flags:
+          - gateway
+        target: 25%
+        threshold: 2%
+        only_pulls: true
+      casino:
+        flags:
+          - casino
+        target: 80%
+        threshold: 2%
+        only_pulls: true
+
+flags:
+  protocol:
+    paths:
+      - packages/protocol/src
+  gateway:
+    paths:
+      - gateway/src
+  casino:
+    paths:
+      - execution/src/casino

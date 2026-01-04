@@ -46,12 +46,14 @@
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.build.json --watch",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
     "@nullspace/tsconfig": "workspace:*",
+    "@vitest/coverage-v8": "^2.1.9",
     "typescript": "^5.7.0",
     "vitest": "^2.0.0"
   }

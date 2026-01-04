@@ -157,15 +157,16 @@ impl Api {
         let router = Router::new()
             .route("/healthz", get(http::healthz))
             .route("/config", get(http::config))
+            .route("/presence/global-table", post(http::global_table_presence))
             .route("/metrics/ws", get(http::ws_metrics))
             .route("/metrics/http", get(http::http_metrics))
             .route("/metrics/system", get(http::system_metrics))
             .route("/metrics/explorer", get(http::explorer_metrics))
             .route("/metrics/updates", get(http::update_index_metrics))
             .route("/metrics/prometheus", get(http::prometheus_metrics))
-            .merge(submit_route)
             .route("/seed/:query", get(http::query_seed))
             .route("/state/:query", get(http::query_state))
+            .route("/account/:pubkey", get(http::get_account))
             .route("/updates/:filter", get(ws::updates_ws))
             .route("/mempool", get(ws::mempool_ws))
             .route("/explorer/blocks", get(crate::explorer::list_blocks))
@@ -194,15 +195,18 @@ impl Api {
             .route("/webauthn/login", post(crate::passkeys::login_passkey))
             .route("/webauthn/sign", post(crate::passkeys::sign_with_passkey));
 
+        let router = match governor_conf {
+            Some(config) => router.layer(GovernorLayer { config }),
+            None => router,
+        };
+
+        let router = router.merge(submit_route);
+
         let router = router.layer(cors);
         let router = router.layer(middleware::from_fn(move |req, next| {
             let origin_config = origin_config.clone();
             async move { enforce_origin(origin_config, req, next).await }
         }));
-        let router = match governor_conf {
-            Some(config) => router.layer(GovernorLayer { config }),
-            None => router,
-        };
         let router = match self.simulator.config.http_body_limit_bytes {
             Some(limit) if limit > 0 => router.layer(DefaultBodyLimit::max(limit)),
             _ => router,

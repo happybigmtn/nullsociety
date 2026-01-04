@@ -9,10 +9,10 @@
     "deploy:anvil": "hardhat run scripts/deployPhase2.js --network anvil",
     "simulate:cca:sepolia": "hardhat run scripts/simulateCcaBids.js --network sepolia",
     "simulate:cca:anvil": "hardhat run scripts/simulateCcaBids.js --network anvil",
-    "snapshot:eligibility": "node scripts/buildEligibilitySnapshot.mjs",
+    "snapshot:eligibility": "node scripts/buildEligibilitySnapshot.js",
     "finalize:cca:sepolia": "hardhat run scripts/finalizeCca.js --network sepolia",
     "finalize:cca:anvil": "hardhat run scripts/finalizeCca.js --network anvil",
-    "bidders:generate": "node scripts/generateBidders.mjs",
+    "bidders:generate": "node scripts/generateBidders.js",
     "recovery:pool:sepolia": "hardhat run scripts/recoveryPoolActions.js --network sepolia",
     "recovery:pool:anvil": "hardhat run scripts/recoveryPoolActions.js --network anvil"
   },
